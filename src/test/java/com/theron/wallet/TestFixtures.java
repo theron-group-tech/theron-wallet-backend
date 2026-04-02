@@ -3,6 +3,7 @@ package com.theron.wallet;
 import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.CreateSubaccountRequest;
+import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.entity.Customer;
 import com.theron.wallet.entity.Subaccount;
@@ -88,6 +89,27 @@ public final class TestFixtures {
                 .pixAddressKey("12345678901")
                 .pixAddressKeyType("CPF")
                 .description("Test withdrawal")
+                .build();
+    }
+
+    public static InternalTransferRequest anInternalTransferRequest(
+            UUID senderCustomerId, UUID receiverCustomerId, BigDecimal amount) {
+        return InternalTransferRequest.builder()
+                .senderCustomerId(senderCustomerId)
+                .receiverCustomerId(receiverCustomerId)
+                .amount(amount)
+                .description("Test internal transfer")
+                .build();
+    }
+
+    public static InternalTransferRequest anInternalTransferRequestWithKey(
+            UUID senderCustomerId, UUID receiverCustomerId, BigDecimal amount, String idempotencyKey) {
+        return InternalTransferRequest.builder()
+                .senderCustomerId(senderCustomerId)
+                .receiverCustomerId(receiverCustomerId)
+                .amount(amount)
+                .description("Test internal transfer")
+                .idempotencyKey(idempotencyKey)
                 .build();
     }
 
