@@ -1,0 +1,25 @@
+package com.theron.wallet.dto.asaas;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class AsaasCustomerRequest {
+
+    private String name;
+    private String email;
+    private String cpfCnpj;
+    private String phone;
+    private String mobilePhone;
+    private Boolean notificationDisabled;
+    private String externalReference;
+}

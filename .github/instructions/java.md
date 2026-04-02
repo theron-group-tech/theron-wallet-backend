@@ -1,0 +1,5 @@
+- Use camelCase for variables
+- Use PascalCase for classes
+- Always separate layers clearly
+- Avoid business logic in controllers
+- Prefer constructor injection

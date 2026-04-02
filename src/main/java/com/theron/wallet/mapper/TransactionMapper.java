@@ -1,0 +1,50 @@
+package com.theron.wallet.mapper;
+
+import com.theron.wallet.dto.response.DepositResponse;
+import com.theron.wallet.dto.response.TransactionResponse;
+import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.entity.Transaction;
+
+public final class TransactionMapper {
+
+    private TransactionMapper() {
+    }
+
+    public static TransactionResponse toResponse(Transaction entity) {
+        return TransactionResponse.builder()
+                .id(entity.getId())
+                .walletId(entity.getWallet().getId())
+                .type(entity.getType())
+                .status(entity.getStatus())
+                .amount(entity.getAmount())
+                .description(entity.getDescription())
+                .asaasPaymentId(entity.getAsaasPaymentId())
+                .createdAt(entity.getCreatedAt())
+                .updatedAt(entity.getUpdatedAt())
+                .build();
+    }
+
+    public static DepositResponse toDepositResponse(Transaction entity) {
+        return DepositResponse.builder()
+                .transactionId(entity.getId())
+                .walletId(entity.getWallet().getId())
+                .amount(entity.getAmount())
+                .status(entity.getStatus().name())
+                .asaasPaymentId(entity.getAsaasPaymentId())
+                .description(entity.getDescription())
+                .createdAt(entity.getCreatedAt())
+                .build();
+    }
+
+    public static WithdrawResponse toWithdrawResponse(Transaction entity) {
+        return WithdrawResponse.builder()
+                .transactionId(entity.getId())
+                .walletId(entity.getWallet().getId())
+                .amount(entity.getAmount())
+                .status(entity.getStatus().name())
+                .asaasTransferId(entity.getAsaasPaymentId())
+                .description(entity.getDescription())
+                .createdAt(entity.getCreatedAt())
+                .build();
+    }
+}

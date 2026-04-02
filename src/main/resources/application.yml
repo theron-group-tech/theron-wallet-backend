@@ -1,0 +1,72 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: theron-wallet-service
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:theron_wallet}
+    username: ${DB_USERNAME:theron}
+    password: ${DB_PASSWORD:theron}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+# Asaas API Configuration
+asaas:
+  api:
+    base-url: ${ASAAS_API_BASE_URL:https://api-sandbox.asaas.com/v3}
+    key: ${ASAAS_API_KEY:}
+    webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
+    webhook-url: ${ASAAS_WEBHOOK_URL:}
+    timeout:
+      connect: 5000
+      read: 10000
+
+# Encryption (AES-256-GCM for API key storage)
+encryption:
+  aes-key: ${ENCRYPTION_AES_KEY:nIlpBopPKbJrzQqLsQcY/EItC724S8pmH2ZI/bTRQrE=}
+
+# Actuator / Health
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# OpenAPI / Swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.theron.wallet: DEBUG
+    org.springframework.web.reactive.function.client: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n"

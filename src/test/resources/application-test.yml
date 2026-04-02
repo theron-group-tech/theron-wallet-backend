@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:tc:postgresql:16-alpine:///theron_wallet_test
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+asaas:
+  api:
+    base-url: https://api-sandbox.asaas.com/v3
+    key: test-key
+    webhook-token: test-webhook-token
+    webhook-url: https://test.therongroup.com/api/v1/webhooks/asaas
+
+encryption:
+  aes-key: nIlpBopPKbJrzQqLsQcY/EItC724S8pmH2ZI/bTRQrE=
+
+logging:
+  level:
+    root: WARN
+    com.theron.wallet: DEBUG
