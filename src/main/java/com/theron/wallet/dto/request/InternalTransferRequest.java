@@ -22,11 +22,11 @@ public class InternalTransferRequest {
     @Size(max = 100, message = "Idempotency key must be at most 100 characters")
     private String idempotencyKey;
 
-    @NotNull(message = "Sender customer ID is required")
-    private UUID senderCustomerId;
+    @NotNull(message = "Sender subaccount ID is required")
+    private UUID senderSubaccountId;
 
-    @NotNull(message = "Receiver customer ID is required")
-    private UUID receiverCustomerId;
+    @NotNull(message = "Receiver subaccount ID is required")
+    private UUID receiverSubaccountId;
 
     @NotNull(message = "Amount is required")
     @DecimalMin(value = "0.01", message = "Amount must be at least R$ 0.01")

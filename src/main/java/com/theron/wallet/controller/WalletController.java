@@ -32,14 +32,14 @@ public class WalletController {
     private final WalletService walletService;
     private final TransactionService transactionService;
 
-    @GetMapping("/customer/{customerId}")
-    @Operation(summary = "Get wallet by customer ID", description = "Returns the wallet for a given customer")
+    @GetMapping("/subaccount/{subaccountId}")
+    @Operation(summary = "Buscar carteira por subconta", description = "Retorna a carteira de uma subconta")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Wallet found"),
-            @ApiResponse(responseCode = "404", description = "Wallet not found for customer")
+            @ApiResponse(responseCode = "200", description = "Carteira encontrada"),
+            @ApiResponse(responseCode = "404", description = "Carteira não encontrada para a subconta")
     })
-    public ResponseEntity<WalletResponse> findByCustomerId(@PathVariable UUID customerId) {
-        return ResponseEntity.ok(walletService.findByCustomerId(customerId));
+    public ResponseEntity<WalletResponse> findBySubaccountId(@PathVariable UUID subaccountId) {
+        return ResponseEntity.ok(walletService.findBySubaccountId(subaccountId));
     }
 
     @GetMapping("/{walletId}")

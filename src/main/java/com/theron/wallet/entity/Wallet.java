@@ -34,8 +34,8 @@ public class Wallet {
     private UUID id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id", nullable = false, unique = true)
-    private Customer customer;
+    @JoinColumn(name = "subaccount_id", nullable = false, unique = true)
+    private Subaccount subaccount;
 
     @Column(nullable = false, precision = 19, scale = 2)
     @Builder.Default

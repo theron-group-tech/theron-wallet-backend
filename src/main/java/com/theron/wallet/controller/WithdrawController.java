@@ -29,15 +29,14 @@ public class WithdrawController {
     private final WithdrawService withdrawService;
 
     @PostMapping
-    @Operation(summary = "Create a withdrawal",
-            description = "Debits the wallet and creates an Asaas transfer to the specified PIX key. "
-                    + "Returns PENDING until confirmed by Asaas webhook.")
+    @Operation(summary = "Criar saque via Pix",
+            description = "Debita a carteira da subconta e cria uma transferência Pix no Asaas. Retorna PENDING até confirmação via webhook.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Withdrawal created, transfer pending"),
-            @ApiResponse(responseCode = "400", description = "Validation error"),
-            @ApiResponse(responseCode = "403", description = "Subaccount blocked for outbound operations"),
-            @ApiResponse(responseCode = "404", description = "Customer or wallet not found"),
-            @ApiResponse(responseCode = "409", description = "Insufficient balance")
+            @ApiResponse(responseCode = "201", description = "Saque criado, transferência pendente"),
+            @ApiResponse(responseCode = "400", description = "Erro de validação"),
+            @ApiResponse(responseCode = "404", description = "Subconta ou carteira não encontrada"),
+            @ApiResponse(responseCode = "409", description = "Saldo insuficiente"),
+            @ApiResponse(responseCode = "422", description = "Subconta não elegível para saques (status inválido)")
     })
     public ResponseEntity<WithdrawResponse> createWithdraw(@Valid @RequestBody WithdrawRequest request) {
         WithdrawResponse response = withdrawService.createWithdraw(request);

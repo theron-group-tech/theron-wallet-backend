@@ -19,8 +19,8 @@ import java.util.UUID;
 @AllArgsConstructor
 public class DepositRequest {
 
-    @NotNull(message = "Customer ID is required")
-    private UUID customerId;
+    @NotNull(message = "Subaccount ID is required")
+    private UUID subaccountId;
 
     @NotNull(message = "Amount is required")
     @DecimalMin(value = "0.01", message = "Amount must be at least R$ 0.01")

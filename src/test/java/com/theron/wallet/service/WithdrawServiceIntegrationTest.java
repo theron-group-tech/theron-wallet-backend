@@ -6,16 +6,17 @@ import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.SubaccountOperationBlockedException;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,7 +46,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
     private WebhookService webhookService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private SubaccountRepository subaccountRepository;
 
     @Autowired
     private WalletRepository walletRepository;
@@ -53,14 +54,14 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionRepository transactionRepository;
 
-    private Customer savedCustomer;
+    private Subaccount savedSubaccount;
     private Wallet savedWallet;
 
     @BeforeEach
     void setUp() {
-        savedCustomer = customerRepository.save(TestFixtures.aCustomer());
-        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedCustomer, new BigDecimal("500.00")));
-        when(asaasApiKeyResolver.resolveForOutbound(any())).thenReturn("root-api-key");
+        savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedSubaccount, new BigDecimal("500.00")));
+        when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
     }
 
     @Nested
@@ -80,7 +81,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             when(asaasTransferClient.createTransfer(anyString(), any())).thenReturn(transferResponse);
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("100.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("100.00"));
             WithdrawResponse response = withdrawService.createWithdraw(request);
 
             assertThat(response.getTransactionId()).isNotNull();
@@ -108,7 +109,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasTransferClient.createTransfer(anyString(), any()))
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_full").status("PENDING").build());
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("500.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("500.00"));
             WithdrawResponse response = withdrawService.createWithdraw(request);
 
             assertThat(response.getStatus()).isEqualTo("PENDING");
@@ -121,11 +122,11 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         @DisplayName("should use subaccount API key when resolver returns it")
         void shouldUseSubaccountKey() {
             String subaccountKey = "sub_key_xyz";
-            when(asaasApiKeyResolver.resolveForOutbound(savedCustomer.getId())).thenReturn(subaccountKey);
+            when(asaasApiKeyResolver.resolveForSubaccount(savedSubaccount.getId())).thenReturn(subaccountKey);
             when(asaasTransferClient.createTransfer(eq(subaccountKey), any()))
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_sub").status("PENDING").build());
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("50.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
             withdrawService.createWithdraw(request);
 
             verify(asaasTransferClient).createTransfer(eq(subaccountKey), any());
@@ -140,7 +141,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should throw InsufficientBalanceException when balance is less than amount")
         void shouldRejectInsufficientBalance() {
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("600.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("600.00"));
 
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(InsufficientBalanceException.class)
@@ -157,19 +158,25 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when customer does not exist")
-        void shouldRejectUnknownCustomer() {
+        @DisplayName("should throw ResourceNotFoundException when subaccount does not exist")
+        void shouldRejectUnknownSubaccount() {
             WithdrawRequest request = TestFixtures.aWithdrawRequest(UUID.randomUUID(), new BigDecimal("50.00"));
 
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("Customer");
+                    .hasMessageContaining("Subaccount");
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when customer is not synced with Asaas")
-        void shouldRejectUnsyncedCustomer() {
-            Customer unsynced = customerRepository.save(TestFixtures.aCustomerWithoutAsaas());
+        @DisplayName("should throw ResourceNotFoundException when subaccount is not synced with Asaas")
+        void shouldRejectUnsyncedSubaccount() {
+            Subaccount unsynced = subaccountRepository.save(
+                    TestFixtures.aSubaccount("98765432100", SubaccountStatus.ACTIVE));
+            walletRepository.save(TestFixtures.aWalletWithBalance(unsynced, new BigDecimal("100.00")));
+
+            when(asaasApiKeyResolver.resolveForSubaccount(unsynced.getId()))
+                    .thenThrow(new ResourceNotFoundException(
+                            "Subaccount " + unsynced.getId() + " not synced with Asaas"));
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(unsynced.getId(), new BigDecimal("50.00"));
 
@@ -179,16 +186,12 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when customer has no wallet")
-        void shouldRejectCustomerWithoutWallet() {
-            Customer noWalletCustomer = customerRepository.save(Customer.builder()
-                    .name("No Wallet")
-                    .email("nowallet@therongroup.com")
-                    .cpfCnpj("11122233344")
-                    .asaasCustomerId("cus_nowallet")
-                    .build());
+        @DisplayName("should throw ResourceNotFoundException when subaccount has no wallet")
+        void shouldRejectSubaccountWithoutWallet() {
+            Subaccount noWalletSubaccount = subaccountRepository.save(
+                    TestFixtures.aSubaccount("11122233344", SubaccountStatus.ACTIVE));
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(noWalletCustomer.getId(), new BigDecimal("50.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(noWalletSubaccount.getId(), new BigDecimal("50.00"));
 
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(ResourceNotFoundException.class)
@@ -198,11 +201,11 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should reject withdrawal when subaccount is EVALUATION_BLOCKED")
         void shouldRejectWhenSubaccountBlocked() {
-            when(asaasApiKeyResolver.resolveForOutbound(savedCustomer.getId()))
+            when(asaasApiKeyResolver.resolveForSubaccount(savedSubaccount.getId()))
                     .thenThrow(new SubaccountOperationBlockedException(
                             "Subaccount is EVALUATION_BLOCKED — outbound operations are not allowed"));
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("50.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
 
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(SubaccountOperationBlockedException.class)
@@ -226,7 +229,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasTransferClient.createTransfer(anyString(), any()))
                     .thenThrow(new AsaasApiException("Asaas error", 500, "Internal Server Error"));
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("100.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("100.00"));
 
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(AsaasApiException.class);
@@ -253,7 +256,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             String idempotencyKey = "unique-withdraw-key-123";
 
             WithdrawRequest request = WithdrawRequest.builder()
-                    .customerId(savedCustomer.getId())
+                    .subaccountId(savedSubaccount.getId())
                     .amount(new BigDecimal("100.00"))
                     .pixAddressKey("12345678901")
                     .pixAddressKeyType("CPF")
@@ -281,7 +284,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_2").status("PENDING").build());
 
             WithdrawRequest request1 = WithdrawRequest.builder()
-                    .customerId(savedCustomer.getId())
+                    .subaccountId(savedSubaccount.getId())
                     .amount(new BigDecimal("100.00"))
                     .pixAddressKey("12345678901")
                     .pixAddressKeyType("CPF")
@@ -289,7 +292,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .build();
 
             WithdrawRequest request2 = WithdrawRequest.builder()
-                    .customerId(savedCustomer.getId())
+                    .subaccountId(savedSubaccount.getId())
                     .amount(new BigDecimal("100.00"))
                     .pixAddressKey("12345678901")
                     .pixAddressKeyType("CPF")
@@ -480,7 +483,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasTransferClient.createTransfer(anyString(), any()))
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_find").status("PENDING").build());
 
-            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedCustomer.getId(), new BigDecimal("50.00"));
+            WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
             WithdrawResponse created = withdrawService.createWithdraw(request);
 
             WithdrawResponse found = withdrawService.findById(created.getTransactionId());

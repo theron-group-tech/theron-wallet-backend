@@ -14,15 +14,15 @@ import java.util.UUID;
 @Repository
 public interface WalletRepository extends JpaRepository<Wallet, UUID> {
 
-    Optional<Wallet> findByCustomerId(UUID customerId);
+    Optional<Wallet> findBySubaccountId(UUID subaccountId);
 
-    boolean existsByCustomerId(UUID customerId);
+    boolean existsBySubaccountId(UUID subaccountId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM Wallet w WHERE w.id = :id")
     Optional<Wallet> findByIdForUpdate(@Param("id") UUID id);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT w FROM Wallet w WHERE w.customer.id = :customerId")
-    Optional<Wallet> findByCustomerIdWithLock(@Param("customerId") UUID customerId);
+    @Query("SELECT w FROM Wallet w WHERE w.subaccount.id = :subaccountId")
+    Optional<Wallet> findBySubaccountIdWithLock(@Param("subaccountId") UUID subaccountId);
 }

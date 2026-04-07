@@ -1,49 +1,100 @@
+// src/main/java/com/theron/wallet/dto/request/CreateSubaccountRequest.java
 package com.theron.wallet.dto.request;
 
+import com.theron.wallet.enums.CompanyType;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
-@Getter
-@Setter
+@Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(description = "Request body to create an Asaas subaccount (POST /v3/accounts). "
+        + "For Pessoa Física (CPF): birthDate is required. "
+        + "For Pessoa Jurídica (CNPJ): companyType is required.")
 public class CreateSubaccountRequest {
 
-    @NotNull(message = "Customer ID is required")
-    private UUID customerId;
+    // ── Identity ────────────────────────────────────────────────────────────
 
-    @NotNull(message = "Income value is required")
-    @DecimalMin(value = "0.00", message = "Income value must be non-negative")
+    @NotBlank
+    @Schema(description = "Full name of the subaccount owner", example = "Alexsandro Costa Nunes")
+    private String name;
+
+    @NotBlank
+    @Email
+    @Schema(description = "Email address — used as login email if loginEmail is not provided",
+            example = "alexsandro@empresa.com.br")
+    private String email;
+
+    @Schema(description = "Alternative login email. If omitted, email is used.", example = "alexsandro.login@empresa.com.br")
+    private String loginEmail;
+
+    @NotBlank
+    @Schema(description = "CPF (11 digits) or CNPJ (14 digits), numbers only",
+            example = "05211718577")
+    private String cpfCnpj;
+
+    @NotBlank
+    @Schema(description = "Brazilian mobile phone — 11 digits: area code + 9 + 8 digits (e.g. 11968604680)",
+            example = "11968604680")
+    private String mobilePhone;
+
+    @Schema(description = "Landline phone (optional)", example = "1162862055")
+    private String phone;
+
+    @Schema(description = "Website URL (optional)", example = "https://empresa.com.br")
+    private String site;
+
+    // ── PF / PJ ─────────────────────────────────────────────────────────────
+
+    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "birthDate must be in yyyy-MM-dd format")
+    @Schema(description = "Date of birth in yyyy-MM-dd — required for CPF (Pessoa Física)",
+            example = "1990-05-15")
+    private String birthDate;
+
+    @Schema(description = "Company type — required for CNPJ (Pessoa Jurídica). "
+            + "Allowed: MEI, LIMITED, INDIVIDUAL, ASSOCIATION",
+            example = "LIMITED")
+    private CompanyType companyType;
+
+    // ── Financials ───────────────────────────────────────────────────────────
+
+    @NotNull
+    @DecimalMin("0.01")
+    @Schema(description = "Monthly income (PF) or monthly revenue (PJ) in BRL",
+            example = "10000.00")
     private BigDecimal incomeValue;
 
-    @NotBlank(message = "Address is required")
-    @Size(max = 255, message = "Address must be at most 255 characters")
+    // ── Address ──────────────────────────────────────────────────────────────
+
+    @NotBlank
+    @Schema(example = "Rua da Baracela")
     private String address;
 
-    @NotBlank(message = "Address number is required")
-    @Size(max = 20, message = "Address number must be at most 20 characters")
+    @NotBlank
+    @Schema(example = "461")
     private String addressNumber;
 
-    @Size(max = 100, message = "Complement must be at most 100 characters")
+    @Schema(example = "Condominio Bloco A")
     private String complement;
 
-    @NotBlank(message = "Province is required")
-    @Size(max = 100, message = "Province must be at most 100 characters")
+    @NotBlank
+    @Schema(example = "Sao Paulo")
     private String province;
 
-    @NotBlank(message = "Postal code is required")
-    @Pattern(regexp = "\\d{8}", message = "Postal code must have exactly 8 digits")
+    @NotBlank
+    @Size(min = 8, max = 8)
+    @Schema(description = "Brazilian postal code (CEP) — 8 digits, no hyphen", example = "02190120")
     private String postalCode;
 }

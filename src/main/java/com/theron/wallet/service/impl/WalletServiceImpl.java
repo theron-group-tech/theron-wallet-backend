@@ -1,12 +1,12 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.response.WalletResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.WalletMapper;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
@@ -23,13 +23,13 @@ import java.util.UUID;
 public class WalletServiceImpl implements WalletService {
 
     private final WalletRepository walletRepository;
-    private final CustomerRepository customerRepository;
+    private final SubaccountRepository subaccountRepository;
 
     @Override
     @Transactional(readOnly = true)
-    public WalletResponse findByCustomerId(UUID customerId) {
-        Wallet wallet = walletRepository.findByCustomerId(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "customerId", customerId));
+    public WalletResponse findBySubaccountId(UUID subaccountId) {
+        Wallet wallet = walletRepository.findBySubaccountId(subaccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", subaccountId));
         return WalletMapper.toResponse(wallet);
     }
 
@@ -43,10 +43,10 @@ public class WalletServiceImpl implements WalletService {
 
     @Override
     @Transactional
-    public WalletResponse getOrCreateWallet(UUID customerId) {
-        return walletRepository.findByCustomerId(customerId)
+    public WalletResponse getOrCreateWallet(UUID subaccountId) {
+        return walletRepository.findBySubaccountId(subaccountId)
                 .map(WalletMapper::toResponse)
-                .orElseGet(() -> createWallet(customerId));
+                .orElseGet(() -> createWallet(subaccountId));
     }
 
     @Override
@@ -78,16 +78,16 @@ public class WalletServiceImpl implements WalletService {
         log.info("Wallet debited: walletId={}, amount={}, newBalance={}", walletId, amount, wallet.getBalance());
     }
 
-    private WalletResponse createWallet(UUID customerId) {
-        Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", customerId));
+    private WalletResponse createWallet(UUID subaccountId) {
+        Subaccount subaccount = subaccountRepository.findById(subaccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", subaccountId));
 
         Wallet wallet = Wallet.builder()
-                .customer(customer)
+                .subaccount(subaccount)
                 .build();
 
         wallet = walletRepository.save(wallet);
-        log.info("Wallet created: walletId={}, customerId={}", wallet.getId(), customerId);
+        log.info("Wallet created: walletId={}, subaccountId={}", wallet.getId(), subaccountId);
 
         return WalletMapper.toResponse(wallet);
     }

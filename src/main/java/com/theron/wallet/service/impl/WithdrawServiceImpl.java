@@ -4,16 +4,18 @@ import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InsufficientBalanceException;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.TransactionMapper;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -31,7 +34,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class WithdrawServiceImpl implements WithdrawService {
 
-    private final CustomerRepository customerRepository;
+    private static final Set<SubaccountStatus> ALLOWED_STATUSES =
+            Set.of(SubaccountStatus.PENDING_EVALUATION, SubaccountStatus.ACTIVE);
+
+    private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
     private final AsaasTransferClient asaasTransferClient;
@@ -40,9 +46,9 @@ public class WithdrawServiceImpl implements WithdrawService {
     @Override
     @Transactional
     public WithdrawResponse createWithdraw(WithdrawRequest request) {
-        log.info("Creating withdrawal: customerId={}, amount={}", request.getCustomerId(), request.getAmount());
+        log.info("Creating withdrawal: subaccountId={}, amount={}", request.getSubaccountId(), request.getAmount());
 
-        // Idempotency check — return existing transaction if key already used
+        // Idempotency check
         String idempotencyKey = request.getIdempotencyKey() != null
                 ? request.getIdempotencyKey()
                 : UUID.randomUUID().toString();
@@ -54,34 +60,30 @@ public class WithdrawServiceImpl implements WithdrawService {
             return TransactionMapper.toWithdrawResponse(existing.get());
         }
 
-        Customer customer = customerRepository.findById(request.getCustomerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", request.getCustomerId()));
+        Subaccount subaccount = subaccountRepository.findById(request.getSubaccountId())
+                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", request.getSubaccountId()));
 
-        if (customer.getAsaasCustomerId() == null) {
-            throw new ResourceNotFoundException("Customer is not synced with Asaas. Please update customer first.");
+        if (!ALLOWED_STATUSES.contains(subaccount.getStatus())) {
+            throw new InvalidRequestException(
+                    "Subaccount is not eligible for withdrawals. Current status: " + subaccount.getStatus());
         }
 
-        // Resolve tenant API key — blocks if subaccount is EVALUATION_BLOCKED
-        String apiKey = asaasApiKeyResolver.resolveForOutbound(customer.getId());
+        String apiKey = asaasApiKeyResolver.resolveForSubaccount(subaccount.getId());
 
         // Pessimistic lock on wallet to prevent double spending
-        Wallet wallet = walletRepository.findByCustomerId(customer.getId())
-                .map(w -> walletRepository.findByIdForUpdate(w.getId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Wallet", "customerId", customer.getId())))
-                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "customerId", customer.getId()));
+        Wallet wallet = walletRepository.findBySubaccountIdWithLock(subaccount.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", subaccount.getId()));
 
-        // Validate balance — only confirmed balance can be withdrawn
         if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
             throw new InsufficientBalanceException(
                     String.format("Insufficient balance. Available: %s, Requested: %s",
                             wallet.getBalance(), request.getAmount()));
         }
 
-        // Debit wallet immediately (will be rolled back if Asaas call fails)
+        // Debit wallet immediately (rolled back if Asaas call fails)
         wallet.debit(request.getAmount());
         walletRepository.save(wallet);
 
-        // Create PENDING withdrawal transaction
         Transaction transaction = Transaction.builder()
                 .wallet(wallet)
                 .type(TransactionType.WITHDRAWAL)
@@ -90,7 +92,6 @@ public class WithdrawServiceImpl implements WithdrawService {
                 .description(request.getDescription())
                 .idempotencyKey(idempotencyKey)
                 .build();
-
         transaction = transactionRepository.save(transaction);
 
         try {
@@ -99,7 +100,7 @@ public class WithdrawServiceImpl implements WithdrawService {
                     .pixAddressKey(request.getPixAddressKey())
                     .pixAddressKeyType(request.getPixAddressKeyType())
                     .operationType("PIX")
-                    .description(request.getDescription() != null ? request.getDescription() : "Wallet withdrawal")
+                    .description(request.getDescription() != null ? request.getDescription() : "Saque da carteira")
                     .externalReference(transaction.getId().toString())
                     .build();
 

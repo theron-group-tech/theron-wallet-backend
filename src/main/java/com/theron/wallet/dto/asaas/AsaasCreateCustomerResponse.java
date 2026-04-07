@@ -13,19 +13,12 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class AsaasCustomerResponse {
+public class AsaasCreateCustomerResponse {
 
     private String id;
     private String name;
     private String email;
     private String cpfCnpj;
-    private String phone;
     private String mobilePhone;
-    private String personType;
-    private Boolean notificationDisabled;
-    private String city;
-    private String state;
-    private String country;
-    private String externalReference;
-    private String dateCreated;
 }
+
