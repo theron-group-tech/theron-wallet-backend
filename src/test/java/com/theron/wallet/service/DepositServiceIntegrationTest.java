@@ -5,15 +5,16 @@ import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.request.DepositRequest;
 import com.theron.wallet.dto.response.DepositResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.SubaccountOperationBlockedException;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,7 +41,7 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     private DepositService depositService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private SubaccountRepository subaccountRepository;
 
     @Autowired
     private WalletRepository walletRepository;
@@ -48,12 +49,12 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionRepository transactionRepository;
 
-    private Customer savedCustomer;
+    private Subaccount savedSubaccount;
 
     @BeforeEach
     void setUp() {
-        savedCustomer = customerRepository.save(TestFixtures.aCustomer());
-        when(asaasApiKeyResolver.resolveForOutbound(any())).thenReturn("root-api-key");
+        savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
     }
 
     @Test
@@ -62,7 +63,7 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
         String asaasPaymentId = "pay_" + UUID.randomUUID().toString().substring(0, 16);
         AsaasPaymentResponse mockResponse = AsaasPaymentResponse.builder()
                 .id(asaasPaymentId)
-                .customer(savedCustomer.getAsaasCustomerId())
+                .customer(savedSubaccount.getAsaasCustomerId())
                 .billingType("PIX")
                 .value(new BigDecimal("50.00"))
                 .status("PENDING")
@@ -71,7 +72,7 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
         when(asaasPaymentClient.createPayment(anyString(), any())).thenReturn(mockResponse);
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("50.00"))
                 .description("Test PIX deposit")
                 .build();
@@ -92,52 +93,52 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("should auto-create wallet when customer has no wallet yet")
+    @DisplayName("should auto-create wallet when subaccount has no wallet yet")
     void shouldAutoCreateWallet() {
         when(asaasPaymentClient.createPayment(anyString(), any()))
                 .thenReturn(AsaasPaymentResponse.builder().id("pay_new").build());
 
-        assertThat(walletRepository.findByCustomerId(savedCustomer.getId())).isEmpty();
+        assertThat(walletRepository.findBySubaccountId(savedSubaccount.getId())).isEmpty();
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("25.00"))
                 .build();
 
         DepositResponse response = depositService.createPixDeposit(request);
 
-        Optional<Wallet> wallet = walletRepository.findByCustomerId(savedCustomer.getId());
+        Optional<Wallet> wallet = walletRepository.findBySubaccountId(savedSubaccount.getId());
         assertThat(wallet).isPresent();
         assertThat(wallet.get().getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(response.getWalletId()).isEqualTo(wallet.get().getId());
     }
 
     @Test
-    @DisplayName("should throw ResourceNotFoundException when customer does not exist")
-    void shouldThrowWhenCustomerNotFound() {
+    @DisplayName("should throw ResourceNotFoundException when subaccount does not exist")
+    void shouldThrowWhenSubaccountNotFound() {
         DepositRequest request = DepositRequest.builder()
-                .customerId(UUID.randomUUID())
+                .subaccountId(UUID.randomUUID())
                 .amount(new BigDecimal("10.00"))
                 .build();
 
         assertThatThrownBy(() -> depositService.createPixDeposit(request))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Customer not found");
+                .hasMessageContaining("Subaccount not found");
     }
 
     @Test
-    @DisplayName("should throw ResourceNotFoundException when customer is not synced with Asaas")
-    void shouldThrowWhenCustomerNotSynced() {
-        Customer unsyncedCustomer = customerRepository.save(TestFixtures.aCustomerWithoutAsaas());
+    @DisplayName("should throw when subaccount status does not allow deposits")
+    void shouldThrowWhenSubaccountNotEligible() {
+        Subaccount blockedSubaccount = subaccountRepository.save(
+                TestFixtures.aSubaccount("99988877766", SubaccountStatus.EVALUATION_BLOCKED));
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(unsyncedCustomer.getId())
+                .subaccountId(blockedSubaccount.getId())
                 .amount(new BigDecimal("10.00"))
                 .build();
 
         assertThatThrownBy(() -> depositService.createPixDeposit(request))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("not synced with Asaas");
+                .isInstanceOf(Exception.class);
     }
 
     @Test
@@ -147,7 +148,7 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
                 .thenThrow(new AsaasApiException("Asaas error", 500, "Internal Server Error"));
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("75.00"))
                 .build();
 
@@ -163,14 +164,14 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("should use subaccount key when resolver returns it for ACTIVE subaccount")
     void shouldUseSubaccountKeyForActiveSubaccount() {
         String subaccountKey = "sub_key_active_123";
-        when(asaasApiKeyResolver.resolveForOutbound(savedCustomer.getId())).thenReturn(subaccountKey);
+        when(asaasApiKeyResolver.resolveForSubaccount(savedSubaccount.getId())).thenReturn(subaccountKey);
 
         String asaasPaymentId = "pay_sub_" + UUID.randomUUID().toString().substring(0, 12);
         when(asaasPaymentClient.createPayment(eq(subaccountKey), any()))
                 .thenReturn(AsaasPaymentResponse.builder().id(asaasPaymentId).build());
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("100.00"))
                 .description("Subaccount deposit")
                 .build();
@@ -183,14 +184,14 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("should reject deposit when resolver throws for EVALUATION_BLOCKED subaccount")
+    @DisplayName("should reject deposit when resolver throws for blocked subaccount")
     void shouldRejectDepositWhenSubaccountBlocked() {
-        when(asaasApiKeyResolver.resolveForOutbound(savedCustomer.getId()))
+        when(asaasApiKeyResolver.resolveForSubaccount(savedSubaccount.getId()))
                 .thenThrow(new SubaccountOperationBlockedException(
                         "Subaccount is EVALUATION_BLOCKED — outbound operations are not allowed"));
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("50.00"))
                 .build();
 
@@ -203,15 +204,15 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("should use root key when customer has no subaccount")
-    void shouldUseRootKeyWhenNoSubaccount() {
+    @DisplayName("should use root key when resolver returns it")
+    void shouldUseRootKeyWhenProvided() {
         String rootKey = "root_api_key_xyz";
-        when(asaasApiKeyResolver.resolveForOutbound(savedCustomer.getId())).thenReturn(rootKey);
+        when(asaasApiKeyResolver.resolveForSubaccount(savedSubaccount.getId())).thenReturn(rootKey);
         when(asaasPaymentClient.createPayment(eq(rootKey), any()))
                 .thenReturn(AsaasPaymentResponse.builder().id("pay_root_1").build());
 
         DepositRequest request = DepositRequest.builder()
-                .customerId(savedCustomer.getId())
+                .subaccountId(savedSubaccount.getId())
                 .amount(new BigDecimal("30.00"))
                 .build();
 

@@ -19,25 +19,33 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
-
 @RestController
 @RequestMapping("/api/v1/subaccounts")
 @RequiredArgsConstructor
-@Tag(name = "Subaccounts", description = "Asaas subaccount (conta-filha) management — backoffice only")
+@Tag(name = "Subaccounts", description = "Gerenciamento de contas-filha (subcontas) no Asaas — backoffice only")
 public class SubaccountController {
 
     private final SubaccountService subaccountService;
 
     @PostMapping
-    @Operation(summary = "Create a subaccount",
-            description = "Creates a subaccount in Asaas for the given customer. "
-                    + "The customer must already be synced with Asaas. "
-                    + "API key is encrypted and stored — never returned in responses.")
+    @Operation(
+            summary = "Criar subconta no Asaas",
+            description = """
+                    Cria uma conta-filha no Asaas via POST /v3/accounts usando a chave raiz do Theron.
+                    
+                    - Para Pessoa Física (CPF): `birthDate` é obrigatório. `companyType` é ignorado.
+                    - Para Pessoa Jurídica (CNPJ): `companyType` é obrigatório (MEI, LIMITED, INDIVIDUAL, ASSOCIATION). `birthDate` é ignorado.
+                    - O webhook é registrado **inline** na mesma chamada de criação (atômico).
+                    - A API key retornada pelo Asaas é criptografada e armazenada — **nunca** retornada nas respostas.
+                    - O status inicial é `PROVISIONING`. Em caso de sucesso vira `PENDING_EVALUATION`; em falha, `FAILED`.
+                    - Se uma tentativa anterior ficou em `FAILED`, uma nova requisição com o mesmo CPF/CNPJ faz **retry** automático.
+                    """
+    )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Subaccount created, pending Asaas evaluation"),
-            @ApiResponse(responseCode = "400", description = "Validation error"),
-            @ApiResponse(responseCode = "404", description = "Customer not found or not synced with Asaas"),
-            @ApiResponse(responseCode = "409", description = "Customer already has a subaccount")
+            @ApiResponse(responseCode = "201", description = "Subconta criada e em avaliação regulatória (PENDING_EVALUATION)"),
+            @ApiResponse(responseCode = "400", description = "Erro de validação nos campos"),
+            @ApiResponse(responseCode = "409", description = "Já existe uma subconta ativa para este CPF/CNPJ"),
+            @ApiResponse(responseCode = "422", description = "Erro de validação retornado pelo Asaas")
     })
     public ResponseEntity<SubaccountResponse> create(@Valid @RequestBody CreateSubaccountRequest request) {
         SubaccountResponse response = subaccountService.create(request);
@@ -45,24 +53,28 @@ public class SubaccountController {
     }
 
     @GetMapping("/{subaccountId}")
-    @Operation(summary = "Get subaccount by ID",
-            description = "Returns subaccount details. API key is never included in the response.")
+    @Operation(
+            summary = "Buscar subconta por ID interno",
+            description = "Retorna os detalhes de uma subconta pelo ID interno do Theron. A API key nunca é incluída na resposta."
+    )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Subaccount found"),
-            @ApiResponse(responseCode = "404", description = "Subaccount not found")
+            @ApiResponse(responseCode = "200", description = "Subconta encontrada"),
+            @ApiResponse(responseCode = "404", description = "Subconta não encontrada")
     })
     public ResponseEntity<SubaccountResponse> findById(@PathVariable UUID subaccountId) {
         return ResponseEntity.ok(subaccountService.findById(subaccountId));
     }
 
-    @GetMapping("/customer/{customerId}")
-    @Operation(summary = "Get subaccount by customer ID",
-            description = "Returns the subaccount linked to the given customer, if any.")
+    @GetMapping("/cpf-cnpj/{cpfCnpj}")
+    @Operation(
+            summary = "Buscar subconta por CPF/CNPJ",
+            description = "Retorna a subconta correspondente ao CPF ou CNPJ informado."
+    )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Subaccount found"),
-            @ApiResponse(responseCode = "404", description = "No subaccount for this customer")
+            @ApiResponse(responseCode = "200", description = "Subconta encontrada"),
+            @ApiResponse(responseCode = "404", description = "Subconta não encontrada para este CPF/CNPJ")
     })
-    public ResponseEntity<SubaccountResponse> findByCustomerId(@PathVariable UUID customerId) {
-        return ResponseEntity.ok(subaccountService.findByCustomerId(customerId));
+    public ResponseEntity<SubaccountResponse> findByCpfCnpj(@PathVariable String cpfCnpj) {
+        return ResponseEntity.ok(subaccountService.findByCpfCnpj(cpfCnpj));
     }
 }

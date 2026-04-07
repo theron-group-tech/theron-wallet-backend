@@ -7,19 +7,25 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+/**
+ * Request body for POST /v3/customers using the subaccount's own API key.
+ * Each subaccount manages its own customers in isolation.
+ */
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class AsaasCustomerRequest {
+public class AsaasCreateCustomerRequest {
 
     private String name;
     private String email;
     private String cpfCnpj;
-    private String phone;
     private String mobilePhone;
-    private Boolean notificationDisabled;
-    private String externalReference;
+    private String phone;
+
+    @Builder.Default
+    private Boolean notificationDisabled = true;
 }
+

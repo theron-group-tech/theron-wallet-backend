@@ -11,7 +11,7 @@ public final class WalletMapper {
     public static WalletResponse toResponse(Wallet entity) {
         return WalletResponse.builder()
                 .id(entity.getId())
-                .customerId(entity.getCustomer().getId())
+                .subaccountId(entity.getSubaccount().getId())
                 .balance(entity.getBalance())
                 .currency(entity.getCurrency())
                 .active(entity.getActive())

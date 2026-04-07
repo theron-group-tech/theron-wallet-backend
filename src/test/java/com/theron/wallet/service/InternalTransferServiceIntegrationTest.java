@@ -4,15 +4,16 @@ import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.SelfTransferException;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,7 +40,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     private InternalTransferService internalTransferService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private SubaccountRepository subaccountRepository;
 
     @Autowired
     private WalletRepository walletRepository;
@@ -47,19 +48,15 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionRepository transactionRepository;
 
-    private Customer sender;
-    private Customer receiver;
+    private Subaccount sender;
+    private Subaccount receiver;
     private Wallet senderWallet;
     private Wallet receiverWallet;
 
     @BeforeEach
     void setUp() {
-        sender = customerRepository.save(TestFixtures.aCustomer());
-        receiver = customerRepository.save(Customer.builder()
-                .name("Receiver Customer")
-                .email("receiver@therongroup.com")
-                .cpfCnpj("98765432100")
-                .build());
+        sender = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        receiver = subaccountRepository.save(TestFixtures.aSubaccount("98765432100", SubaccountStatus.ACTIVE));
         senderWallet = walletRepository.save(TestFixtures.aWalletWithBalance(sender, new BigDecimal("500.00")));
         receiverWallet = walletRepository.save(TestFixtures.aWallet(receiver));
     }
@@ -187,11 +184,8 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should reject transfer when sender wallet has exactly zero balance")
         void shouldRejectZeroBalance() {
-            Customer zeroSender = customerRepository.save(Customer.builder()
-                    .name("Zero Balance Sender")
-                    .email("zero@therongroup.com")
-                    .cpfCnpj("11111111111")
-                    .build());
+            Subaccount zeroSender = subaccountRepository.save(
+                    TestFixtures.aSubaccount("11111111111", SubaccountStatus.ACTIVE));
             walletRepository.save(TestFixtures.aWalletWithBalance(zeroSender, BigDecimal.ZERO));
 
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
@@ -211,14 +205,14 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     class SelfTransferTests {
 
         @Test
-        @DisplayName("should throw SelfTransferException when sender and receiver are the same customer")
+        @DisplayName("should throw SelfTransferException when sender and receiver are the same subaccount")
         void shouldRejectSelfTransfer() {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), sender.getId(), new BigDecimal("100.00"));
 
             assertThatThrownBy(() -> internalTransferService.transfer(request))
                     .isInstanceOf(SelfTransferException.class)
-                    .hasMessageContaining("Sender and receiver must be different customers");
+                    .hasMessageContaining("Sender and receiver must be different subaccounts");
 
             // Wallet balance untouched
             Wallet unchangedSender = walletRepository.findById(senderWallet.getId()).orElseThrow();
@@ -238,35 +232,32 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     class ResourceNotFoundTests {
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when sender customer does not exist")
+        @DisplayName("should throw ResourceNotFoundException when sender subaccount does not exist")
         void shouldRejectUnknownSender() {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     UUID.randomUUID(), receiver.getId(), new BigDecimal("100.00"));
 
             assertThatThrownBy(() -> internalTransferService.transfer(request))
                     .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("Customer");
+                    .hasMessageContaining("Subaccount");
         }
 
         @Test
-        @DisplayName("should throw ResourceNotFoundException when receiver customer does not exist")
+        @DisplayName("should throw ResourceNotFoundException when receiver subaccount does not exist")
         void shouldRejectUnknownReceiver() {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), UUID.randomUUID(), new BigDecimal("100.00"));
 
             assertThatThrownBy(() -> internalTransferService.transfer(request))
                     .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining("Customer");
+                    .hasMessageContaining("Subaccount");
         }
 
         @Test
         @DisplayName("should throw ResourceNotFoundException when sender has no wallet")
         void shouldRejectSenderWithoutWallet() {
-            Customer noWalletSender = customerRepository.save(Customer.builder()
-                    .name("No Wallet Sender")
-                    .email("nowallet@therongroup.com")
-                    .cpfCnpj("22233344455")
-                    .build());
+            Subaccount noWalletSender = subaccountRepository.save(
+                    TestFixtures.aSubaccount("22233344455", SubaccountStatus.ACTIVE));
 
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     noWalletSender.getId(), receiver.getId(), new BigDecimal("100.00"));
@@ -279,11 +270,8 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should throw ResourceNotFoundException when receiver has no wallet")
         void shouldRejectReceiverWithoutWallet() {
-            Customer noWalletReceiver = customerRepository.save(Customer.builder()
-                    .name("No Wallet Receiver")
-                    .email("nowallet2@therongroup.com")
-                    .cpfCnpj("55544433322")
-                    .build());
+            Subaccount noWalletReceiver = subaccountRepository.save(
+                    TestFixtures.aSubaccount("55544433322", SubaccountStatus.ACTIVE));
 
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), noWalletReceiver.getId(), new BigDecimal("100.00"));

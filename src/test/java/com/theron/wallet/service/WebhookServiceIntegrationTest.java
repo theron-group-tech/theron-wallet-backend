@@ -3,11 +3,12 @@ package com.theron.wallet.service;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
     private WebhookService webhookService;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private SubaccountRepository subaccountRepository;
 
     @Autowired
     private WalletRepository walletRepository;
@@ -41,8 +42,8 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        Customer customer = customerRepository.save(TestFixtures.aCustomer());
-        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(customer, BigDecimal.ZERO));
+        Subaccount subaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(subaccount, BigDecimal.ZERO));
 
         asaasPaymentId = "pay_" + UUID.randomUUID().toString().substring(0, 16);
         savedTransaction = transactionRepository.save(

@@ -26,15 +26,14 @@ public class TransferController {
 
     @PostMapping("/internal")
     @Operation(
-            summary = "Create an internal transfer",
-            description = "Transfers funds between two platform customer wallets atomically, "
-                    + "without involving any external payment provider. "
-                    + "Supplying the same idempotency key on repeated calls returns the original result.")
+            summary = "Transferência interna entre carteiras",
+            description = "Transfere saldo entre duas carteiras de subcontas da plataforma atomicamente, "
+                    + "sem envolver provedor externo. Chave de idempotência garante exactly-once.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Transfer completed successfully"),
-            @ApiResponse(responseCode = "400", description = "Validation error or self-transfer attempt"),
-            @ApiResponse(responseCode = "404", description = "Sender/receiver customer or wallet not found"),
-            @ApiResponse(responseCode = "409", description = "Insufficient balance in sender wallet")
+            @ApiResponse(responseCode = "201", description = "Transferência concluída"),
+            @ApiResponse(responseCode = "400", description = "Erro de validação ou auto-transferência"),
+            @ApiResponse(responseCode = "404", description = "Subconta ou carteira não encontrada"),
+            @ApiResponse(responseCode = "409", description = "Saldo insuficiente")
     })
     public ResponseEntity<InternalTransferResponse> internalTransfer(
             @Valid @RequestBody InternalTransferRequest request) {

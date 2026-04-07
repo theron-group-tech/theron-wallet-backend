@@ -33,7 +33,7 @@ spring:
 asaas:
   api:
     base-url: ${ASAAS_API_BASE_URL:https://api-sandbox.asaas.com/v3}
-    key: ${ASAAS_API_KEY:}
+    key: ${ASAAS_API_KEY}
     webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
     webhook-url: ${ASAAS_WEBHOOK_URL:}
     timeout:

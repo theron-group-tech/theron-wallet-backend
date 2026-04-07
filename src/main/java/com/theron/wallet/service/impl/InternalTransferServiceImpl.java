@@ -2,7 +2,6 @@ package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
-import com.theron.wallet.entity.Customer;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.TransactionStatus;
@@ -11,7 +10,7 @@ import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.SelfTransferException;
 import com.theron.wallet.mapper.TransactionMapper;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.InternalTransferService;
@@ -28,22 +27,25 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class InternalTransferServiceImpl implements InternalTransferService {
 
-    private final CustomerRepository customerRepository;
+    private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
 
     @Override
     @Transactional
     public InternalTransferResponse transfer(InternalTransferRequest request) {
-        log.info("Internal transfer requested: sender={}, receiver={}, amount={}",
-                request.getSenderCustomerId(), request.getReceiverCustomerId(), request.getAmount());
+        UUID senderSubaccountId   = request.getSenderSubaccountId();
+        UUID receiverSubaccountId = request.getReceiverSubaccountId();
 
-        // 1. Reject self-transfers immediately — no DB access needed
-        if (request.getSenderCustomerId().equals(request.getReceiverCustomerId())) {
-            throw new SelfTransferException("Sender and receiver must be different customers");
+        log.info("Internal transfer requested: sender={}, receiver={}, amount={}",
+                senderSubaccountId, receiverSubaccountId, request.getAmount());
+
+        // 1. Reject self-transfers immediately
+        if (senderSubaccountId.equals(receiverSubaccountId)) {
+            throw new SelfTransferException("Sender and receiver must be different subaccounts");
         }
 
-        // 2. Idempotency check — keyed on the sender-side transaction
+        // 2. Idempotency check
         String idempotencyKey = request.getIdempotencyKey() != null
                 ? request.getIdempotencyKey()
                 : UUID.randomUUID().toString();
@@ -52,81 +54,63 @@ public class InternalTransferServiceImpl implements InternalTransferService {
         if (existingSenderTx.isPresent()) {
             log.info("Idempotency hit for key={} — returning existing transfer result", idempotencyKey);
             Transaction senderTx = existingSenderTx.get();
-            // Receiver tx is linked via externalReference = senderTx.getId()
             Transaction receiverTx = transactionRepository
                     .findByExternalReference(senderTx.getId().toString())
-                    .orElseGet(() -> {
-                        log.error("Data integrity issue: receiver transaction missing for senderTx={} (idempotencyKey={}). "
-                                + "The original transfer may have been only partially committed.",
-                                senderTx.getId(), idempotencyKey);
-                        return senderTx;
-                    });
+                    .orElse(senderTx);
             return TransactionMapper.toInternalTransferResponse(senderTx, receiverTx);
         }
 
-        // 3. Validate both customers exist
-        Customer sender = customerRepository.findById(request.getSenderCustomerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", request.getSenderCustomerId()));
-        Customer receiver = customerRepository.findById(request.getReceiverCustomerId())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", request.getReceiverCustomerId()));
+        // 3. Validate both subaccounts exist
+        subaccountRepository.findById(senderSubaccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", senderSubaccountId));
+        subaccountRepository.findById(receiverSubaccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", receiverSubaccountId));
 
-        UUID senderCustomerId = sender.getId();
-        UUID receiverCustomerId = receiver.getId();
+        // 4. Acquire pessimistic write locks in deterministic UUID order (deadlock prevention)
+        boolean senderFirst = senderSubaccountId.compareTo(receiverSubaccountId) < 0;
+        UUID firstId  = senderFirst ? senderSubaccountId  : receiverSubaccountId;
+        UUID secondId = senderFirst ? receiverSubaccountId : senderSubaccountId;
 
-        // 4. Acquire pessimistic write locks in deterministic customer-UUID order.
-        //    Ordering by a value known BEFORE any wallet load is critical: it avoids going through
-        //    the JPA L1 (session) cache, so Hibernate always hits the DB for a truly fresh row.
-        //    If we loaded wallets unlocked first and then re-locked them, Hibernate would serve
-        //    the cached (stale) entity back — causing lost updates under concurrency.
-        boolean senderFirst = senderCustomerId.compareTo(receiverCustomerId) < 0;
-        UUID firstCustId  = senderFirst ? senderCustomerId  : receiverCustomerId;
-        UUID secondCustId = senderFirst ? receiverCustomerId : senderCustomerId;
+        Wallet firstWallet = walletRepository.findBySubaccountIdWithLock(firstId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", firstId));
+        Wallet secondWallet = walletRepository.findBySubaccountIdWithLock(secondId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", secondId));
 
-        Wallet firstWallet = walletRepository.findByCustomerIdWithLock(firstCustId)
-                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "customerId", firstCustId));
-        Wallet secondWallet = walletRepository.findByCustomerIdWithLock(secondCustId)
-                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "customerId", secondCustId));
-
-        // 5. Resolve sender/receiver from the locked pair using the pre-computed order flag.
-        //    No lazy-load of wallet.customer needed — we rely purely on customer IDs we already have.
         Wallet senderWallet   = senderFirst ? firstWallet  : secondWallet;
         Wallet receiverWallet = senderFirst ? secondWallet : firstWallet;
 
-        // 6. Validate sender has sufficient balance
+        // 5. Validate sender balance
         if (senderWallet.getBalance().compareTo(request.getAmount()) < 0) {
             throw new InsufficientBalanceException(
                     String.format("Insufficient balance. Available: %s, Requested: %s",
                             senderWallet.getBalance(), request.getAmount()));
         }
 
-        // 7. Debit sender and credit receiver
+        // 6. Debit sender and credit receiver atomically
         senderWallet.debit(request.getAmount());
         receiverWallet.credit(request.getAmount());
         walletRepository.save(senderWallet);
         walletRepository.save(receiverWallet);
 
-        // 8. Record TRANSFER_OUT for sender (carries the client idempotency key)
-        Transaction senderTx = Transaction.builder()
+        // 7. Record ledger entries
+        Transaction senderTx = transactionRepository.save(Transaction.builder()
                 .wallet(senderWallet)
                 .type(TransactionType.TRANSFER_OUT)
                 .status(TransactionStatus.CONFIRMED)
                 .amount(request.getAmount())
                 .description(request.getDescription())
                 .idempotencyKey(idempotencyKey)
-                .build();
-        senderTx = transactionRepository.save(senderTx);
+                .build());
 
-        // 9. Record TRANSFER_IN for receiver, linked to the sender tx via externalReference
-        Transaction receiverTx = Transaction.builder()
+        Transaction receiverTx = transactionRepository.save(Transaction.builder()
                 .wallet(receiverWallet)
                 .type(TransactionType.TRANSFER_IN)
                 .status(TransactionStatus.CONFIRMED)
                 .amount(request.getAmount())
                 .description(request.getDescription())
                 .externalReference(senderTx.getId().toString())
-                .idempotencyKey(UUID.randomUUID().toString()) // independent idempotency key for receiver side
-                .build();
-        receiverTx = transactionRepository.save(receiverTx);
+                .idempotencyKey(UUID.randomUUID().toString())
+                .build());
 
         log.info("Internal transfer completed: senderTx={}, receiverTx={}, amount={}",
                 senderTx.getId(), receiverTx.getId(), request.getAmount());

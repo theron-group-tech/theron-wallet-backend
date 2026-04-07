@@ -30,13 +30,13 @@ public class DepositController {
     private final DepositService depositService;
 
     @PostMapping
-    @Operation(summary = "Create a PIX deposit",
-            description = "Creates a pending deposit transaction and a PIX payment in Asaas. "
-                    + "Use the returned transactionId to retrieve the QR code.")
+    @Operation(summary = "Criar depósito via Pix",
+            description = "Cria uma cobrança Pix na subconta via Asaas. Use o transactionId retornado para buscar o QR Code.")
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Deposit created, awaiting PIX payment"),
-            @ApiResponse(responseCode = "400", description = "Validation error"),
-            @ApiResponse(responseCode = "404", description = "Customer not found or not synced with Asaas")
+            @ApiResponse(responseCode = "201", description = "Depósito criado, aguardando pagamento Pix"),
+            @ApiResponse(responseCode = "400", description = "Erro de validação"),
+            @ApiResponse(responseCode = "404", description = "Subconta não encontrada"),
+            @ApiResponse(responseCode = "422", description = "Subconta não elegível para depósitos (status inválido)")
     })
     public ResponseEntity<DepositResponse> createPixDeposit(@Valid @RequestBody DepositRequest request) {
         DepositResponse response = depositService.createPixDeposit(request);

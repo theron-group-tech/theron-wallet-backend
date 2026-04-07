@@ -3,11 +3,12 @@ package com.theron.wallet.service;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.response.WalletResponse;
-import com.theron.wallet.entity.Customer;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
-import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,15 +30,15 @@ class WalletServiceIntegrationTest extends BaseIntegrationTest {
     private WalletRepository walletRepository;
 
     @Autowired
-    private CustomerRepository customerRepository;
+    private SubaccountRepository subaccountRepository;
 
-    private Customer savedCustomer;
+    private Subaccount savedSubaccount;
     private Wallet savedWallet;
 
     @BeforeEach
     void setUp() {
-        savedCustomer = customerRepository.save(TestFixtures.aCustomer());
-        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedCustomer, new BigDecimal("100.00")));
+        savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedSubaccount, new BigDecimal("100.00")));
     }
 
     @Nested
@@ -126,28 +127,24 @@ class WalletServiceIntegrationTest extends BaseIntegrationTest {
     class GetOrCreateTests {
 
         @Test
-        @DisplayName("should return existing wallet when one exists for customer")
+        @DisplayName("should return existing wallet when one exists for subaccount")
         void shouldReturnExistingWallet() {
-            WalletResponse response = walletService.getOrCreateWallet(savedCustomer.getId());
+            WalletResponse response = walletService.getOrCreateWallet(savedSubaccount.getId());
 
             assertThat(response.getId()).isEqualTo(savedWallet.getId());
             assertThat(response.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
         }
 
         @Test
-        @DisplayName("should create a new wallet when none exists for customer")
+        @DisplayName("should create a new wallet when none exists for subaccount")
         void shouldCreateNewWallet() {
-            Customer newCustomer = customerRepository.save(Customer.builder()
-                    .name("New Customer")
-                    .email("new@therongroup.com")
-                    .cpfCnpj("11122233344")
-                    .asaasCustomerId("cus_new123")
-                    .build());
+            Subaccount newSubaccount = subaccountRepository.save(
+                    TestFixtures.aSubaccount("11122233344", SubaccountStatus.ACTIVE));
 
-            WalletResponse response = walletService.getOrCreateWallet(newCustomer.getId());
+            WalletResponse response = walletService.getOrCreateWallet(newSubaccount.getId());
 
             assertThat(response.getId()).isNotNull();
-            assertThat(response.getCustomerId()).isEqualTo(newCustomer.getId());
+            assertThat(response.getSubaccountId()).isEqualTo(newSubaccount.getId());
             assertThat(response.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(response.getCurrency()).isEqualTo("BRL");
         }

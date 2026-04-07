@@ -12,13 +12,14 @@ import java.util.UUID;
 @Repository
 public interface SubaccountRepository extends JpaRepository<Subaccount, UUID> {
 
-    Optional<Subaccount> findByCustomerId(UUID customerId);
+    /** Primary lookup — by CPF/CNPJ (unique identifier for standalone subaccounts). */
+    Optional<Subaccount> findByCpfCnpj(String cpfCnpj);
 
     Optional<Subaccount> findByAsaasAccountId(String asaasAccountId);
 
     Optional<Subaccount> findByWebhookToken(String webhookToken);
 
-    boolean existsByCustomerId(UUID customerId);
+    boolean existsByCpfCnpj(String cpfCnpj);
 
     List<Subaccount> findByStatus(SubaccountStatus status);
 }

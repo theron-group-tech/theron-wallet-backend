@@ -7,11 +7,11 @@ import java.util.UUID;
 
 public interface WalletService {
 
-    WalletResponse findByCustomerId(UUID customerId);
+    WalletResponse findBySubaccountId(UUID subaccountId);
 
     WalletResponse findById(UUID walletId);
 
-    WalletResponse getOrCreateWallet(UUID customerId);
+    WalletResponse getOrCreateWallet(UUID subaccountId);
 
     void credit(UUID walletId, BigDecimal amount);
 

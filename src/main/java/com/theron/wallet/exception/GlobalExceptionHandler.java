@@ -34,16 +34,41 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AsaasApiException.class)
     public ResponseEntity<ApiErrorResponse> handleAsaasApiException(AsaasApiException ex, HttpServletRequest request) {
-        log.error("Asaas API error: status={}, body={}, path={}",
-                ex.getAsaasStatusCode(), ex.getAsaasErrorBody(), request.getRequestURI());
+        // Surface the actual Asaas error description so callers know what to fix
+        String asaasDescription = extractFirstAsaasErrorDescription(ex.getAsaasErrorBody());
+        String message = asaasDescription != null
+                ? "Asaas validation error: " + asaasDescription
+                : "Payment provider error. Please try again later.";
+
+        log.error("Asaas API error: status={}, message={}, path={}",
+                ex.getAsaasStatusCode(), message, request.getRequestURI());
+
         ApiErrorResponse response = ApiErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(ex.getStatus().value())
                 .error(ex.getStatus().getReasonPhrase())
-                .message("Payment provider error. Please try again later.")
+                .message(message)
                 .path(request.getRequestURI())
                 .build();
         return ResponseEntity.status(ex.getStatus()).body(response);
+    }
+
+    /**
+     * Extracts the first error description from an Asaas error body JSON.
+     * Format: {"errors":[{"code":"...","description":"..."}]}
+     */
+    private String extractFirstAsaasErrorDescription(String errorBody) {
+        if (errorBody == null || errorBody.isBlank()) return null;
+        try {
+            int start = errorBody.indexOf("\"description\":\"");
+            if (start < 0) return null;
+            start += 15;
+            int end = errorBody.indexOf("\"", start);
+            if (end < 0) return null;
+            return errorBody.substring(start, end);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

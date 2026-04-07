@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
@@ -30,4 +31,13 @@ public class AsaasSubaccountRequest {
     private String phone;
     private String loginEmail;
     private String companyType;
+    private String birthDate;
+    private String site;
+
+    /**
+     * Webhook configurations to register inline during subaccount creation.
+     * The Asaas API accepts this array in POST /accounts, registering webhooks
+     * atomically — no separate webhook registration call needed.
+     */
+    private List<AsaasWebhookConfigRequest> webhooks;
 }

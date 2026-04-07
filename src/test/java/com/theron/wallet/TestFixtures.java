@@ -40,18 +40,18 @@ public final class TestFixtures {
                 .build();
     }
 
-    public static Wallet aWallet(Customer customer) {
+    public static Wallet aWallet(Subaccount subaccount) {
         return Wallet.builder()
-                .customer(customer)
+                .subaccount(subaccount)
                 .balance(BigDecimal.ZERO)
                 .currency("BRL")
                 .active(true)
                 .build();
     }
 
-    public static Wallet aWalletWithBalance(Customer customer, BigDecimal balance) {
+    public static Wallet aWalletWithBalance(Subaccount subaccount, BigDecimal balance) {
         return Wallet.builder()
-                .customer(customer)
+                .subaccount(subaccount)
                 .balance(balance)
                 .currency("BRL")
                 .active(true)
@@ -82,9 +82,9 @@ public final class TestFixtures {
                 .build();
     }
 
-    public static WithdrawRequest aWithdrawRequest(UUID customerId, BigDecimal amount) {
+    public static WithdrawRequest aWithdrawRequest(UUID subaccountId, BigDecimal amount) {
         return WithdrawRequest.builder()
-                .customerId(customerId)
+                .subaccountId(subaccountId)
                 .amount(amount)
                 .pixAddressKey("12345678901")
                 .pixAddressKeyType("CPF")
@@ -93,20 +93,20 @@ public final class TestFixtures {
     }
 
     public static InternalTransferRequest anInternalTransferRequest(
-            UUID senderCustomerId, UUID receiverCustomerId, BigDecimal amount) {
+            UUID senderSubaccountId, UUID receiverSubaccountId, BigDecimal amount) {
         return InternalTransferRequest.builder()
-                .senderCustomerId(senderCustomerId)
-                .receiverCustomerId(receiverCustomerId)
+                .senderSubaccountId(senderSubaccountId)
+                .receiverSubaccountId(receiverSubaccountId)
                 .amount(amount)
                 .description("Test internal transfer")
                 .build();
     }
 
     public static InternalTransferRequest anInternalTransferRequestWithKey(
-            UUID senderCustomerId, UUID receiverCustomerId, BigDecimal amount, String idempotencyKey) {
+            UUID senderSubaccountId, UUID receiverSubaccountId, BigDecimal amount, String idempotencyKey) {
         return InternalTransferRequest.builder()
-                .senderCustomerId(senderCustomerId)
-                .receiverCustomerId(receiverCustomerId)
+                .senderSubaccountId(senderSubaccountId)
+                .receiverSubaccountId(receiverSubaccountId)
                 .amount(amount)
                 .description("Test internal transfer")
                 .idempotencyKey(idempotencyKey)
@@ -125,9 +125,30 @@ public final class TestFixtures {
                 .build();
     }
 
-    public static CreateSubaccountRequest aCreateSubaccountRequest(UUID customerId) {
+    public static CreateSubaccountRequest aCreateSubaccountRequest() {
         return CreateSubaccountRequest.builder()
-                .customerId(customerId)
+                .name("Test Subaccount Owner")
+                .email("subaccount@therongroup.com")
+                .cpfCnpj("12345678901")
+                .mobilePhone("11999999999")
+                .birthDate("1990-05-15")
+                .incomeValue(new BigDecimal("5000.00"))
+                .address("Rua Teste")
+                .addressNumber("123")
+                .complement("Apt 4")
+                .province("São Paulo")
+                .postalCode("01001000")
+                .build();
+    }
+
+    /** Overload with distinct cpfCnpj to avoid unique constraint conflicts in tests. */
+    public static CreateSubaccountRequest aCreateSubaccountRequest(String cpfCnpj) {
+        return CreateSubaccountRequest.builder()
+                .name("Test Subaccount Owner")
+                .email(cpfCnpj + "@therongroup.com")
+                .cpfCnpj(cpfCnpj)
+                .mobilePhone("11999999999")
+                .birthDate("1990-05-15")
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")
                 .addressNumber("123")
@@ -152,9 +173,29 @@ public final class TestFixtures {
                 .build();
     }
 
-    public static Subaccount aSubaccount(Customer customer, SubaccountStatus status) {
+    public static Subaccount aSubaccount(SubaccountStatus status) {
         return Subaccount.builder()
-                .customer(customer)
+                .name("Test Subaccount Owner")
+                .email("subaccount@therongroup.com")
+                .cpfCnpj("12345678901")
+                .mobilePhone("11999999999")
+                .status(status)
+                .incomeValue(new BigDecimal("5000.00"))
+                .address("Rua Teste")
+                .addressNumber("123")
+                .province("São Paulo")
+                .postalCode("01001000")
+                .webhookToken("test-webhook-token-" + UUID.randomUUID().toString().substring(0, 8))
+                .build();
+    }
+
+    /** Overload with distinct cpfCnpj to avoid unique constraint conflicts. */
+    public static Subaccount aSubaccount(String cpfCnpj, SubaccountStatus status) {
+        return Subaccount.builder()
+                .name("Test Subaccount Owner")
+                .email(cpfCnpj + "@therongroup.com")
+                .cpfCnpj(cpfCnpj)
+                .mobilePhone("11999999999")
                 .status(status)
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")
