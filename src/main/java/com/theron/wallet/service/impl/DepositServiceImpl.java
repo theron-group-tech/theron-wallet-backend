@@ -26,6 +26,8 @@ import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.DepositService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -145,6 +147,22 @@ public class DepositServiceImpl implements DepositService {
         Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
         return TransactionMapper.toDepositResponse(transaction);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DepositResponse> findAll(UUID walletId, UUID subaccountId, Pageable pageable) {
+        if (walletId != null) {
+            return transactionRepository
+                    .findByWalletIdAndType(walletId, TransactionType.DEPOSIT, pageable)
+                    .map(TransactionMapper::toDepositResponse);
+        }
+        if (subaccountId != null) {
+            return transactionRepository
+                    .findByWallet_Subaccount_IdAndType(subaccountId, TransactionType.DEPOSIT, pageable)
+                    .map(TransactionMapper::toDepositResponse);
+        }
+        throw new InvalidRequestException("Either walletId or subaccountId must be provided");
     }
 
     /**

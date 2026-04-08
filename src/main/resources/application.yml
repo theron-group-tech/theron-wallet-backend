@@ -62,6 +62,17 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
 
+# JWT
+jwt:
+  secret: ${JWT_SECRET:theronGroupWalletServiceSecretKey2024MustBe256BitsLong!}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+# Default admin seed (first-boot only)
+app:
+  admin:
+    email: ${DEFAULT_ADMIN_EMAIL:alexsandro.nunes@proton.me}
+    password: ${DEFAULT_ADMIN_PASSWORD:62862055}
+
 # Logging
 logging:
   level:

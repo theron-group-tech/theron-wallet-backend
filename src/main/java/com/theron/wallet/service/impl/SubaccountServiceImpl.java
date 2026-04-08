@@ -22,6 +22,8 @@ import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.service.SubaccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -149,6 +151,17 @@ public class SubaccountServiceImpl implements SubaccountService {
         Subaccount subaccount = subaccountRepository.findByCpfCnpj(cpfCnpj)
                 .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "cpfCnpj", cpfCnpj));
         return SubaccountMapper.toResponse(subaccount);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<SubaccountResponse> findAll(SubaccountStatus status, Pageable pageable) {
+        if (status != null) {
+            return subaccountRepository.findByStatus(status, pageable)
+                    .map(SubaccountMapper::toResponse);
+        }
+        return subaccountRepository.findAll(pageable)
+                .map(SubaccountMapper::toResponse);
     }
 
     /**

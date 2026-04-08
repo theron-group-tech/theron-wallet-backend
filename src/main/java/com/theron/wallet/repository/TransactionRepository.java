@@ -24,6 +24,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     Page<Transaction> findByWalletIdAndStatus(UUID walletId, TransactionStatus status, Pageable pageable);
 
+    /** All transactions belonging to a subaccount (through wallet join). */
+    Page<Transaction> findByWallet_Subaccount_Id(UUID subaccountId, Pageable pageable);
+
+    /** Transactions of a specific type for a subaccount. */
+    Page<Transaction> findByWallet_Subaccount_IdAndType(UUID subaccountId, TransactionType type, Pageable pageable);
+
     Optional<Transaction> findByAsaasPaymentId(String asaasPaymentId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
