@@ -22,6 +22,8 @@ import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.WithdrawService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -127,5 +129,21 @@ public class WithdrawServiceImpl implements WithdrawService {
         Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
         return TransactionMapper.toWithdrawResponse(transaction);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<WithdrawResponse> findAll(UUID walletId, UUID subaccountId, Pageable pageable) {
+        if (walletId != null) {
+            return transactionRepository
+                    .findByWalletIdAndType(walletId, TransactionType.WITHDRAWAL, pageable)
+                    .map(TransactionMapper::toWithdrawResponse);
+        }
+        if (subaccountId != null) {
+            return transactionRepository
+                    .findByWallet_Subaccount_IdAndType(subaccountId, TransactionType.WITHDRAWAL, pageable)
+                    .map(TransactionMapper::toWithdrawResponse);
+        }
+        throw new InvalidRequestException("Either walletId or subaccountId must be provided");
     }
 }

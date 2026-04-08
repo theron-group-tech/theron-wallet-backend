@@ -17,4 +17,10 @@ public interface TransactionService {
     Page<TransactionResponse> findByWalletIdAndType(UUID walletId, TransactionType type, Pageable pageable);
 
     Page<TransactionResponse> findByWalletIdAndStatus(UUID walletId, TransactionStatus status, Pageable pageable);
+
+    /** All transactions for a subaccount, with optional type filter. */
+    Page<TransactionResponse> findBySubaccountId(UUID subaccountId, TransactionType type, Pageable pageable);
+
+    /** Global listing — optional walletId, subaccountId, and/or type filter. */
+    Page<TransactionResponse> findAll(UUID walletId, UUID subaccountId, TransactionType type, Pageable pageable);
 }

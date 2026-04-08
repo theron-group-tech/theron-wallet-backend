@@ -9,14 +9,13 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
@@ -41,6 +40,21 @@ public class WithdrawController {
     public ResponseEntity<WithdrawResponse> createWithdraw(@Valid @RequestBody WithdrawRequest request) {
         WithdrawResponse response = withdrawService.createWithdraw(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @GetMapping
+    @Operation(summary = "Listar saques",
+            description = "Lista saques paginados. Forneça `walletId` ou `subaccountId` como filtro obrigatório. "
+                    + "Exemplo: `GET /api/v1/withdraws?subaccountId=xxx&page=0&size=10&sort=createdAt,desc`")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso"),
+            @ApiResponse(responseCode = "400", description = "walletId ou subaccountId obrigatório")
+    })
+    public ResponseEntity<Page<WithdrawResponse>> findAll(
+            @RequestParam(required = false) UUID walletId,
+            @RequestParam(required = false) UUID subaccountId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(withdrawService.findAll(walletId, subaccountId, pageable));
     }
 
     @GetMapping("/{transactionId}")

@@ -2,6 +2,8 @@ package com.theron.wallet.repository;
 
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.SubaccountStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -22,4 +24,7 @@ public interface SubaccountRepository extends JpaRepository<Subaccount, UUID> {
     boolean existsByCpfCnpj(String cpfCnpj);
 
     List<Subaccount> findByStatus(SubaccountStatus status);
+
+    /** Paginated list — optional status filter. */
+    Page<Subaccount> findByStatus(SubaccountStatus status, Pageable pageable);
 }

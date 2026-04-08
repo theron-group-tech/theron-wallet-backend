@@ -52,4 +52,36 @@ public class TransactionServiceImpl implements TransactionService {
         return transactionRepository.findByWalletIdAndStatus(walletId, status, pageable)
                 .map(TransactionMapper::toResponse);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TransactionResponse> findBySubaccountId(UUID subaccountId, TransactionType type, Pageable pageable) {
+        if (type != null) {
+            return transactionRepository
+                    .findByWallet_Subaccount_IdAndType(subaccountId, type, pageable)
+                    .map(TransactionMapper::toResponse);
+        }
+        return transactionRepository
+                .findByWallet_Subaccount_Id(subaccountId, pageable)
+                .map(TransactionMapper::toResponse);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<TransactionResponse> findAll(UUID walletId, UUID subaccountId, TransactionType type, Pageable pageable) {
+        if (walletId != null && type != null) {
+            return transactionRepository.findByWalletIdAndType(walletId, type, pageable)
+                    .map(TransactionMapper::toResponse);
+        }
+        if (walletId != null) {
+            return transactionRepository.findByWalletId(walletId, pageable)
+                    .map(TransactionMapper::toResponse);
+        }
+        if (subaccountId != null) {
+            return findBySubaccountId(subaccountId, type, pageable);
+        }
+        // No filters — return all (sorted by createdAt desc from Pageable default)
+        return transactionRepository.findAll(pageable)
+                .map(TransactionMapper::toResponse);
+    }
 }
