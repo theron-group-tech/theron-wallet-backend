@@ -3,17 +3,22 @@ package com.theron.wallet.service.impl;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationMemberRequest;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
+import com.theron.wallet.entity.MembershipRole;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.OrganizationMembership;
+import com.theron.wallet.entity.Role;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.MembershipStatus;
+import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.UserMapper;
+import com.theron.wallet.repository.MembershipRoleRepository;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.OrganizationRepository;
+import com.theron.wallet.repository.RoleRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.service.OrganizationMembershipService;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +43,8 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
     private final OrganizationMembershipRepository membershipRepository;
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final MembershipRoleRepository membershipRoleRepository;
 
     @Override
     @Transactional
@@ -62,6 +69,7 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
                             .status(targetStatus)
                             .build();
                     membership = membershipRepository.save(membership);
+                    ensureDefaultEmployeeRole(membership);
                     log.info("Membership created: organizationId={}, userId={}, status={}",
                             organizationId, user.getId(), targetStatus);
                     return UserMapper.toMembershipResponse(membership);
@@ -135,12 +143,25 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
                     "OrganizationMembership", "organizationId+userId",
                     existing.getOrganization().getId() + "/" + existing.getUser().getId());
         }
-        // REMOVED or SUSPENDED → reactivate / update
         existing.setStatus(targetStatus);
         existing = membershipRepository.save(existing);
+        ensureDefaultEmployeeRole(existing);
         log.info("Membership reactivated: organizationId={}, userId={}, status={}",
                 existing.getOrganization().getId(), existing.getUser().getId(), targetStatus);
         return UserMapper.toMembershipResponse(existing);
+    }
+
+    /** Server-side default only — client cannot request OWNER via addMember. */
+    private void ensureDefaultEmployeeRole(OrganizationMembership membership) {
+        if (!membershipRoleRepository.findByMembershipId(membership.getId()).isEmpty()) {
+            return;
+        }
+        Role employee = roleRepository.findByCode(RoleCode.EMPLOYEE.name())
+                .orElseThrow(() -> new IllegalStateException("EMPLOYEE role not seeded"));
+        membershipRoleRepository.save(MembershipRole.builder()
+                .membership(membership)
+                .role(employee)
+                .build());
     }
 
     private Organization getOrganizationOrThrow(UUID organizationId) {
