@@ -110,17 +110,16 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should allow retry when previous attempt FAILED")
         void shouldAllowRetryOnFailedSubaccount() {
-            // First attempt fails
+            // First call fails; second succeeds (chained — avoid when() re-invocation after thenThrow)
             when(asaasSubaccountClient.createSubaccount(any()))
-                    .thenThrow(new AsaasApiException("Asaas rejected the request", 400, "invalid data"));
+                    .thenThrow(new AsaasApiException("Asaas rejected the request", 400, "invalid data"))
+                    .thenReturn(TestFixtures.anAsaasSubaccountResponse());
+
             SubaccountResponse failedResponse = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
             assertThat(failedResponse.getStatus()).isEqualTo(SubaccountStatus.FAILED);
 
             UUID failedId = failedResponse.getId();
 
-            // Second attempt with same CPF/CNPJ — should succeed (retry)
-            when(asaasSubaccountClient.createSubaccount(any()))
-                    .thenReturn(TestFixtures.anAsaasSubaccountResponse());
             SubaccountResponse retryResponse = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
 
             assertThat(retryResponse.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);

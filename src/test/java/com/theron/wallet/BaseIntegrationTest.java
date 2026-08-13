@@ -1,12 +1,17 @@
 package com.theron.wallet;
+import com.theron.wallet.integration.AsaasCustomerClient;
 import com.theron.wallet.integration.AsaasPaymentClient;
+import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.integration.AsaasWebhookClient;
 import com.theron.wallet.repository.CustomerRepository;
+import com.theron.wallet.repository.OrganizationMembershipRepository;
+import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +31,10 @@ public abstract class BaseIntegrationTest {
     @MockitoBean
     protected AsaasWebhookClient asaasWebhookClient;
     @MockitoBean
+    protected AsaasCustomerClient asaasCustomerClient;
+    @MockitoBean
+    protected AsaasPixClient asaasPixClient;
+    @MockitoBean
     protected AsaasApiKeyResolver asaasApiKeyResolver;
     @Autowired
     private SubaccountApiKeyAuditRepository baseAuditRepository;
@@ -37,16 +46,25 @@ public abstract class BaseIntegrationTest {
     private WalletRepository baseWalletRepository;
     @Autowired
     private CustomerRepository baseCustomerRepository;
+    @Autowired
+    private OrganizationMembershipRepository baseMembershipRepository;
+    @Autowired
+    private UserRepository baseUserRepository;
+    @Autowired
+    private OrganizationRepository baseOrganizationRepository;
     /**
      * Central cleanup respecting FK order:
-     * audit → subaccount → transaction → wallet → customer
+     * audit → transaction → wallet → subaccount → customer → membership → app_user → organization
      */
     @BeforeEach
     void cleanDatabase() {
         baseAuditRepository.deleteAll();
-        baseSubaccountRepository.deleteAll();
         baseTransactionRepository.deleteAll();
         baseWalletRepository.deleteAll();
+        baseSubaccountRepository.deleteAll();
         baseCustomerRepository.deleteAll();
+        baseMembershipRepository.deleteAll();
+        baseUserRepository.deleteAll();
+        baseOrganizationRepository.deleteAll();
     }
 }

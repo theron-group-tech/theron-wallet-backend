@@ -53,7 +53,9 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        Subaccount subaccount = TestFixtures.aSubaccount(SubaccountStatus.ACTIVE);
+        subaccount.setAsaasCustomerId("cus_test_" + UUID.randomUUID().toString().substring(0, 12));
+        savedSubaccount = subaccountRepository.save(subaccount);
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
     }
 
