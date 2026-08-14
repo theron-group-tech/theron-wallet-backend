@@ -63,9 +63,9 @@ class AsaasApiKeyResolverIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         auditRepository.deleteAll();
-        subaccountRepository.deleteAll();
         transactionRepository.deleteAll();
         walletRepository.deleteAll();
+        subaccountRepository.deleteAll();
     }
 
     @Test

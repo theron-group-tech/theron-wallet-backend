@@ -1,13 +1,17 @@
 package com.theron.wallet.entity;
 
+import com.theron.wallet.enums.AccountStatus;
+import com.theron.wallet.enums.AccountType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.OneToOne;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -16,42 +20,45 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Financial account owned by an Organization. Wallet belongs to Account.
+ * Asaas Subaccount remains external infrastructure (linked later).
+ */
 @Entity
-@Table(name = "wallet")
+@Table(name = "account")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Wallet {
+public class Account {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "subaccount_id", unique = true)
-    private Subaccount subaccount;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "organization_id", nullable = false)
+    private Organization organization;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "account_id", unique = true)
-    private Account account;
+    @Column(nullable = false, length = 255)
+    private String name;
 
-    @Column(nullable = false, precision = 19, scale = 2)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private AccountType type;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     @Builder.Default
-    private BigDecimal balance = BigDecimal.ZERO;
+    private AccountStatus status = AccountStatus.ACTIVE;
 
     @Column(nullable = false, length = 3)
     @Builder.Default
     private String currency = "BRL";
-
-    @Column(nullable = false)
-    @Builder.Default
-    private Boolean active = true;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
@@ -64,13 +71,5 @@ public class Wallet {
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
-    }
-
-    public void credit(BigDecimal amount) {
-        this.balance = this.balance.add(amount);
-    }
-
-    public void debit(BigDecimal amount) {
-        this.balance = this.balance.subtract(amount);
     }
 }

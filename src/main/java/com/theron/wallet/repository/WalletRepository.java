@@ -16,6 +16,8 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
 
     Optional<Wallet> findBySubaccountId(UUID subaccountId);
 
+    Optional<Wallet> findByAccount_Id(UUID accountId);
+
     boolean existsBySubaccountId(UUID subaccountId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
