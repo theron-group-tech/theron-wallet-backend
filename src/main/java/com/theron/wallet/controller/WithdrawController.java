@@ -37,7 +37,12 @@ public class WithdrawController {
             @ApiResponse(responseCode = "409", description = "Saldo insuficiente"),
             @ApiResponse(responseCode = "422", description = "Subconta não elegível para saques (status inválido)")
     })
-    public ResponseEntity<WithdrawResponse> createWithdraw(@Valid @RequestBody WithdrawRequest request) {
+    public ResponseEntity<WithdrawResponse> createWithdraw(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody WithdrawRequest request) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            request.setIdempotencyKey(idempotencyKey.trim());
+        }
         WithdrawResponse response = withdrawService.createWithdraw(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

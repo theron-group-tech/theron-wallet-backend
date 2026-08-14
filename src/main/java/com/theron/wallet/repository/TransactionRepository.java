@@ -38,6 +38,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     Optional<Transaction> findByIdempotencyKey(String idempotencyKey);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.idempotencyKey = :idempotencyKey")
+    Optional<Transaction> findByIdempotencyKeyForUpdate(@Param("idempotencyKey") String idempotencyKey);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.id = :id")
+    Optional<Transaction> findByIdForUpdate(@Param("id") UUID id);
+
     boolean existsByIdempotencyKey(String idempotencyKey);
 
     Optional<Transaction> findByExternalReference(String externalReference);

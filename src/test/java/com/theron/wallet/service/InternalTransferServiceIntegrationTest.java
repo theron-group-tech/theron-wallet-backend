@@ -84,7 +84,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(response.getSenderWalletId()).isEqualTo(senderWallet.getId());
             assertThat(response.getReceiverWalletId()).isEqualTo(receiverWallet.getId());
             assertThat(response.getAmount()).isEqualByComparingTo(new BigDecimal("150.00"));
-            assertThat(response.getStatus()).isEqualTo("CONFIRMED");
+            assertThat(response.getStatus()).isEqualTo("COMPLETED");
             assertThat(response.getDescription()).isEqualTo("Test internal transfer");
             assertThat(response.getIdempotencyKey()).isNotBlank();
             assertThat(response.getCreatedAt()).isNotNull();
@@ -105,7 +105,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             Transaction senderTx = transactionRepository
                     .findById(response.getSenderTransactionId()).orElseThrow();
             assertThat(senderTx.getType()).isEqualTo(TransactionType.TRANSFER_OUT);
-            assertThat(senderTx.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(senderTx.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
             assertThat(senderTx.getAmount()).isEqualByComparingTo(new BigDecimal("150.00"));
             assertThat(senderTx.getIdempotencyKey()).isNotBlank();
 
@@ -113,7 +113,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             Transaction receiverTx = transactionRepository
                     .findById(response.getReceiverTransactionId()).orElseThrow();
             assertThat(receiverTx.getType()).isEqualTo(TransactionType.TRANSFER_IN);
-            assertThat(receiverTx.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(receiverTx.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
             assertThat(receiverTx.getAmount()).isEqualByComparingTo(new BigDecimal("150.00"));
             assertThat(receiverTx.getExternalReference()).isEqualTo(senderTx.getId().toString());
         }
@@ -126,7 +126,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
 
             InternalTransferResponse response = internalTransferService.transfer(request);
 
-            assertThat(response.getStatus()).isEqualTo("CONFIRMED");
+            assertThat(response.getStatus()).isEqualTo("COMPLETED");
 
             Wallet updatedSender = walletRepository.findById(senderWallet.getId()).orElseThrow();
             assertThat(updatedSender.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -383,7 +383,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             // All futures completed without exception
             for (Future<InternalTransferResponse> f : futures) {
                 InternalTransferResponse result = f.get(); // throws if the task threw
-                assertThat(result.getStatus()).isEqualTo("CONFIRMED");
+                assertThat(result.getStatus()).isEqualTo("COMPLETED");
             }
 
             // Final sender balance: 500 - (200 * 2) = 100

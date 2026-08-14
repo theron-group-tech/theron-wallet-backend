@@ -24,12 +24,16 @@ import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.DepositService;
+import com.theron.wallet.service.IdempotencyService;
+import com.theron.wallet.service.TransactionLifecycleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -51,67 +55,132 @@ public class DepositServiceImpl implements DepositService {
     private final AsaasPaymentClient asaasPaymentClient;
     private final AsaasCustomerClient asaasCustomerClient;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
+    private final IdempotencyService idempotencyService;
+    private final TransactionLifecycleService transactionLifecycleService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public DepositResponse createPixDeposit(DepositRequest request) {
         log.info("Creating PIX deposit: subaccountId={}, amount={}", request.getSubaccountId(), request.getAmount());
 
-        // 1. Load and validate subaccount
-        Subaccount subaccount = subaccountRepository.findById(request.getSubaccountId())
-                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", request.getSubaccountId()));
+        String idempotencyKey = idempotencyService.resolveKey(null, request.getIdempotencyKey());
+        String requestHash = depositHash(request);
 
-        if (!ALLOWED_STATUSES.contains(subaccount.getStatus())) {
-            throw new InvalidRequestException(
-                    "Subaccount is not eligible for deposits. Current status: " + subaccount.getStatus());
+        return idempotencyService.findExisting(idempotencyKey, requestHash)
+                .map(existing -> resumeDepositProvider(existing, request))
+                .orElseGet(() -> createNewDeposit(request, idempotencyKey, requestHash));
+    }
+
+    private DepositResponse createNewDeposit(DepositRequest request, String idempotencyKey, String requestHash) {
+        Transaction persisted;
+        try {
+            persisted = persistDeposit(request, idempotencyKey, requestHash);
+        } catch (RuntimeException ex) {
+            if (!ProviderCall.isUniqueConstraint(ex)) {
+                throw ex;
+            }
+            persisted = idempotencyService.requireExisting(idempotencyKey, requestHash);
+        }
+        return resumeDepositProvider(persisted, request);
+    }
+
+    private Transaction persistDeposit(DepositRequest request, String idempotencyKey, String requestHash) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        return tx.execute(status -> {
+            Subaccount subaccount = subaccountRepository.findById(request.getSubaccountId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", request.getSubaccountId()));
+
+            if (!ALLOWED_STATUSES.contains(subaccount.getStatus())) {
+                throw new InvalidRequestException(
+                        "Subaccount is not eligible for deposits. Current status: " + subaccount.getStatus());
+            }
+
+            String apiKey = asaasApiKeyResolver.resolveForSubaccount(subaccount.getId());
+            ensureAsaasCustomer(subaccount, apiKey);
+            Wallet wallet = getOrCreateWallet(subaccount);
+
+            Transaction.TransactionBuilder builder = Transaction.builder()
+                    .wallet(wallet)
+                    .type(TransactionType.DEPOSIT)
+                    .status(TransactionStatus.PROCESSING)
+                    .amount(request.getAmount())
+                    .description(request.getDescription())
+                    .reference(ProviderCall.referenceOf(request.getDescription()))
+                    .idempotencyKey(idempotencyKey)
+                    .requestHash(requestHash);
+            idempotencyService.applyOwner(builder, wallet);
+            return transactionRepository.save(builder.build());
+        });
+    }
+
+    private DepositResponse resumeDepositProvider(Transaction transaction, DepositRequest request) {
+        if (transaction.getAsaasPaymentId() != null
+                || transaction.getStatus() == TransactionStatus.COMPLETED
+                || transaction.getStatus() == TransactionStatus.FAILED
+                || transaction.getStatus() == TransactionStatus.CANCELLED
+                || transaction.getStatus() == TransactionStatus.REVERSED) {
+            return TransactionMapper.toDepositResponse(transaction);
         }
 
-        // 2. Decrypt subaccount's Asaas API key (tenant isolation)
-        String apiKey = asaasApiKeyResolver.resolveForSubaccount(subaccount.getId());
-
-        // 3. Ensure Asaas customer exists for this subaccount (lazy creation)
-        ensureAsaasCustomer(subaccount, apiKey);
-
-        // 4. Get or create wallet
-        Wallet wallet = getOrCreateWallet(subaccount);
-
-        // 5. Create PENDING transaction
-        Transaction transaction = Transaction.builder()
-                .wallet(wallet)
-                .type(TransactionType.DEPOSIT)
-                .status(TransactionStatus.PENDING)
-                .amount(request.getAmount())
-                .description(request.getDescription())
-                .idempotencyKey(UUID.randomUUID().toString())
-                .build();
-        transaction = transactionRepository.save(transaction);
-
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
         try {
-            // 6. Create Pix charge in Asaas using the subaccount's key
-            AsaasPaymentRequest paymentRequest = AsaasPaymentRequest.builder()
-                    .customer(subaccount.getAsaasCustomerId())
-                    .billingType("PIX")
-                    .value(request.getAmount())
-                    .dueDate(LocalDate.now().plusDays(1).format(ASAAS_DATE_FORMAT))
-                    .description(request.getDescription() != null ? request.getDescription() : "Depósito na carteira")
-                    .externalReference(transaction.getId().toString())
-                    .build();
-
-            AsaasPaymentResponse paymentResponse = asaasPaymentClient.createPayment(apiKey, paymentRequest);
-
-            transaction.setAsaasPaymentId(paymentResponse.getId());
-            transaction.setExternalReference(paymentResponse.getId());
-            transaction = transactionRepository.save(transaction);
-
-            log.info("PIX deposit created: transactionId={}, asaasPaymentId={}",
-                    transaction.getId(), paymentResponse.getId());
-        } catch (Exception ex) {
-            log.error("Failed to create PIX payment in Asaas: transactionId={}, error={}",
-                    transaction.getId(), ex.getMessage());
+            Transaction attached = tx.execute(status -> attachDepositProvider(transaction.getId(), request));
+            return TransactionMapper.toDepositResponse(attached);
+        } catch (RuntimeException ex) {
+            if (ProviderCall.isTimeout(ex)) {
+                log.warn("Provider timeout creating PIX deposit: transactionId={}", transaction.getId());
+                throw ex;
+            }
+            markDepositFailed(transaction.getId());
             throw ex;
         }
+    }
 
-        return TransactionMapper.toDepositResponse(transaction);
+    private Transaction attachDepositProvider(UUID transactionId, DepositRequest request) {
+        Transaction locked = transactionRepository.findByIdForUpdate(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
+        if (locked.getAsaasPaymentId() != null) {
+            return locked;
+        }
+
+        Subaccount subaccount = subaccountRepository.findById(request.getSubaccountId())
+                .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", request.getSubaccountId()));
+        String apiKey = asaasApiKeyResolver.resolveForSubaccount(subaccount.getId());
+        ensureAsaasCustomer(subaccount, apiKey);
+
+        AsaasPaymentRequest paymentRequest = AsaasPaymentRequest.builder()
+                .customer(subaccount.getAsaasCustomerId())
+                .billingType("PIX")
+                .value(request.getAmount())
+                .dueDate(LocalDate.now().plusDays(1).format(ASAAS_DATE_FORMAT))
+                .description(request.getDescription() != null ? request.getDescription() : "Depósito na carteira")
+                .externalReference(locked.getId().toString())
+                .build();
+
+        AsaasPaymentResponse paymentResponse = asaasPaymentClient.createPayment(apiKey, paymentRequest);
+        locked.setAsaasPaymentId(paymentResponse.getId());
+        locked.setExternalReference(paymentResponse.getId());
+        log.info("PIX deposit created: transactionId={}, asaasPaymentId={}", locked.getId(), paymentResponse.getId());
+        return transactionRepository.save(locked);
+    }
+
+    private void markDepositFailed(UUID transactionId) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.executeWithoutResult(status -> {
+            Transaction locked = transactionRepository.findByIdForUpdate(transactionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
+            if (locked.getStatus() == TransactionStatus.PROCESSING || locked.getStatus() == TransactionStatus.PENDING) {
+                transactionLifecycleService.transition(locked, TransactionStatus.FAILED);
+            }
+        });
+    }
+
+    private String depositHash(DepositRequest request) {
+        return idempotencyService.hash(
+                TransactionType.DEPOSIT.name(),
+                request.getSubaccountId().toString(),
+                idempotencyService.amountPart(request.getAmount()),
+                "BRL");
     }
 
     @Override
@@ -123,7 +192,8 @@ public class DepositServiceImpl implements DepositService {
         if (transaction.getAsaasPaymentId() == null) {
             throw new ResourceNotFoundException("QR Code Pix não disponível — pagamento não criado no Asaas");
         }
-        if (transaction.getStatus() != TransactionStatus.PENDING) {
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.PROCESSING) {
             throw new InvalidRequestException(
                     "QR Code Pix não disponível — status da transação: " + transaction.getStatus());
         }
@@ -165,11 +235,6 @@ public class DepositServiceImpl implements DepositService {
         throw new InvalidRequestException("Either walletId or subaccountId must be provided");
     }
 
-    /**
-     * Lazily creates an Asaas customer for the subaccount if one doesn't exist yet.
-     * The customer represents the subaccount holder as the payer in Asaas charges.
-     * Saves {@code asaasCustomerId} back to the subaccount entity.
-     */
     private void ensureAsaasCustomer(Subaccount subaccount, String apiKey) {
         if (subaccount.getAsaasCustomerId() != null) {
             return;

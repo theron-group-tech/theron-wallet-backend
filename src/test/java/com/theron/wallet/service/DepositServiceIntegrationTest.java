@@ -83,13 +83,13 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
 
         assertThat(response.getTransactionId()).isNotNull();
         assertThat(response.getAmount()).isEqualByComparingTo(new BigDecimal("50.00"));
-        assertThat(response.getStatus()).isEqualTo("PENDING");
+        assertThat(response.getStatus()).isEqualTo("PROCESSING");
         assertThat(response.getAsaasPaymentId()).isEqualTo(asaasPaymentId);
         assertThat(response.getDescription()).isEqualTo("Test PIX deposit");
 
         Transaction persisted = transactionRepository.findById(response.getTransactionId()).orElseThrow();
         assertThat(persisted.getType()).isEqualTo(TransactionType.DEPOSIT);
-        assertThat(persisted.getStatus()).isEqualTo(TransactionStatus.PENDING);
+        assertThat(persisted.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         assertThat(persisted.getAsaasPaymentId()).isEqualTo(asaasPaymentId);
         assertThat(persisted.getIdempotencyKey()).isNotBlank();
     }
@@ -157,7 +157,9 @@ class DepositServiceIntegrationTest extends BaseIntegrationTest {
         assertThatThrownBy(() -> depositService.createPixDeposit(request))
                 .isInstanceOf(AsaasApiException.class);
 
-        assertThat(transactionRepository.findAll()).isEmpty();
+        assertThat(transactionRepository.findAll()).hasSize(1);
+        assertThat(transactionRepository.findAll().getFirst().getStatus())
+                .isEqualTo(TransactionStatus.FAILED);
     }
 
     // --- Tenant-aware deposit tests ---

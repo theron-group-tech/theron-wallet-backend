@@ -40,7 +40,8 @@ public class TransactionController {
                     - `?walletId=xxx&type=DEPOSIT` → depósitos de uma carteira
                     - `?subaccountId=xxx&type=WITHDRAWAL` → saques de uma subconta
                     
-                    Tipos disponíveis: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`
+                    Tipos disponíveis: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`,
+                    `TRANSFER`, `PIX`, `PAYMENT`, `REFUND`, `FEE`
                     """
     )
     @ApiResponses({

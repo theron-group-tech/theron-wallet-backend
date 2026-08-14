@@ -37,7 +37,12 @@ public class DepositController {
             @ApiResponse(responseCode = "404", description = "Subconta não encontrada"),
             @ApiResponse(responseCode = "422", description = "Subconta não elegível para depósitos (status inválido)")
     })
-    public ResponseEntity<DepositResponse> createPixDeposit(@Valid @RequestBody DepositRequest request) {
+    public ResponseEntity<DepositResponse> createPixDeposit(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody DepositRequest request) {
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            request.setIdempotencyKey(idempotencyKey.trim());
+        }
         DepositResponse response = depositService.createPixDeposit(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

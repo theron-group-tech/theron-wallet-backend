@@ -38,6 +38,6 @@ public class WithdrawRequest {
     @Size(max = 255, message = "Description must be at most 255 characters")
     private String description;
 
-    @Size(max = 100, message = "Idempotency key must be at most 100 characters")
+    @Size(max = 120, message = "Idempotency key must be at most 120 characters")
     private String idempotencyKey;
 }

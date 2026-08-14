@@ -62,7 +62,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processPaymentWebhook(payload);
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
 
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("200.00"));
@@ -76,7 +76,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processPaymentWebhook(payload);
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
 
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("200.00"));
@@ -109,7 +109,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("200.00"));
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
         }
 
         @Test
@@ -184,7 +184,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processPaymentWebhook(payload);
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         }
 
         @Test
@@ -198,7 +198,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processPaymentWebhook(payload);
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         }
 
         @Test
@@ -207,7 +207,7 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processPaymentWebhook(buildPayload("PAYMENT_CREATED", asaasPaymentId));
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         }
     }
 

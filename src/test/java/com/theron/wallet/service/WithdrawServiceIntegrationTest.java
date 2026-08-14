@@ -87,7 +87,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(response.getTransactionId()).isNotNull();
             assertThat(response.getWalletId()).isEqualTo(savedWallet.getId());
             assertThat(response.getAmount()).isEqualByComparingTo(new BigDecimal("100.00"));
-            assertThat(response.getStatus()).isEqualTo("PENDING");
+            assertThat(response.getStatus()).isEqualTo("PROCESSING");
             assertThat(response.getAsaasTransferId()).isEqualTo("transfer_abc123");
             assertThat(response.getDescription()).isEqualTo("Test withdrawal");
 
@@ -98,7 +98,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             // Verify transaction persisted correctly
             Transaction persisted = transactionRepository.findById(response.getTransactionId()).orElseThrow();
             assertThat(persisted.getType()).isEqualTo(TransactionType.WITHDRAWAL);
-            assertThat(persisted.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(persisted.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
             assertThat(persisted.getAsaasPaymentId()).isEqualTo("transfer_abc123");
             assertThat(persisted.getIdempotencyKey()).isNotBlank();
         }
@@ -112,7 +112,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("500.00"));
             WithdrawResponse response = withdrawService.createWithdraw(request);
 
-            assertThat(response.getStatus()).isEqualTo("PENDING");
+            assertThat(response.getStatus()).isEqualTo("PROCESSING");
 
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -224,7 +224,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
     class RollbackTests {
 
         @Test
-        @DisplayName("should rollback wallet debit and transaction when Asaas API call fails")
+        @DisplayName("should mark withdrawal FAILED and restore wallet when Asaas API call fails")
         void shouldRollbackOnAsaasFailure() {
             when(asaasTransferClient.createTransfer(anyString(), any()))
                     .thenThrow(new AsaasApiException("Asaas error", 500, "Internal Server Error"));
@@ -234,12 +234,12 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             assertThatThrownBy(() -> withdrawService.createWithdraw(request))
                     .isInstanceOf(AsaasApiException.class);
 
-            // Wallet balance must be restored (transaction rolled back)
             Wallet wallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(wallet.getBalance()).isEqualByComparingTo(new BigDecimal("500.00"));
 
-            // No transaction should exist
-            assertThat(transactionRepository.findAll()).isEmpty();
+            assertThat(transactionRepository.findAll()).hasSize(1);
+            assertThat(transactionRepository.findAll().getFirst().getStatus())
+                    .isEqualTo(TransactionStatus.FAILED);
         }
     }
 
@@ -330,7 +330,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processTransferWebhook(payload);
 
             Transaction updated = transactionRepository.findById(withdrawal.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
 
             // Wallet balance should remain unchanged (debit already happened)
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
@@ -417,7 +417,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processTransferWebhook(payload);
 
             Transaction updated = transactionRepository.findById(withdrawal.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
 
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("400.00"));
@@ -438,7 +438,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     buildTransferPayload("TRANSFER_FAILED", "transfer_terminal_1", new BigDecimal("100.00")));
 
             Transaction updated = transactionRepository.findById(withdrawal.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.CONFIRMED);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
 
             // Wallet should NOT be credited back (DONE was processed, FAILED ignored)
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
@@ -469,7 +469,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             webhookService.processTransferWebhook(payload);
 
             Transaction updated = transactionRepository.findById(withdrawal.getId()).orElseThrow();
-            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PENDING);
+            assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         }
     }
 

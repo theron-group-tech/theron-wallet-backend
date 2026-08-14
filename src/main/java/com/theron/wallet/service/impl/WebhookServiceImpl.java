@@ -5,8 +5,8 @@ import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
 import com.theron.wallet.enums.TransactionStatus;
-import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
 import com.theron.wallet.service.WebhookService;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +23,7 @@ public class WebhookServiceImpl implements WebhookService {
 
     private final TransactionRepository transactionRepository;
     private final WalletService walletService;
+    private final TransactionLifecycleService transactionLifecycleService;
 
     @Override
     @Transactional
@@ -54,14 +55,10 @@ public class WebhookServiceImpl implements WebhookService {
 
         Transaction transaction = transactionOpt.get();
 
-        if (transaction.getStatus() != TransactionStatus.PENDING) {
-            log.info("Transaction already in terminal state: transactionId={}, status={}",
-                    transaction.getId(), transaction.getStatus());
-            return;
-        }
-
         if (event.isConfirmation()) {
             handlePaymentConfirmation(transaction);
+        } else if (event.isReversal()) {
+            handlePaymentReversal(transaction, event);
         } else if (event.isCancellation()) {
             handlePaymentCancellation(transaction, event);
         } else {
@@ -71,9 +68,12 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private void handlePaymentConfirmation(Transaction transaction) {
-        transaction.setStatus(TransactionStatus.CONFIRMED);
-        transactionRepository.save(transaction);
-
+        if (!awaitsProvider(transaction)) {
+            log.info("Transaction already in terminal state: transactionId={}, status={}",
+                    transaction.getId(), transaction.getStatus());
+            return;
+        }
+        transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
         walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
 
         log.info("Deposit confirmed: transactionId={}, walletId={}, amount={}",
@@ -81,18 +81,36 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private void handlePaymentCancellation(Transaction transaction, AsaasPaymentEvent event) {
+        if (!awaitsProvider(transaction)) {
+            log.info("Transaction already in terminal state: transactionId={}, status={}",
+                    transaction.getId(), transaction.getStatus());
+            return;
+        }
         TransactionStatus newStatus = (event == AsaasPaymentEvent.PAYMENT_DELETED)
                 ? TransactionStatus.CANCELLED
                 : TransactionStatus.FAILED;
-
-        transaction.setStatus(newStatus);
-        transactionRepository.save(transaction);
+        transactionLifecycleService.transition(transaction, newStatus);
 
         log.info("Deposit {}: transactionId={}, event={}",
                 newStatus.name().toLowerCase(), transaction.getId(), event.getValue());
     }
 
-    // --- Transfer webhook handling ---
+    private void handlePaymentReversal(Transaction transaction, AsaasPaymentEvent event) {
+        if (transaction.getStatus() == TransactionStatus.COMPLETED) {
+            transactionLifecycleService.transition(transaction, TransactionStatus.REVERSED);
+            walletService.debit(transaction.getWallet().getId(), transaction.getAmount());
+            log.info("Deposit reversed: transactionId={}, event={}", transaction.getId(), event.getValue());
+            return;
+        }
+        if (awaitsProvider(transaction)) {
+            transactionLifecycleService.transition(transaction, TransactionStatus.FAILED);
+            log.info("Deposit failed on reversal event before completion: transactionId={}, event={}",
+                    transaction.getId(), event.getValue());
+            return;
+        }
+        log.info("Ignoring reversal for transactionId={}, status={}",
+                transaction.getId(), transaction.getStatus());
+    }
 
     @Override
     @Transactional
@@ -124,12 +142,6 @@ public class WebhookServiceImpl implements WebhookService {
 
         Transaction transaction = transactionOpt.get();
 
-        if (transaction.getStatus() != TransactionStatus.PENDING) {
-            log.info("Transaction already in terminal state: transactionId={}, status={}",
-                    transaction.getId(), transaction.getStatus());
-            return;
-        }
-
         if (event.isConfirmation()) {
             handleTransferConfirmation(transaction);
         } else if (event.isFailure()) {
@@ -141,26 +153,36 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private void handleTransferConfirmation(Transaction transaction) {
-        transaction.setStatus(TransactionStatus.CONFIRMED);
-        transactionRepository.save(transaction);
+        if (!awaitsProvider(transaction)) {
+            log.info("Transaction already in terminal state: transactionId={}, status={}",
+                    transaction.getId(), transaction.getStatus());
+            return;
+        }
+        transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
 
         log.info("Withdrawal confirmed: transactionId={}, walletId={}, amount={}",
                 transaction.getId(), transaction.getWallet().getId(), transaction.getAmount());
     }
 
     private void handleTransferFailure(Transaction transaction, AsaasTransferEvent event) {
+        if (!awaitsProvider(transaction)) {
+            log.info("Transaction already in terminal state: transactionId={}, status={}",
+                    transaction.getId(), transaction.getStatus());
+            return;
+        }
         TransactionStatus newStatus = (event == AsaasTransferEvent.TRANSFER_CANCELLED)
                 ? TransactionStatus.CANCELLED
                 : TransactionStatus.FAILED;
-
-        transaction.setStatus(newStatus);
-        transactionRepository.save(transaction);
-
-        // Credit wallet back — the withdrawal debit is being reversed
+        transactionLifecycleService.transition(transaction, newStatus);
         walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
 
         log.info("Withdrawal {}: transactionId={}, event={}, amount credited back to walletId={}",
                 newStatus.name().toLowerCase(), transaction.getId(), event.getValue(),
                 transaction.getWallet().getId());
+    }
+
+    private static boolean awaitsProvider(Transaction transaction) {
+        return transaction.getStatus() == TransactionStatus.PENDING
+                || transaction.getStatus() == TransactionStatus.PROCESSING;
     }
 }

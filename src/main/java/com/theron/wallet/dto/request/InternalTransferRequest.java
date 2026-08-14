@@ -19,7 +19,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class InternalTransferRequest {
 
-    @Size(max = 100, message = "Idempotency key must be at most 100 characters")
+    @Size(max = 120, message = "Idempotency key must be at most 120 characters")
     private String idempotencyKey;
 
     @NotNull(message = "Sender subaccount ID is required")

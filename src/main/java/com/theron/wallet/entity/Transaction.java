@@ -41,6 +41,14 @@ public class Transaction {
     @JoinColumn(name = "wallet_id", nullable = false)
     private Wallet wallet;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "account_id")
+    private Account account;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TransactionType type;
@@ -53,6 +61,13 @@ public class Transaction {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
+    @Column(nullable = false, length = 3)
+    @Builder.Default
+    private String currency = "BRL";
+
+    @Column(length = 100)
+    private String reference;
+
     @Column(length = 255)
     private String description;
 
@@ -62,8 +77,14 @@ public class Transaction {
     @Column(name = "external_reference", length = 100)
     private String externalReference;
 
-    @Column(name = "idempotency_key", unique = true, length = 100)
+    @Column(name = "idempotency_key", unique = true, length = 120)
     private String idempotencyKey;
+
+    @Column(name = "request_hash", length = 64)
+    private String requestHash;
+
+    @Column(name = "completed_at")
+    private LocalDateTime completedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

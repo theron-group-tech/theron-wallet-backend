@@ -15,13 +15,18 @@ public final class TransactionMapper {
         return TransactionResponse.builder()
                 .id(entity.getId())
                 .walletId(entity.getWallet().getId())
+                .organizationId(entity.getOrganization() != null ? entity.getOrganization().getId() : null)
+                .accountId(entity.getAccount() != null ? entity.getAccount().getId() : null)
                 .type(entity.getType())
                 .status(entity.getStatus())
                 .amount(entity.getAmount())
+                .currency(entity.getCurrency())
+                .reference(entity.getReference())
                 .description(entity.getDescription())
                 .asaasPaymentId(entity.getAsaasPaymentId())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
+                .completedAt(entity.getCompletedAt())
                 .build();
     }
 

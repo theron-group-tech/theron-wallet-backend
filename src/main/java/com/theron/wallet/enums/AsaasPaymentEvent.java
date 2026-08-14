@@ -24,7 +24,10 @@ public enum AsaasPaymentEvent {
     }
 
     public boolean isCancellation() {
-        return this == PAYMENT_OVERDUE || this == PAYMENT_DELETED
-                || this == PAYMENT_REFUNDED || this == PAYMENT_CHARGEBACK_REQUESTED;
+        return this == PAYMENT_OVERDUE || this == PAYMENT_DELETED;
+    }
+
+    public boolean isReversal() {
+        return this == PAYMENT_REFUNDED || this == PAYMENT_CHARGEBACK_REQUESTED;
     }
 }
