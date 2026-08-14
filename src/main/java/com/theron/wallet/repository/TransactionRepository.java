@@ -48,5 +48,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     boolean existsByIdempotencyKey(String idempotencyKey);
 
+    boolean existsByBeneficiary_Id(UUID beneficiaryId);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.account.id = :accountId
+              AND t.type = com.theron.wallet.enums.TransactionType.PIX
+              AND t.status IN (
+                  com.theron.wallet.enums.TransactionStatus.PENDING,
+                  com.theron.wallet.enums.TransactionStatus.PENDING_APPROVAL,
+                  com.theron.wallet.enums.TransactionStatus.PROCESSING,
+                  com.theron.wallet.enums.TransactionStatus.COMPLETED
+              )
+              AND t.createdAt >= :dayStart
+              AND t.createdAt < :dayEnd
+            """)
+    java.math.BigDecimal sumPixAmountForAccountOnDay(
+            @Param("accountId") UUID accountId,
+            @Param("dayStart") java.time.LocalDateTime dayStart,
+            @Param("dayEnd") java.time.LocalDateTime dayEnd);
+
     Optional<Transaction> findByExternalReference(String externalReference);
 }

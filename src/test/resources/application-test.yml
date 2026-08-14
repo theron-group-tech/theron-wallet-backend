@@ -1,7 +1,9 @@
 spring:
   datasource:
-    url: jdbc:tc:postgresql:16-alpine:///theron_wallet_test
-    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+    url: jdbc:postgresql://localhost:5432/theron_wallet_test
+    username: theron
+    password: theron
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate

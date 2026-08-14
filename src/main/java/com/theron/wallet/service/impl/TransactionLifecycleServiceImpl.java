@@ -19,10 +19,15 @@ public class TransactionLifecycleServiceImpl implements TransactionLifecycleServ
 
     private static final Map<TransactionStatus, Set<TransactionStatus>> ALLOWED = Map.of(
             TransactionStatus.PENDING, Set.of(
+                    TransactionStatus.PENDING_APPROVAL,
                     TransactionStatus.PROCESSING,
                     TransactionStatus.COMPLETED,
                     TransactionStatus.FAILED,
                     TransactionStatus.CANCELLED),
+            TransactionStatus.PENDING_APPROVAL, Set.of(
+                    TransactionStatus.PROCESSING,
+                    TransactionStatus.CANCELLED,
+                    TransactionStatus.FAILED),
             TransactionStatus.PROCESSING, Set.of(
                     TransactionStatus.COMPLETED, TransactionStatus.FAILED, TransactionStatus.CANCELLED),
             TransactionStatus.COMPLETED, Set.of(TransactionStatus.REVERSED)
