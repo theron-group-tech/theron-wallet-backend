@@ -66,6 +66,8 @@ springdoc:
 jwt:
   secret: ${JWT_SECRET:theronGroupWalletServiceSecretKey2024MustBe256BitsLong!}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
+  refresh-expiration-days: ${JWT_REFRESH_EXPIRATION_DAYS:30}
 
 # Default admin seed (first-boot only)
 app:

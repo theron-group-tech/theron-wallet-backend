@@ -1,6 +1,7 @@
 package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.ReplaceMemberRolesRequest;
+import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.RoleAssignmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -23,12 +24,13 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/members/{userId}")
 @RequiredArgsConstructor
-@Tag(name = "Member Roles", description = "RBAC role assignment. X-Actor-User-Id is temporary until JWT (Module 4).")
+@Tag(name = "Member Roles", description = "RBAC role assignment. Actor comes from JWT when present; X-Actor-User-Id is fallback.")
 public class MemberRoleController {
 
     public static final String ACTOR_HEADER = "X-Actor-User-Id";
 
     private final RoleAssignmentService roleAssignmentService;
+    private final ActorResolver actorResolver;
 
     @GetMapping("/roles")
     @Operation(summary = "List member roles")
@@ -39,8 +41,9 @@ public class MemberRoleController {
     public ResponseEntity<List<String>> listRoles(
             @PathVariable UUID organizationId,
             @PathVariable UUID userId,
-            @RequestHeader(ACTOR_HEADER) UUID actorUserId) {
-        return ResponseEntity.ok(roleAssignmentService.listRoles(actorUserId, organizationId, userId));
+            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+        return ResponseEntity.ok(roleAssignmentService.listRoles(
+                actorResolver.requireProductUserId(actorUserId), organizationId, userId));
     }
 
     @PutMapping("/roles")
@@ -53,11 +56,11 @@ public class MemberRoleController {
     public ResponseEntity<List<String>> replaceRoles(
             @PathVariable UUID organizationId,
             @PathVariable UUID userId,
-            @RequestHeader(ACTOR_HEADER) UUID actorUserId,
+            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody ReplaceMemberRolesRequest request) {
-        // organizationId from path only — body cannot change tenant
+        // organizationId from path only — body cannot change tenant; actor never from body
         return ResponseEntity.ok(roleAssignmentService.replaceRoles(
-                actorUserId, organizationId, userId, request.getRoleCodes()));
+                actorResolver.requireProductUserId(actorUserId), organizationId, userId, request.getRoleCodes()));
     }
 
     @GetMapping("/permissions")
@@ -65,7 +68,8 @@ public class MemberRoleController {
     public ResponseEntity<List<String>> listPermissions(
             @PathVariable UUID organizationId,
             @PathVariable UUID userId,
-            @RequestHeader(ACTOR_HEADER) UUID actorUserId) {
-        return ResponseEntity.ok(roleAssignmentService.listPermissions(actorUserId, organizationId, userId));
+            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+        return ResponseEntity.ok(roleAssignmentService.listPermissions(
+                actorResolver.requireProductUserId(actorUserId), organizationId, userId));
     }
 }
