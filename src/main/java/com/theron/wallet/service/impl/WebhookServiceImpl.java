@@ -1,10 +1,13 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.entity.PixTransaction;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
@@ -22,6 +25,7 @@ import java.util.Optional;
 public class WebhookServiceImpl implements WebhookService {
 
     private final TransactionRepository transactionRepository;
+    private final PixTransactionRepository pixTransactionRepository;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
 
@@ -74,6 +78,7 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
         transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
+        syncPixTransaction(transaction);
         walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
 
         log.info("Deposit confirmed: transactionId={}, walletId={}, amount={}",
@@ -90,6 +95,7 @@ public class WebhookServiceImpl implements WebhookService {
                 ? TransactionStatus.CANCELLED
                 : TransactionStatus.FAILED;
         transactionLifecycleService.transition(transaction, newStatus);
+        syncPixTransaction(transaction);
 
         log.info("Deposit {}: transactionId={}, event={}",
                 newStatus.name().toLowerCase(), transaction.getId(), event.getValue());
@@ -98,12 +104,14 @@ public class WebhookServiceImpl implements WebhookService {
     private void handlePaymentReversal(Transaction transaction, AsaasPaymentEvent event) {
         if (transaction.getStatus() == TransactionStatus.COMPLETED) {
             transactionLifecycleService.transition(transaction, TransactionStatus.REVERSED);
+            syncPixTransaction(transaction);
             walletService.debit(transaction.getWallet().getId(), transaction.getAmount());
             log.info("Deposit reversed: transactionId={}, event={}", transaction.getId(), event.getValue());
             return;
         }
         if (awaitsProvider(transaction)) {
             transactionLifecycleService.transition(transaction, TransactionStatus.FAILED);
+            syncPixTransaction(transaction);
             log.info("Deposit failed on reversal event before completion: transactionId={}, event={}",
                     transaction.getId(), event.getValue());
             return;
@@ -159,6 +167,7 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
         transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
+        syncPixTransaction(transaction);
 
         log.info("Withdrawal confirmed: transactionId={}, walletId={}, amount={}",
                 transaction.getId(), transaction.getWallet().getId(), transaction.getAmount());
@@ -174,11 +183,23 @@ public class WebhookServiceImpl implements WebhookService {
                 ? TransactionStatus.CANCELLED
                 : TransactionStatus.FAILED;
         transactionLifecycleService.transition(transaction, newStatus);
+        syncPixTransaction(transaction);
         walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
 
         log.info("Withdrawal {}: transactionId={}, event={}, amount credited back to walletId={}",
                 newStatus.name().toLowerCase(), transaction.getId(), event.getValue(),
                 transaction.getWallet().getId());
+    }
+
+    private void syncPixTransaction(Transaction transaction) {
+        if (transaction.getType() != TransactionType.PIX) {
+            return;
+        }
+        pixTransactionRepository.findByTransactionIdForUpdate(transaction.getId()).ifPresent(pixTx -> {
+            pixTx.setStatus(transaction.getStatus());
+            pixTransactionRepository.save(pixTx);
+            log.debug("Synced PixTransaction {} to status {}", pixTx.getId(), pixTx.getStatus());
+        });
     }
 
     private static boolean awaitsProvider(Transaction transaction) {

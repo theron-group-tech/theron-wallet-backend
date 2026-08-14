@@ -27,4 +27,8 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT w FROM Wallet w WHERE w.subaccount.id = :subaccountId")
     Optional<Wallet> findBySubaccountIdWithLock(@Param("subaccountId") UUID subaccountId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT w FROM Wallet w WHERE w.account.id = :accountId")
+    Optional<Wallet> findByAccountIdWithLock(@Param("accountId") UUID accountId);
 }
