@@ -4,17 +4,22 @@ import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.entity.Account;
+import com.theron.wallet.entity.Beneficiary;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.BeneficiaryStatus;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.TransactionMapper;
+import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -47,6 +52,7 @@ public class WithdrawServiceImpl implements WithdrawService {
     private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
+    private final BeneficiaryRepository beneficiaryRepository;
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
     private final LedgerService ledgerService;
@@ -96,6 +102,9 @@ public class WithdrawServiceImpl implements WithdrawService {
             Wallet wallet = walletRepository.findBySubaccountIdWithLock(subaccount.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", subaccount.getId()));
 
+            WithdrawDestination destination = resolveDestination(request);
+            assertBeneficiaryMatchesWallet(destination.beneficiary(), wallet);
+
             if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
                 throw new InsufficientBalanceException(
                         String.format("Insufficient balance. Available: %s, Requested: %s",
@@ -107,6 +116,7 @@ public class WithdrawServiceImpl implements WithdrawService {
 
             Transaction.TransactionBuilder builder = Transaction.builder()
                     .wallet(wallet)
+                    .beneficiary(destination.beneficiary())
                     .type(TransactionType.WITHDRAWAL)
                     .status(TransactionStatus.PROCESSING)
                     .amount(request.getAmount())
@@ -158,11 +168,12 @@ public class WithdrawServiceImpl implements WithdrawService {
             return locked;
         }
 
+        WithdrawDestination destination = resolveDestination(request);
         String apiKey = asaasApiKeyResolver.resolveForSubaccount(request.getSubaccountId());
         AsaasTransferRequest transferRequest = AsaasTransferRequest.builder()
                 .value(request.getAmount())
-                .pixAddressKey(request.getPixAddressKey())
-                .pixAddressKeyType(request.getPixAddressKeyType())
+                .pixAddressKey(destination.pixKey())
+                .pixAddressKeyType(destination.pixKeyType())
                 .operationType("PIX")
                 .description(request.getDescription() != null ? request.getDescription() : "Saque da carteira")
                 .externalReference(locked.getId().toString())
@@ -190,6 +201,14 @@ public class WithdrawServiceImpl implements WithdrawService {
     }
 
     private String withdrawHash(WithdrawRequest request) {
+        if (request.getBeneficiaryId() != null) {
+            return idempotencyService.hash(
+                    TransactionType.WITHDRAWAL.name(),
+                    request.getSubaccountId().toString(),
+                    idempotencyService.amountPart(request.getAmount()),
+                    request.getBeneficiaryId().toString(),
+                    "BRL");
+        }
         return idempotencyService.hash(
                 TransactionType.WITHDRAWAL.name(),
                 request.getSubaccountId().toString(),
@@ -197,6 +216,49 @@ public class WithdrawServiceImpl implements WithdrawService {
                 request.getPixAddressKey(),
                 request.getPixAddressKeyType(),
                 "BRL");
+    }
+
+    private WithdrawDestination resolveDestination(WithdrawRequest request) {
+        if (request.getBeneficiaryId() != null) {
+            Beneficiary beneficiary = beneficiaryRepository.findByIdWithOwner(request.getBeneficiaryId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Beneficiary", "id", request.getBeneficiaryId()));
+            if (beneficiary.getStatus() != BeneficiaryStatus.ACTIVE) {
+                throw new InvalidRequestException("Beneficiary is not ACTIVE");
+            }
+            if (beneficiary.getPixKey() == null || beneficiary.getPixKeyType() == null) {
+                throw new InvalidRequestException("Beneficiary has no PIX destination");
+            }
+            return new WithdrawDestination(
+                    beneficiary.getPixKey(),
+                    beneficiary.getPixKeyType().name(),
+                    beneficiary);
+        }
+        if (request.getPixAddressKey() == null || request.getPixAddressKey().isBlank()
+                || request.getPixAddressKeyType() == null || request.getPixAddressKeyType().isBlank()) {
+            throw new InvalidRequestException("Provide beneficiaryId or a PIX destination (pixAddressKey + pixAddressKeyType)");
+        }
+        return new WithdrawDestination(
+                request.getPixAddressKey().trim(),
+                request.getPixAddressKeyType().trim(),
+                null);
+    }
+
+    private static void assertBeneficiaryMatchesWallet(Beneficiary beneficiary, Wallet wallet) {
+        if (beneficiary == null) {
+            return;
+        }
+        Account account = wallet.getAccount();
+        if (account == null) {
+            return;
+        }
+        UUID walletOrgId = account.getOrganization().getId();
+        UUID beneficiaryOrgId = beneficiary.getOrganization().getId();
+        if (!walletOrgId.equals(beneficiaryOrgId)) {
+            throw new ForbiddenException("Beneficiary does not belong to the wallet organization");
+        }
+    }
+
+    private record WithdrawDestination(String pixKey, String pixKeyType, Beneficiary beneficiary) {
     }
 
     @Override

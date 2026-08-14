@@ -49,6 +49,10 @@ public class Transaction {
     @JoinColumn(name = "account_id")
     private Account account;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "beneficiary_id")
+    private Beneficiary beneficiary;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TransactionType type;

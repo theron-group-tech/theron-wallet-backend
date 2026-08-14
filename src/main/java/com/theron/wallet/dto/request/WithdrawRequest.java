@@ -1,7 +1,6 @@
 package com.theron.wallet.dto.request;
 
 import jakarta.validation.constraints.DecimalMin;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -27,11 +26,11 @@ public class WithdrawRequest {
     @DecimalMin(value = "0.01", message = "Amount must be at least R$ 0.01")
     private BigDecimal amount;
 
-    @NotBlank(message = "PIX address key is required")
+    private UUID beneficiaryId;
+
     @Size(max = 100, message = "PIX address key must be at most 100 characters")
     private String pixAddressKey;
 
-    @NotBlank(message = "PIX address key type is required (CPF, CNPJ, EMAIL, PHONE, EVP)")
     @Size(max = 10, message = "PIX address key type must be at most 10 characters")
     private String pixAddressKeyType;
 
