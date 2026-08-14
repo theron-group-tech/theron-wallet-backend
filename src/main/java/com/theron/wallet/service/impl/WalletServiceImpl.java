@@ -8,6 +8,7 @@ import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.WalletMapper;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ public class WalletServiceImpl implements WalletService {
 
     private final WalletRepository walletRepository;
     private final SubaccountRepository subaccountRepository;
+    private final LedgerService ledgerService;
 
     @Override
     @Transactional(readOnly = true)
@@ -57,6 +59,7 @@ public class WalletServiceImpl implements WalletService {
 
         wallet.credit(amount);
         walletRepository.save(wallet);
+        postLedgerCreditIfAccountPresent(wallet, amount);
 
         log.info("Wallet credited: walletId={}, amount={}, newBalance={}", walletId, amount, wallet.getBalance());
     }
@@ -74,8 +77,31 @@ public class WalletServiceImpl implements WalletService {
 
         wallet.debit(amount);
         walletRepository.save(wallet);
+        postLedgerDebitIfAccountPresent(wallet, amount);
 
         log.info("Wallet debited: walletId={}, amount={}, newBalance={}", walletId, amount, wallet.getBalance());
+    }
+
+    private void postLedgerCreditIfAccountPresent(Wallet wallet, BigDecimal amount) {
+        if (wallet.getAccount() == null) {
+            return;
+        }
+        ledgerService.postCredit(
+                wallet.getAccount().getId(),
+                amount,
+                "ledger:wallet-credit:" + wallet.getId() + ":" + UUID.randomUUID(),
+                wallet.getId().toString());
+    }
+
+    private void postLedgerDebitIfAccountPresent(Wallet wallet, BigDecimal amount) {
+        if (wallet.getAccount() == null) {
+            return;
+        }
+        ledgerService.postDebit(
+                wallet.getAccount().getId(),
+                amount,
+                "ledger:wallet-debit:" + wallet.getId() + ":" + UUID.randomUUID(),
+                wallet.getId().toString());
     }
 
     private WalletResponse createWallet(UUID subaccountId) {

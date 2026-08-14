@@ -17,6 +17,7 @@ import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountService;
+import com.theron.wallet.service.LedgerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class AccountServiceImpl implements AccountService {
     private final AccountRepository accountRepository;
     private final OrganizationRepository organizationRepository;
     private final WalletRepository walletRepository;
+    private final LedgerService ledgerService;
 
     @Override
     @Transactional
@@ -59,6 +61,7 @@ public class AccountServiceImpl implements AccountService {
                 .currency(currency)
                 .build();
         walletRepository.save(wallet);
+        ledgerService.provisionForAccount(account);
 
         log.info("Account created: accountId={}, organizationId={}", account.getId(), organizationId);
         return AccountMapper.toResponse(account);

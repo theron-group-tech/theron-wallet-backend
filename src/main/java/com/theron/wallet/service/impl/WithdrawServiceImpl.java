@@ -19,6 +19,7 @@ import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
+import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.WithdrawService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class WithdrawServiceImpl implements WithdrawService {
     private final TransactionRepository transactionRepository;
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
+    private final LedgerService ledgerService;
 
     @Override
     @Transactional
@@ -95,6 +97,13 @@ public class WithdrawServiceImpl implements WithdrawService {
                 .idempotencyKey(idempotencyKey)
                 .build();
         transaction = transactionRepository.save(transaction);
+        if (wallet.getAccount() != null) {
+            ledgerService.postDebit(
+                    wallet.getAccount().getId(),
+                    request.getAmount(),
+                    "ledger:withdraw:" + idempotencyKey,
+                    transaction.getId().toString());
+        }
 
         try {
             AsaasTransferRequest transferRequest = AsaasTransferRequest.builder()

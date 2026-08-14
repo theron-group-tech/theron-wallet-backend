@@ -9,6 +9,9 @@ import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.AuthSessionRepository;
 import com.theron.wallet.repository.CustomerRepository;
 import com.theron.wallet.repository.DeviceRepository;
+import com.theron.wallet.repository.LedgerAccountRepository;
+import com.theron.wallet.repository.LedgerEntryRepository;
+import com.theron.wallet.repository.LedgerTransactionRepository;
 import com.theron.wallet.repository.MembershipRoleRepository;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.OrganizationRepository;
@@ -49,6 +52,12 @@ public abstract class BaseIntegrationTest {
     @Autowired
     private WalletRepository baseWalletRepository;
     @Autowired
+    private LedgerEntryRepository baseLedgerEntryRepository;
+    @Autowired
+    private LedgerTransactionRepository baseLedgerTransactionRepository;
+    @Autowired
+    private LedgerAccountRepository baseLedgerAccountRepository;
+    @Autowired
     private AccountRepository baseAccountRepository;
     @Autowired
     private CustomerRepository baseCustomerRepository;
@@ -66,12 +75,16 @@ public abstract class BaseIntegrationTest {
     private OrganizationRepository baseOrganizationRepository;
     /**
      * Central cleanup respecting FK order:
-     * audit → transaction → wallet → account → subaccount → customer →
+     * audit → ledger_entry → ledger_transaction → ledger_account →
+     * transaction → wallet → account → subaccount → customer →
      * auth_session → device → membership_role → membership → app_user → organization
      */
     @BeforeEach
     void cleanDatabase() {
         baseAuditRepository.deleteAll();
+        baseLedgerEntryRepository.deleteAll();
+        baseLedgerTransactionRepository.deleteAll();
+        baseLedgerAccountRepository.deleteAll();
         baseTransactionRepository.deleteAll();
         baseWalletRepository.deleteAll();
         baseAccountRepository.deleteAll();

@@ -14,6 +14,7 @@ import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.InternalTransferService;
+import com.theron.wallet.service.LedgerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ public class InternalTransferServiceImpl implements InternalTransferService {
     private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
+    private final LedgerService ledgerService;
 
     @Override
     @Transactional
@@ -111,6 +113,15 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .externalReference(senderTx.getId().toString())
                 .idempotencyKey(UUID.randomUUID().toString())
                 .build());
+
+        if (senderWallet.getAccount() != null && receiverWallet.getAccount() != null) {
+            ledgerService.postTransfer(
+                    senderWallet.getAccount().getId(),
+                    receiverWallet.getAccount().getId(),
+                    request.getAmount(),
+                    "ledger:transfer:" + idempotencyKey,
+                    senderTx.getId().toString());
+        }
 
         log.info("Internal transfer completed: senderTx={}, receiverTx={}, amount={}",
                 senderTx.getId(), receiverTx.getId(), request.getAmount());

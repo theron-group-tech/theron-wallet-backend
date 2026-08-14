@@ -2,8 +2,10 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.UpdateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
+import com.theron.wallet.dto.response.LedgerBalanceResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.service.AccountService;
+import com.theron.wallet.service.LedgerService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -27,6 +29,7 @@ import java.util.UUID;
 public class AccountController {
 
     private final AccountService accountService;
+    private final LedgerService ledgerService;
 
     @GetMapping("/{id}")
     @Operation(summary = "Get account by id")
@@ -59,5 +62,15 @@ public class AccountController {
     })
     public ResponseEntity<WalletResponse> findWallet(@PathVariable UUID id) {
         return ResponseEntity.ok(accountService.findWallet(id));
+    }
+
+    @GetMapping("/{id}/ledger-balance")
+    @Operation(summary = "Get reconstructed ledger balance for the account")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Balance reconstructed from ledger entries"),
+            @ApiResponse(responseCode = "404", description = "Account not found")
+    })
+    public ResponseEntity<LedgerBalanceResponse> ledgerBalance(@PathVariable UUID id) {
+        return ResponseEntity.ok(ledgerService.getBalance(id));
     }
 }
