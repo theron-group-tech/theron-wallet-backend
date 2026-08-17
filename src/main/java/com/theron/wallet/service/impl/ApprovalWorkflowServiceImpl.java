@@ -8,6 +8,7 @@ import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.ApprovalActionType;
 import com.theron.wallet.enums.ApprovalRequestStatus;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.ForbiddenException;
@@ -21,6 +22,7 @@ import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.ApprovalWorkflowService;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.PixService;
 import com.theron.wallet.service.TransactionLifecycleService;
@@ -35,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -52,6 +55,7 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
     private final TransactionLifecycleService transactionLifecycleService;
     private final PlatformTransactionManager transactionManager;
     private final PixService pixService;
+    private final AuditLogService auditLogService;
 
     public ApprovalWorkflowServiceImpl(
             ApprovalRequestRepository approvalRequestRepository,
@@ -62,7 +66,8 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
             AuthorizationService authorizationService,
             TransactionLifecycleService transactionLifecycleService,
             PlatformTransactionManager transactionManager,
-            @Lazy PixService pixService) {
+            @Lazy PixService pixService,
+            AuditLogService auditLogService) {
         this.approvalRequestRepository = approvalRequestRepository;
         this.approvalActionRepository = approvalActionRepository;
         this.pixTransactionRepository = pixTransactionRepository;
@@ -72,6 +77,7 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
         this.transactionLifecycleService = transactionLifecycleService;
         this.transactionManager = transactionManager;
         this.pixService = pixService;
+        this.auditLogService = auditLogService;
     }
 
     @Override
@@ -161,6 +167,13 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
 
         if (readyToExecute) {
             pixService.executeApprovedTransfer(request.getTransaction().getId());
+            auditLogService.record(
+                    AuditAction.TRANSFER_APPROVED,
+                    request.getOrganization().getId(),
+                    actorUserId,
+                    "Transaction",
+                    request.getTransaction().getId(),
+                    Map.of("approvalRequestId", request.getId().toString()));
         }
 
         log.info("Approval APPROVE: requestId={}, count={}/{}",
@@ -191,6 +204,13 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
         cancelHeldTransaction(request.getTransaction());
 
         log.info("Approval REJECT: requestId={}", request.getId());
+        auditLogService.record(
+                AuditAction.TRANSFER_REJECTED,
+                request.getOrganization().getId(),
+                actorUserId,
+                "Transaction",
+                request.getTransaction().getId(),
+                Map.of("approvalRequestId", request.getId().toString()));
         return toResponse(loadWithDetails(request.getId()));
     }
 

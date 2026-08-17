@@ -73,6 +73,7 @@ import java.util.UUID;
 public class PixServiceImpl implements PixService {
 
     private final AuthorizationService authorizationService;
+    private final AuditLogService auditLogService;
     private final AccountAsaasGateway accountAsaasGateway;
     private final AccountLimitService accountLimitService;
     private final TransactionLimitService transactionLimitService;
@@ -129,6 +130,13 @@ public class PixServiceImpl implements PixService {
         }
 
         log.info("PIX key created: pixKeyId={}, accountId={}", pixKey.getId(), account.getId());
+        auditLogService.record(
+                AuditAction.PIX_KEY_CREATED,
+                account.getOrganization().getId(),
+                actorUserId,
+                "PixKey",
+                pixKey.getId(),
+                Map.of("accountId", request.getAccountId().toString(), "type", request.getType().name()));
         return PixMapper.toKeyResponse(pixKey);
     }
 
@@ -164,6 +172,13 @@ public class PixServiceImpl implements PixService {
         pixKey.setStatus(PixKeyStatus.INACTIVE);
         pixKeyRepository.save(pixKey);
         log.info("PIX key inactivated: pixKeyId={}", pixKeyId);
+        auditLogService.record(
+                AuditAction.PIX_KEY_REMOVED,
+                pixKey.getOrganization().getId(),
+                actorUserId,
+                "PixKey",
+                pixKey.getId(),
+                Map.of("accountId", pixKey.getAccount().getId().toString()));
     }
 
     @Override
@@ -351,6 +366,16 @@ public class PixServiceImpl implements PixService {
             approvalWorkflowService.createPendingRequest(transaction, requester, requiredApprovals);
             log.info("PIX transfer held for approval: transactionId={}, requiredApprovals={}",
                     transaction.getId(), requiredApprovals);
+            auditLogService.record(
+                    AuditAction.TRANSFER_CREATED,
+                    managedAccount.getOrganization().getId(),
+                    actorUserId,
+                    "Transaction",
+                    transaction.getId(),
+                    Map.of(
+                            "accountId", managedAccount.getId().toString(),
+                            "amount", request.getAmount().toPlainString(),
+                            "status", TransactionStatus.PENDING_APPROVAL.name()));
             return transaction;
         });
     }
@@ -474,6 +499,16 @@ public class PixServiceImpl implements PixService {
                     "ledger:pix:" + idempotencyKey,
                     transaction.getId().toString());
 
+            auditLogService.record(
+                    AuditAction.TRANSFER_CREATED,
+                    managedAccount.getOrganization().getId(),
+                    actorUserId,
+                    "Transaction",
+                    transaction.getId(),
+                    Map.of(
+                            "accountId", managedAccount.getId().toString(),
+                            "amount", request.getAmount().toPlainString(),
+                            "status", TransactionStatus.PROCESSING.name()));
             return transaction;
         });
     }

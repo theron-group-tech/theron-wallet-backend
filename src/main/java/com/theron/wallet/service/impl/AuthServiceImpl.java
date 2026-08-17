@@ -8,6 +8,7 @@ import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.entity.AuthSession;
 import com.theron.wallet.entity.Device;
 import com.theron.wallet.entity.User;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.UnauthorizedException;
@@ -20,6 +21,7 @@ import com.theron.wallet.security.JwtTokenProvider;
 import com.theron.wallet.security.RefreshTokenHasher;
 import com.theron.wallet.security.UserPrincipal;
 import com.theron.wallet.service.AuthService;
+import com.theron.wallet.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -46,6 +49,7 @@ public class AuthServiceImpl implements AuthService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenHasher refreshTokenHasher;
+    private final AuditLogService auditLogService;
 
     @Value("${jwt.refresh-expiration-days:30}")
     private long refreshExpirationDays;
@@ -110,12 +114,28 @@ public class AuthServiceImpl implements AuthService {
         if (principal != null && principal.isProductUser() && principal.getSessionId() != null) {
             authSessionRepository.findById(principal.getSessionId()).ifPresent(this::revokeSessionInternal);
             log.info("Logout: sessionId={}", principal.getSessionId());
+            auditLogService.record(
+                    AuditAction.LOGOUT,
+                    null,
+                    principal.getUserId(),
+                    "AuthSession",
+                    principal.getSessionId(),
+                    null);
             return;
         }
         if (refreshToken != null && !refreshToken.isBlank()) {
             String hash = refreshTokenHasher.sha256Hex(refreshToken);
             authSessionRepository.findByRefreshTokenHashForUpdate(hash)
-                    .ifPresent(this::revokeSessionInternal);
+                    .ifPresent(session -> {
+                        revokeSessionInternal(session);
+                        auditLogService.record(
+                                AuditAction.LOGOUT,
+                                null,
+                                session.getUser().getId(),
+                                "AuthSession",
+                                session.getId(),
+                                null);
+                    });
             log.info("Logout via refresh token");
             return;
         }
@@ -128,6 +148,7 @@ public class AuthServiceImpl implements AuthService {
         UUID userId = requireProductUserId(principal);
         revokeAllSessions(userId);
         log.info("Logout-all: userId={}", userId);
+        auditLogService.record(AuditAction.LOGOUT, null, userId, "User", userId, Map.of("scope", "all"));
     }
 
     @Override
@@ -188,6 +209,16 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         log.info("Product login successful: userId={}, sessionId={}", user.getId(), session.getId());
+        auditLogService.record(
+                AuditAction.LOGIN,
+                null,
+                user.getId(),
+                "User",
+                user.getId(),
+                Map.of("email", user.getEmail()),
+                ip,
+                userAgent,
+                request.getDeviceId());
         return productLoginResponse(user, session, plainRefresh);
     }
 

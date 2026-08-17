@@ -8,6 +8,7 @@ import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.OrganizationMembership;
 import com.theron.wallet.entity.Role;
 import com.theron.wallet.entity.User;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.DuplicateResourceException;
@@ -20,6 +21,7 @@ import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.RoleRepository;
 import com.theron.wallet.repository.UserRepository;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.OrganizationMembershipService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -45,6 +48,7 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final MembershipRoleRepository membershipRoleRepository;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -60,7 +64,8 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
             throw new InvalidRequestException("Cannot add member with status REMOVED; use remove endpoint");
         }
 
-        return membershipRepository.findByOrganizationIdAndUserId(organizationId, user.getId())
+        OrganizationMembershipResponse response = membershipRepository
+                .findByOrganizationIdAndUserId(organizationId, user.getId())
                 .map(existing -> reactivateOrReject(existing, targetStatus))
                 .orElseGet(() -> {
                     OrganizationMembership membership = OrganizationMembership.builder()
@@ -74,6 +79,14 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
                             organizationId, user.getId(), targetStatus);
                     return UserMapper.toMembershipResponse(membership);
                 });
+        auditLogService.record(
+                AuditAction.MEMBER_ADDED,
+                organizationId,
+                user.getId(),
+                "OrganizationMembership",
+                user.getId(),
+                Map.of("status", response.getStatus().name()));
+        return response;
     }
 
     @Override
@@ -122,6 +135,8 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
         membership.setStatus(MembershipStatus.REMOVED);
         membership = membershipRepository.save(membership);
         log.info("Membership removed: organizationId={}, userId={}", organizationId, userId);
+        auditLogService.record(
+                AuditAction.MEMBER_REMOVED, organizationId, userId, "OrganizationMembership", userId, null);
         return UserMapper.toMembershipResponse(membership);
     }
 

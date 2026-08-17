@@ -32,6 +32,7 @@ import com.theron.wallet.security.AsaasApiKeyResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -99,15 +100,20 @@ public abstract class BaseIntegrationTest {
     @Autowired
     private OrganizationRepository baseOrganizationRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     /**
      * Central cleanup respecting FK order:
-     * subaccount_api_key_audit → ledger → approval_action → approval_request → pix_transaction →
-     * transaction → transaction_limit → approval_policy → pix_key → account_limit → beneficiary →
-     * wallet → subaccount → account → customer → auth_session → device → membership_role →
-     * membership → app_user → organization
+     * audit_log (TRUNCATE — append-only trigger) → subaccount_api_key_audit → ledger →
+     * approval_action → approval_request → pix_transaction → transaction →
+     * transaction_limit → approval_policy → pix_key → account_limit → beneficiary → wallet →
+     * subaccount → account → customer → auth_session → device → membership_role → membership →
+     * app_user → organization
      */
     @BeforeEach
     void cleanDatabase() {
+        jdbcTemplate.execute("TRUNCATE TABLE audit_log");
         baseAuditRepository.deleteAll();
         baseLedgerEntryRepository.deleteAll();
         baseLedgerTransactionRepository.deleteAll();

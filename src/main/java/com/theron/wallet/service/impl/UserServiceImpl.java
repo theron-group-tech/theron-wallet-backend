@@ -5,6 +5,7 @@ import com.theron.wallet.dto.request.UpdateUserRequest;
 import com.theron.wallet.dto.response.UserOrganizationResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.User;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.InvalidRequestException;
@@ -12,6 +13,7 @@ import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.UserMapper;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.UserRepository;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -30,6 +33,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final OrganizationMembershipRepository membershipRepository;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -49,6 +53,8 @@ public class UserServiceImpl implements UserService {
 
         user = userRepository.save(user);
         log.info("User created: userId={}", user.getId());
+        auditLogService.record(
+                AuditAction.USER_CREATED, null, user.getId(), "User", user.getId(), Map.of("email", email));
         return UserMapper.toResponse(user);
     }
 
@@ -62,6 +68,8 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponse update(UUID id, UpdateUserRequest request) {
         User user = getUserOrThrow(id);
+        UserStatus previousStatus = user.getStatus();
+        boolean passwordChanged = false;
 
         if (request.getName() != null) {
             String name = request.getName().trim();
@@ -78,10 +86,18 @@ public class UserServiceImpl implements UserService {
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
+            passwordChanged = true;
         }
 
         user = userRepository.save(user);
         log.info("User updated: userId={}", user.getId());
+        if (passwordChanged) {
+            auditLogService.record(AuditAction.PASSWORD_CHANGED, null, user.getId(), "User", user.getId(), null);
+        }
+        if (previousStatus != UserStatus.SUSPENDED && user.getStatus() == UserStatus.SUSPENDED) {
+            auditLogService.record(
+                    AuditAction.USER_DISABLED, null, user.getId(), "User", user.getId(), Map.of("status", "SUSPENDED"));
+        }
         return UserMapper.toResponse(user);
     }
 

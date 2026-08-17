@@ -8,6 +8,7 @@ import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.Role;
 import com.theron.wallet.entity.TransactionLimit;
 import com.theron.wallet.entity.User;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.LimitPeriod;
 import com.theron.wallet.enums.LimitTransactionType;
 import com.theron.wallet.enums.MembershipStatus;
@@ -27,6 +28,7 @@ import com.theron.wallet.repository.TransactionLimitRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.LimitContext;
 import com.theron.wallet.service.TransactionLimitService;
@@ -61,6 +63,7 @@ public class TransactionLimitServiceImpl implements TransactionLimitService {
     private final OrganizationMembershipRepository membershipRepository;
     private final MembershipRoleRepository membershipRoleRepository;
     private final AuthorizationService authorizationService;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -92,6 +95,17 @@ public class TransactionLimitServiceImpl implements TransactionLimitService {
         }
         log.info("Transaction limit created: id={}, org={}, type={}, period={}",
                 limit.getId(), organization.getId(), limit.getTransactionType(), limit.getPeriod());
+        auditLogService.record(
+                AuditAction.LIMIT_CHANGED,
+                organization.getId(),
+                actorUserId,
+                "TransactionLimit",
+                limit.getId(),
+                Map.of(
+                        "maxAmount", limit.getMaxAmount().toPlainString(),
+                        "period", limit.getPeriod().name(),
+                        "transactionType", limit.getTransactionType().name(),
+                        "operation", "create"));
         return TransactionLimitMapper.toResponse(limit);
     }
 
@@ -125,6 +139,8 @@ public class TransactionLimitServiceImpl implements TransactionLimitService {
         if (request.getMaxAmount() == null && request.getEnabled() == null) {
             throw new InvalidRequestException("Provide maxAmount and/or enabled");
         }
+        BigDecimal previousMax = limit.getMaxAmount();
+        boolean previousEnabled = limit.isEnabled();
         if (request.getMaxAmount() != null) {
             limit.setMaxAmount(request.getMaxAmount());
         }
@@ -132,6 +148,18 @@ public class TransactionLimitServiceImpl implements TransactionLimitService {
             limit.setEnabled(request.getEnabled());
         }
         limit = transactionLimitRepository.save(limit);
+        auditLogService.record(
+                AuditAction.LIMIT_CHANGED,
+                limit.getOrganization().getId(),
+                actorUserId,
+                "TransactionLimit",
+                limit.getId(),
+                Map.of(
+                        "previousMaxAmount", previousMax.toPlainString(),
+                        "maxAmount", limit.getMaxAmount().toPlainString(),
+                        "previousEnabled", previousEnabled,
+                        "enabled", limit.isEnabled(),
+                        "operation", "update"));
         return TransactionLimitMapper.toResponse(limit);
     }
 

@@ -6,6 +6,7 @@ import com.theron.wallet.dto.response.BeneficiaryResponse;
 import com.theron.wallet.entity.Beneficiary;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.User;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.BankAccountType;
 import com.theron.wallet.enums.BeneficiaryStatus;
 import com.theron.wallet.enums.OrganizationStatus;
@@ -18,6 +19,7 @@ import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.BeneficiaryService;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -38,6 +41,7 @@ public class BeneficiaryServiceImpl implements BeneficiaryService {
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
     private final AuthorizationService authorizationService;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -75,6 +79,13 @@ public class BeneficiaryServiceImpl implements BeneficiaryService {
         }
 
         log.info("Beneficiary created: beneficiaryId={}, organizationId={}", beneficiary.getId(), organization.getId());
+        auditLogService.record(
+                AuditAction.BENEFICIARY_CREATED,
+                organization.getId(),
+                actorUserId,
+                "Beneficiary",
+                beneficiary.getId(),
+                Map.of("name", name));
         return BeneficiaryMapper.toResponse(beneficiary);
     }
 
@@ -156,6 +167,13 @@ public class BeneficiaryServiceImpl implements BeneficiaryService {
         }
 
         log.info("Beneficiary updated: beneficiaryId={}", beneficiary.getId());
+        auditLogService.record(
+                AuditAction.BENEFICIARY_UPDATED,
+                beneficiary.getOrganization().getId(),
+                actorUserId,
+                "Beneficiary",
+                beneficiary.getId(),
+                null);
         return BeneficiaryMapper.toResponse(beneficiary);
     }
 
@@ -168,6 +186,13 @@ public class BeneficiaryServiceImpl implements BeneficiaryService {
         beneficiary.setStatus(BeneficiaryStatus.INACTIVE);
         beneficiaryRepository.save(beneficiary);
         log.info("Beneficiary logically deleted: beneficiaryId={}", id);
+        auditLogService.record(
+                AuditAction.BENEFICIARY_DELETED,
+                beneficiary.getOrganization().getId(),
+                actorUserId,
+                "Beneficiary",
+                beneficiary.getId(),
+                null);
     }
 
     private Beneficiary getOrThrow(UUID id) {
