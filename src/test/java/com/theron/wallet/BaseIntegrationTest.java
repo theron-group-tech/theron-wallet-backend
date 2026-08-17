@@ -18,6 +18,7 @@ import com.theron.wallet.repository.LedgerAccountRepository;
 import com.theron.wallet.repository.LedgerEntryRepository;
 import com.theron.wallet.repository.LedgerTransactionRepository;
 import com.theron.wallet.repository.MembershipRoleRepository;
+import com.theron.wallet.repository.NotificationRepository;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.PixKeyRepository;
@@ -92,6 +93,8 @@ public abstract class BaseIntegrationTest {
     @Autowired
     private DeviceRepository baseDeviceRepository;
     @Autowired
+    private NotificationRepository baseNotificationRepository;
+    @Autowired
     private MembershipRoleRepository baseMembershipRoleRepository;
     @Autowired
     private OrganizationMembershipRepository baseMembershipRepository;
@@ -105,7 +108,7 @@ public abstract class BaseIntegrationTest {
 
     /**
      * Central cleanup respecting FK order:
-     * audit_log (TRUNCATE — append-only trigger) → subaccount_api_key_audit → ledger →
+     * audit_log (TRUNCATE — append-only trigger) → notification → subaccount_api_key_audit → ledger →
      * approval_action → approval_request → pix_transaction → transaction →
      * transaction_limit → approval_policy → pix_key → account_limit → beneficiary → wallet →
      * subaccount → account → customer → auth_session → device → membership_role → membership →
@@ -114,6 +117,7 @@ public abstract class BaseIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         jdbcTemplate.execute("TRUNCATE TABLE audit_log");
+        baseNotificationRepository.deleteAll();
         baseAuditRepository.deleteAll();
         baseLedgerEntryRepository.deleteAll();
         baseLedgerTransactionRepository.deleteAll();

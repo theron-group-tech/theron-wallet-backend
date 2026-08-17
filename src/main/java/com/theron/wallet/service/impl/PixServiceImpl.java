@@ -20,6 +20,7 @@ import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.BeneficiaryStatus;
 import com.theron.wallet.enums.LimitTransactionType;
 import com.theron.wallet.enums.PixKeyStatus;
@@ -46,6 +47,7 @@ import com.theron.wallet.service.AccountLimitService;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.ApprovalPolicyService;
 import com.theron.wallet.service.ApprovalWorkflowService;
+import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
@@ -65,6 +67,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j

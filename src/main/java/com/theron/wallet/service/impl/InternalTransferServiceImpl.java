@@ -3,10 +3,12 @@ package com.theron.wallet.service.impl;
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
 import com.theron.wallet.entity.Account;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.LimitTransactionType;
+import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.ForbiddenException;
@@ -26,6 +28,7 @@ import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.InternalTransferService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.LimitContext;
+import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.TransactionLimitService;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +37,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -51,6 +56,7 @@ public class InternalTransferServiceImpl implements InternalTransferService {
     private final TransactionLifecycleService transactionLifecycleService;
     private final AuthorizationService authorizationService;
     private final TransactionLimitService transactionLimitService;
+    private final NotificationService notificationService;
     private final PlatformTransactionManager transactionManager;
 
     @Override
@@ -170,6 +176,18 @@ public class InternalTransferServiceImpl implements InternalTransferService {
 
         log.info("Internal transfer completed: senderTx={}, receiverTx={}, amount={}",
                 senderTx.getId(), receiverTx.getId(), request.getAmount());
+        UUID senderOrg = orgIdOf(senderWallet);
+        UUID receiverOrg = orgIdOf(receiverWallet);
+        Map<String, Object> sentData = transferData(senderTx);
+        notificationService.notify(
+                actorUserId, senderOrg, NotificationType.TRANSFER_SENT, senderTx.getId(), sentData);
+        notificationService.notifyUsersWithPermission(
+                receiverOrg,
+                PermissionCodes.WALLET_READ,
+                null,
+                NotificationType.TRANSFER_RECEIVED,
+                receiverTx.getId(),
+                transferData(receiverTx));
         return TransactionMapper.toInternalTransferResponse(senderTx, receiverTx);
     }
 
@@ -199,5 +217,23 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 LimitTransactionType.TRANSFER,
                 amount,
                 null));
+    }
+
+    private static UUID orgIdOf(Wallet wallet) {
+        if (wallet.getAccount() != null && wallet.getAccount().getOrganization() != null) {
+            return wallet.getAccount().getOrganization().getId();
+        }
+        Subaccount sub = wallet.getSubaccount();
+        if (sub != null && sub.getAccount() != null && sub.getAccount().getOrganization() != null) {
+            return sub.getAccount().getOrganization().getId();
+        }
+        return null;
+    }
+
+    private static Map<String, Object> transferData(Transaction transaction) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("amount", transaction.getAmount().toPlainString());
+        data.put("transactionId", transaction.getId().toString());
+        return data;
     }
 }

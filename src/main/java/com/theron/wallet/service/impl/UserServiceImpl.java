@@ -6,6 +6,7 @@ import com.theron.wallet.dto.response.UserOrganizationResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.InvalidRequestException;
@@ -14,6 +15,7 @@ import com.theron.wallet.mapper.UserMapper;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.service.AuditLogService;
+import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,7 @@ public class UserServiceImpl implements UserService {
     private final OrganizationMembershipRepository membershipRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -93,6 +96,7 @@ public class UserServiceImpl implements UserService {
         log.info("User updated: userId={}", user.getId());
         if (passwordChanged) {
             auditLogService.record(AuditAction.PASSWORD_CHANGED, null, user.getId(), "User", user.getId(), null);
+            notificationService.notify(user.getId(), null, NotificationType.PASSWORD_CHANGED, user.getId(), null);
         }
         if (previousStatus != UserStatus.SUSPENDED && user.getStatus() == UserStatus.SUSPENDED) {
             auditLogService.record(

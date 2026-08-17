@@ -9,6 +9,7 @@ import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.ApprovalActionType;
 import com.theron.wallet.enums.ApprovalRequestStatus;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.ForbiddenException;
@@ -24,6 +25,7 @@ import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.ApprovalWorkflowService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.AuthorizationService;
+import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.PixService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import lombok.extern.slf4j.Slf4j;
@@ -56,6 +58,7 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
     private final PlatformTransactionManager transactionManager;
     private final PixService pixService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     public ApprovalWorkflowServiceImpl(
             ApprovalRequestRepository approvalRequestRepository,
@@ -67,7 +70,8 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
             TransactionLifecycleService transactionLifecycleService,
             PlatformTransactionManager transactionManager,
             @Lazy PixService pixService,
-            AuditLogService auditLogService) {
+            AuditLogService auditLogService,
+            NotificationService notificationService) {
         this.approvalRequestRepository = approvalRequestRepository;
         this.approvalActionRepository = approvalActionRepository;
         this.pixTransactionRepository = pixTransactionRepository;
@@ -78,6 +82,7 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
         this.transactionManager = transactionManager;
         this.pixService = pixService;
         this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -99,7 +104,19 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
                 .status(ApprovalRequestStatus.PENDING)
                 .expiresAt(LocalDateTime.now().plusHours(DEFAULT_EXPIRY_HOURS))
                 .build();
-        return approvalRequestRepository.save(request);
+        request = approvalRequestRepository.save(request);
+        UUID orgId = transaction.getOrganization() != null ? transaction.getOrganization().getId() : null;
+        notificationService.notifyUsersWithPermission(
+                orgId,
+                PermissionCodes.APPROVAL_APPROVE,
+                requestedBy.getId(),
+                NotificationType.TRANSFER_APPROVAL_REQUIRED,
+                transaction.getId(),
+                Map.of(
+                        "amount", transaction.getAmount().toPlainString(),
+                        "transactionId", transaction.getId().toString(),
+                        "approvalRequestId", request.getId().toString()));
+        return request;
     }
 
     @Override
@@ -174,6 +191,15 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
                     "Transaction",
                     request.getTransaction().getId(),
                     Map.of("approvalRequestId", request.getId().toString()));
+            notificationService.notify(
+                    request.getRequestedBy().getId(),
+                    request.getOrganization().getId(),
+                    NotificationType.TRANSFER_APPROVED,
+                    request.getTransaction().getId(),
+                    Map.of(
+                            "amount", request.getTransaction().getAmount().toPlainString(),
+                            "transactionId", request.getTransaction().getId().toString(),
+                            "approvalRequestId", request.getId().toString()));
         }
 
         log.info("Approval APPROVE: requestId={}, count={}/{}",
@@ -211,6 +237,15 @@ public class ApprovalWorkflowServiceImpl implements ApprovalWorkflowService {
                 "Transaction",
                 request.getTransaction().getId(),
                 Map.of("approvalRequestId", request.getId().toString()));
+        notificationService.notify(
+                request.getRequestedBy().getId(),
+                request.getOrganization().getId(),
+                NotificationType.TRANSFER_REJECTED,
+                request.getTransaction().getId(),
+                Map.of(
+                        "amount", request.getTransaction().getAmount().toPlainString(),
+                        "transactionId", request.getTransaction().getId().toString(),
+                        "approvalRequestId", request.getId().toString()));
         return toResponse(loadWithDetails(request.getId()));
     }
 

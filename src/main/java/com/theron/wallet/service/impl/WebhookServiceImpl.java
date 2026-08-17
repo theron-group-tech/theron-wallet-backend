@@ -3,12 +3,16 @@ package com.theron.wallet.service.impl;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.PixTransaction;
 import com.theron.wallet.entity.Transaction;
+import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
+import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
 import com.theron.wallet.service.WebhookService;
@@ -17,7 +21,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -28,6 +35,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final PixTransactionRepository pixTransactionRepository;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
+    private final NotificationService notificationService;
 
     @Override
     @Transactional
@@ -83,6 +91,14 @@ public class WebhookServiceImpl implements WebhookService {
 
         log.info("Deposit confirmed: transactionId={}, walletId={}, amount={}",
                 transaction.getId(), transaction.getWallet().getId(), transaction.getAmount());
+        UUID orgId = resolveOrganizationId(transaction);
+        notificationService.notifyUsersWithPermission(
+                orgId,
+                PermissionCodes.WALLET_READ,
+                null,
+                NotificationType.PIX_RECEIVED,
+                transaction.getId(),
+                amountData(transaction));
     }
 
     private void handlePaymentCancellation(Transaction transaction, AsaasPaymentEvent event) {
@@ -171,6 +187,14 @@ public class WebhookServiceImpl implements WebhookService {
 
         log.info("Withdrawal confirmed: transactionId={}, walletId={}, amount={}",
                 transaction.getId(), transaction.getWallet().getId(), transaction.getAmount());
+        if (transaction.getType() == TransactionType.PIX && transaction.getCreatedBy() != null) {
+            notificationService.notify(
+                    transaction.getCreatedBy().getId(),
+                    resolveOrganizationId(transaction),
+                    NotificationType.PIX_SENT,
+                    transaction.getId(),
+                    amountData(transaction));
+        }
     }
 
     private void handleTransferFailure(Transaction transaction, AsaasTransferEvent event) {
@@ -205,5 +229,37 @@ public class WebhookServiceImpl implements WebhookService {
     private static boolean awaitsProvider(Transaction transaction) {
         return transaction.getStatus() == TransactionStatus.PENDING
                 || transaction.getStatus() == TransactionStatus.PROCESSING;
+    }
+
+    private UUID resolveOrganizationId(Transaction transaction) {
+        if (transaction.getOrganization() != null) {
+            return transaction.getOrganization().getId();
+        }
+        if (transaction.getAccount() != null && transaction.getAccount().getOrganization() != null) {
+            return transaction.getAccount().getOrganization().getId();
+        }
+        return orgIdOf(transaction.getWallet());
+    }
+
+    private static UUID orgIdOf(Wallet wallet) {
+        if (wallet == null) {
+            return null;
+        }
+        if (wallet.getAccount() != null && wallet.getAccount().getOrganization() != null) {
+            return wallet.getAccount().getOrganization().getId();
+        }
+        if (wallet.getSubaccount() != null
+                && wallet.getSubaccount().getAccount() != null
+                && wallet.getSubaccount().getAccount().getOrganization() != null) {
+            return wallet.getSubaccount().getAccount().getOrganization().getId();
+        }
+        return null;
+    }
+
+    private static Map<String, Object> amountData(Transaction transaction) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("amount", transaction.getAmount().toPlainString());
+        data.put("transactionId", transaction.getId().toString());
+        return data;
     }
 }

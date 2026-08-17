@@ -9,6 +9,7 @@ import com.theron.wallet.entity.AuthSession;
 import com.theron.wallet.entity.Device;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.exception.UnauthorizedException;
@@ -22,6 +23,7 @@ import com.theron.wallet.security.RefreshTokenHasher;
 import com.theron.wallet.security.UserPrincipal;
 import com.theron.wallet.service.AuthService;
 import com.theron.wallet.service.AuditLogService;
+import com.theron.wallet.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +52,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenHasher refreshTokenHasher;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Value("${jwt.refresh-expiration-days:30}")
     private long refreshExpirationDays;
@@ -259,10 +262,20 @@ public class AuthServiceImpl implements AuthService {
                         .user(user)
                         .clientDeviceId(clientDeviceId)
                         .build());
+        boolean isNew = device.getId() == null;
 
         touchDevice(device, ip, userAgent, request.getDeviceName(), request.getPlatform());
         device.setRevokedAt(null);
-        return deviceRepository.save(device);
+        device = deviceRepository.save(device);
+        if (isNew) {
+            notificationService.notify(
+                    user.getId(),
+                    null,
+                    NotificationType.LOGIN_NEW_DEVICE,
+                    device.getId(),
+                    Map.of("deviceId", clientDeviceId));
+        }
+        return device;
     }
 
     private void touchDevice(Device device, String ip, String userAgent, String deviceName, String platform) {

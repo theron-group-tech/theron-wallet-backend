@@ -78,4 +78,18 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
     List<UUID> findRoleIdsByOrganizationAndUser(
             @Param("organizationId") UUID organizationId,
             @Param("userId") UUID userId);
+
+    @Query(value = """
+            SELECT DISTINCT om.user_id
+            FROM membership_role mr
+            INNER JOIN organization_membership om ON om.id = mr.membership_id
+            INNER JOIN role_permission rp ON rp.role_id = mr.role_id
+            INNER JOIN permission p ON p.id = rp.permission_id
+            WHERE om.organization_id = :organizationId
+              AND om.status = 'ACTIVE'
+              AND p.code = :permissionCode
+            """, nativeQuery = true)
+    List<UUID> findUserIdsByOrganizationAndPermission(
+            @Param("organizationId") UUID organizationId,
+            @Param("permissionCode") String permissionCode);
 }
