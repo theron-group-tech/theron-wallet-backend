@@ -1,5 +1,6 @@
 package com.theron.wallet.exception;
 
+import com.theron.wallet.integration.AsaasSecretRedactor;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -37,8 +38,9 @@ public class GlobalExceptionHandler {
         // Surface the actual Asaas error description so callers know what to fix
         String asaasDescription = extractFirstAsaasErrorDescription(ex.getAsaasErrorBody());
         String message = asaasDescription != null
-                ? "Asaas validation error: " + asaasDescription
+                ? "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription)
                 : "Payment provider error. Please try again later.";
+        message = AsaasSecretRedactor.redact(message);
 
         log.error("Asaas API error: status={}, message={}, path={}",
                 ex.getAsaasStatusCode(), message, request.getRequestURI());

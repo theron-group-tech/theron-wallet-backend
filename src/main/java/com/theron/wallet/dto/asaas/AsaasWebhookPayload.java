@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AsaasWebhookPayload {
 
+    private String id;
     private String event;
     private Payment payment;
     private Transfer transfer;

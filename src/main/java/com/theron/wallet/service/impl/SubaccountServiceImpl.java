@@ -35,7 +35,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SubaccountServiceImpl implements SubaccountService {
 
-    private static final List<String> PAYMENT_WEBHOOK_EVENTS = List.of(
+    private static final List<String> WEBHOOK_EVENTS = List.of(
             "PAYMENT_CONFIRMED",
             "PAYMENT_RECEIVED",
             "PAYMENT_OVERDUE",
@@ -44,7 +44,14 @@ public class SubaccountServiceImpl implements SubaccountService {
             "PAYMENT_UPDATED",
             "PAYMENT_CHARGEBACK_REQUESTED",
             "PAYMENT_CHARGEBACK_DISPUTE",
-            "PAYMENT_AWAITING_CHARGEBACK_REVERSAL"
+            "PAYMENT_AWAITING_CHARGEBACK_REVERSAL",
+            "TRANSFER_CREATED",
+            "TRANSFER_PENDING",
+            "TRANSFER_IN_BANK_PROCESSING",
+            "TRANSFER_BLOCKED",
+            "TRANSFER_DONE",
+            "TRANSFER_FAILED",
+            "TRANSFER_CANCELLED"
     );
 
     private final SubaccountRepository subaccountRepository;
@@ -183,7 +190,7 @@ public class SubaccountServiceImpl implements SubaccountService {
                 .apiVersion("3")
                 .authToken(webhookToken)
                 .sendType("SEQUENTIALLY")
-                .events(PAYMENT_WEBHOOK_EVENTS)
+                .events(WEBHOOK_EVENTS)
                 .build());
     }
 

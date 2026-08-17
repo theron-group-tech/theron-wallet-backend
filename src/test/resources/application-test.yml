@@ -17,6 +17,8 @@ asaas:
     key: test-key
     webhook-token: test-webhook-token
     webhook-url: https://test.therongroup.com/api/v1/webhooks/asaas
+    retry:
+      max-attempts: 3
 
 encryption:
   aes-key: nIlpBopPKbJrzQqLsQcY/EItC724S8pmH2ZI/bTRQrE=
@@ -25,3 +27,4 @@ logging:
   level:
     root: WARN
     com.theron.wallet: DEBUG
+    org.springframework.web.reactive.function.client: WARN

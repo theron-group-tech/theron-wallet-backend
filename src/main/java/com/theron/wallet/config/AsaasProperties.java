@@ -16,11 +16,18 @@ public class AsaasProperties {
     private String webhookToken;
     private String webhookUrl;
     private TimeoutProperties timeout = new TimeoutProperties();
+    private RetryProperties retry = new RetryProperties();
 
     @Getter
     @Setter
     public static class TimeoutProperties {
         private int connect = 5000;
         private int read = 10000;
+    }
+
+    @Getter
+    @Setter
+    public static class RetryProperties {
+        private int maxAttempts = 3;
     }
 }

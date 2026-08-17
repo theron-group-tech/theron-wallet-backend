@@ -1,7 +1,11 @@
 package com.theron.wallet.service.impl;
 
+import com.theron.wallet.exception.AsaasApiException;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.TimeoutException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 import java.io.InterruptedIOException;
 import java.net.SocketTimeoutException;
@@ -16,7 +20,14 @@ final class ProviderCall {
         while (current != null) {
             if (current instanceof ResourceAccessException
                     || current instanceof SocketTimeoutException
-                    || current instanceof InterruptedIOException) {
+                    || current instanceof InterruptedIOException
+                    || current instanceof WebClientRequestException
+                    || current instanceof ReadTimeoutException
+                    || current instanceof TimeoutException
+                    || current instanceof java.util.concurrent.TimeoutException) {
+                return true;
+            }
+            if (current instanceof AsaasApiException asaas && asaas.getAsaasStatusCode() == 504) {
                 return true;
             }
             String message = current.getMessage();

@@ -108,7 +108,8 @@ public abstract class BaseIntegrationTest {
 
     /**
      * Central cleanup respecting FK order:
-     * audit_log (TRUNCATE — append-only trigger) → notification → subaccount_api_key_audit → ledger →
+     * audit_log (TRUNCATE — append-only trigger) → notification → asaas_webhook_event →
+     * asaas_reconciliation → subaccount_api_key_audit → ledger →
      * approval_action → approval_request → pix_transaction → transaction →
      * transaction_limit → approval_policy → pix_key → account_limit → beneficiary → wallet →
      * subaccount → account → customer → auth_session → device → membership_role → membership →
@@ -118,6 +119,8 @@ public abstract class BaseIntegrationTest {
     void cleanDatabase() {
         jdbcTemplate.execute("TRUNCATE TABLE audit_log");
         baseNotificationRepository.deleteAll();
+        jdbcTemplate.execute("DELETE FROM asaas_webhook_event");
+        jdbcTemplate.execute("DELETE FROM asaas_reconciliation");
         baseAuditRepository.deleteAll();
         baseLedgerEntryRepository.deleteAll();
         baseLedgerTransactionRepository.deleteAll();

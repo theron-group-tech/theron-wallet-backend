@@ -39,6 +39,8 @@ asaas:
     timeout:
       connect: 5000
       read: 10000
+    retry:
+      max-attempts: 3
 
 # Encryption (AES-256-GCM for API key storage)
 encryption:
@@ -80,6 +82,6 @@ logging:
   level:
     root: INFO
     com.theron.wallet: DEBUG
-    org.springframework.web.reactive.function.client: DEBUG
+    org.springframework.web.reactive.function.client: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n"

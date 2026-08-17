@@ -1,15 +1,19 @@
 package com.theron.wallet.service.impl;
 
+import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.PixTransaction;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
+import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.exception.UnauthorizedException;
 import com.theron.wallet.repository.PixTransactionRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.NotificationService;
@@ -21,6 +25,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +42,62 @@ public class WebhookServiceImpl implements WebhookService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
+    private final AsaasProperties asaasProperties;
+    private final SubaccountRepository subaccountRepository;
+    private final AsaasWebhookEventPersister asaasWebhookEventPersister;
+
+    @Override
+    @Transactional
+    public void receive(String token, AsaasWebhookPayload payload) {
+        if (!isValidWebhookToken(token)) {
+            throw new UnauthorizedException("Invalid webhook token");
+        }
+
+        String eventId = resolveEventId(payload);
+        var stored = asaasWebhookEventPersister.claim(eventId, payload);
+        if (stored.isEmpty()) {
+            log.info("Duplicate Asaas webhook ignored: eventId={}", eventId);
+            return;
+        }
+
+        try {
+            if (payload.getEvent() != null && payload.getEvent().startsWith("TRANSFER_")) {
+                processTransferWebhook(payload);
+            } else {
+                processPaymentWebhook(payload);
+            }
+            asaasWebhookEventPersister.mark(stored.get(), AsaasWebhookEventStatus.PROCESSED);
+        } catch (RuntimeException ex) {
+            asaasWebhookEventPersister.mark(stored.get(), AsaasWebhookEventStatus.FAILED);
+            throw ex;
+        }
+    }
+
+    private boolean isValidWebhookToken(String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        String expectedToken = asaasProperties.getWebhookToken();
+        if (expectedToken != null && !expectedToken.isBlank()
+                && MessageDigest.isEqual(
+                expectedToken.getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8))) {
+            return true;
+        }
+        return subaccountRepository.findByWebhookToken(token).isPresent();
+    }
+
+    static String resolveEventId(AsaasWebhookPayload payload) {
+        if (payload.getId() != null && !payload.getId().isBlank()) {
+            return payload.getId();
+        }
+        String resourceId = AsaasWebhookEventPersister.resourceId(payload);
+        String event = payload.getEvent() != null ? payload.getEvent() : "UNKNOWN";
+        if (resourceId != null) {
+            return event + ":" + resourceId;
+        }
+        return event + ":unknown";
+    }
 
     @Override
     @Transactional
