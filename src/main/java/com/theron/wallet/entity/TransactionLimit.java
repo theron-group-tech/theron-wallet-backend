@@ -1,7 +1,7 @@
 package com.theron.wallet.entity;
 
-import com.theron.wallet.enums.TransactionStatus;
-import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.enums.LimitPeriod;
+import com.theron.wallet.enums.LimitTransactionType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -25,24 +25,20 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "transaction")
+@Table(name = "transaction_limit")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Transaction {
+public class TransactionLimit {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "wallet_id", nullable = false)
-    private Wallet wallet;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "organization_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -50,49 +46,27 @@ public class Transaction {
     private Account account;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "beneficiary_id")
-    private Beneficiary beneficiary;
+    @JoinColumn(name = "user_id")
+    private User user;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "created_by_user_id")
-    private User createdBy;
+    @JoinColumn(name = "role_id")
+    private Role role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "transaction_type", nullable = false, length = 20)
+    private LimitTransactionType transactionType;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private TransactionType type;
+    private LimitPeriod period;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(name = "max_amount", nullable = false, precision = 19, scale = 2)
+    private BigDecimal maxAmount;
+
+    @Column(nullable = false)
     @Builder.Default
-    private TransactionStatus status = TransactionStatus.PENDING;
-
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal amount;
-
-    @Column(nullable = false, length = 3)
-    @Builder.Default
-    private String currency = "BRL";
-
-    @Column(length = 100)
-    private String reference;
-
-    @Column(length = 255)
-    private String description;
-
-    @Column(name = "asaas_payment_id", length = 50)
-    private String asaasPaymentId;
-
-    @Column(name = "external_reference", length = 100)
-    private String externalReference;
-
-    @Column(name = "idempotency_key", unique = true, length = 120)
-    private String idempotencyKey;
-
-    @Column(name = "request_hash", length = 64)
-    private String requestHash;
-
-    @Column(name = "completed_at")
-    private LocalDateTime completedAt;
+    private boolean enabled = true;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

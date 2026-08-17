@@ -2,6 +2,7 @@ package com.theron.wallet.service;
 
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
 import com.theron.wallet.entity.Subaccount;
@@ -40,6 +41,9 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     private InternalTransferService internalTransferService;
 
     @Autowired
+    private UserService userService;
+
+    @Autowired
     private SubaccountRepository subaccountRepository;
 
     @Autowired
@@ -52,6 +56,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     private Subaccount receiver;
     private Wallet senderWallet;
     private Wallet receiverWallet;
+    private UUID actorUserId;
 
     @BeforeEach
     void setUp() {
@@ -59,6 +64,11 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
         receiver = subaccountRepository.save(TestFixtures.aSubaccount("98765432100", SubaccountStatus.ACTIVE));
         senderWallet = walletRepository.save(TestFixtures.aWalletWithBalance(sender, new BigDecimal("500.00")));
         receiverWallet = walletRepository.save(TestFixtures.aWallet(receiver));
+        actorUserId = userService.create(CreateUserRequest.builder()
+                .name("Transfer Actor")
+                .email("transfer-actor@theron.test")
+                .password("SenhaForte1!")
+                .build()).getId();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -75,7 +85,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), receiver.getId(), new BigDecimal("150.00"));
 
-            InternalTransferResponse response = internalTransferService.transfer(request);
+            InternalTransferResponse response = internalTransferService.transfer(actorUserId, request);
 
             // Response assertions
             assertThat(response.getSenderTransactionId()).isNotNull();
@@ -124,7 +134,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), receiver.getId(), new BigDecimal("500.00"));
 
-            InternalTransferResponse response = internalTransferService.transfer(request);
+            InternalTransferResponse response = internalTransferService.transfer(actorUserId, request);
 
             assertThat(response.getStatus()).isEqualTo("COMPLETED");
 
@@ -141,7 +151,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), receiver.getId(), new BigDecimal("75.00"));
 
-            InternalTransferResponse response = internalTransferService.transfer(request);
+            InternalTransferResponse response = internalTransferService.transfer(actorUserId, request);
 
             Transaction senderTx = transactionRepository
                     .findById(response.getSenderTransactionId()).orElseThrow();
@@ -166,7 +176,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), receiver.getId(), new BigDecimal("600.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(InsufficientBalanceException.class)
                     .hasMessageContaining("Insufficient balance");
 
@@ -191,7 +201,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     zeroSender.getId(), receiver.getId(), new BigDecimal("0.01"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(InsufficientBalanceException.class);
         }
     }
@@ -210,7 +220,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), sender.getId(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(SelfTransferException.class)
                     .hasMessageContaining("Sender and receiver must be different subaccounts");
 
@@ -237,7 +247,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     UUID.randomUUID(), receiver.getId(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Subaccount");
         }
@@ -248,7 +258,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), UUID.randomUUID(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Subaccount");
         }
@@ -262,7 +272,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     noWalletSender.getId(), receiver.getId(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Wallet");
         }
@@ -276,7 +286,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     sender.getId(), noWalletReceiver.getId(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> internalTransferService.transfer(request))
+            assertThatThrownBy(() -> internalTransferService.transfer(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Wallet");
         }
@@ -298,8 +308,8 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest request = TestFixtures.anInternalTransferRequestWithKey(
                     sender.getId(), receiver.getId(), new BigDecimal("100.00"), idempotencyKey);
 
-            InternalTransferResponse first = internalTransferService.transfer(request);
-            InternalTransferResponse second = internalTransferService.transfer(request);
+            InternalTransferResponse first = internalTransferService.transfer(actorUserId, request);
+            InternalTransferResponse second = internalTransferService.transfer(actorUserId, request);
 
             // Both calls return same transaction IDs
             assertThat(second.getSenderTransactionId()).isEqualTo(first.getSenderTransactionId());
@@ -326,8 +336,8 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             InternalTransferRequest second = TestFixtures.anInternalTransferRequestWithKey(
                     sender.getId(), receiver.getId(), new BigDecimal("100.00"), "key-beta");
 
-            InternalTransferResponse r1 = internalTransferService.transfer(first);
-            InternalTransferResponse r2 = internalTransferService.transfer(second);
+            InternalTransferResponse r1 = internalTransferService.transfer(actorUserId, first);
+            InternalTransferResponse r2 = internalTransferService.transfer(actorUserId, second);
 
             assertThat(r1.getSenderTransactionId()).isNotEqualTo(r2.getSenderTransactionId());
 
@@ -368,7 +378,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
                         startLatch.await(); // wait until all threads are ready
                         InternalTransferRequest req = TestFixtures.anInternalTransferRequest(
                                 sender.getId(), receiver.getId(), transferAmount);
-                        return internalTransferService.transfer(req);
+                        return internalTransferService.transfer(actorUserId, req);
                     } finally {
                         doneLatch.countDown();
                     }
@@ -418,7 +428,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
                         startLatch.await();
                         InternalTransferRequest req = TestFixtures.anInternalTransferRequest(
                                 sender.getId(), receiver.getId(), transferAmount);
-                        return internalTransferService.transfer(req);
+                        return internalTransferService.transfer(actorUserId, req);
                     } finally {
                         doneLatch.countDown();
                     }

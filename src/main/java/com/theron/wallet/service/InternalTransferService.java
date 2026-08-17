@@ -3,6 +3,8 @@ package com.theron.wallet.service;
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
 
+import java.util.UUID;
+
 public interface InternalTransferService {
 
     /**
@@ -13,5 +15,5 @@ public interface InternalTransferService {
      * @param request transfer parameters including sender, receiver, amount, and optional idempotency key
      * @return a response containing both transaction IDs, wallet IDs, transferred amount, and status
      */
-    InternalTransferResponse transfer(InternalTransferRequest request);
+    InternalTransferResponse transfer(UUID actorUserId, InternalTransferRequest request);
 }

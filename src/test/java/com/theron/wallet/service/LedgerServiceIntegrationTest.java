@@ -4,12 +4,15 @@ import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.ledger.LedgerEntryDraft;
 import com.theron.wallet.dto.ledger.LedgerPostingRequest;
+import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.LedgerTransactionResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.entity.LedgerAccount;
 import com.theron.wallet.entity.LedgerEntry;
@@ -21,6 +24,7 @@ import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.LedgerAccountKind;
 import com.theron.wallet.enums.LedgerDirection;
 import com.theron.wallet.enums.LedgerTransactionType;
+import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.InvalidRequestException;
@@ -73,6 +77,15 @@ class LedgerServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private InternalTransferService internalTransferService;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private OrganizationMembershipService membershipService;
+
+    @Autowired
+    private RoleAssignmentService roleAssignmentService;
 
     @Autowired
     private LedgerAccountRepository ledgerAccountRepository;
@@ -436,7 +449,17 @@ class LedgerServiceIntegrationTest extends BaseIntegrationTest {
         assertWalletMatchesLedger(from.getId());
         assertWalletMatchesLedger(to.getId());
 
-        internalTransferService.transfer(InternalTransferRequest.builder()
+        UserResponse actor = userService.create(CreateUserRequest.builder()
+                .name("Ledger Transfer Actor")
+                .email("ledger-transfer-actor@theron.test")
+                .password("SenhaForte1!")
+                .build());
+        membershipService.addMember(org.getId(), AddOrganizationMemberRequest.builder()
+                .userId(actor.getId())
+                .build());
+        roleAssignmentService.assignRolesInternal(org.getId(), actor.getId(), List.of(RoleCode.OWNER.name()));
+
+        internalTransferService.transfer(actor.getId(), InternalTransferRequest.builder()
                 .senderSubaccountId(senderSub.getId())
                 .receiverSubaccountId(receiverSub.getId())
                 .amount(new BigDecimal("75.50"))

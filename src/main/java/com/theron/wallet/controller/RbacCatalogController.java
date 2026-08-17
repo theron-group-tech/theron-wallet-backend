@@ -29,7 +29,11 @@ public class RbacCatalogController {
     public ResponseEntity<List<RoleResponse>> listRoles() {
         List<RoleResponse> roles = roleRepository.findAll().stream()
                 .sorted(Comparator.comparing(r -> r.getCode()))
-                .map(r -> RoleResponse.builder().code(r.getCode()).description(r.getDescription()).build())
+                .map(r -> RoleResponse.builder()
+                        .id(r.getId())
+                        .code(r.getCode())
+                        .description(r.getDescription())
+                        .build())
                 .toList();
         return ResponseEntity.ok(roles);
     }

@@ -67,4 +67,15 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
             WHERE mr.membership.id = :membershipId
             """)
     List<MembershipRole> findByMembershipIdWithRole(@Param("membershipId") UUID membershipId);
+
+    @Query("""
+            SELECT DISTINCT mr.role.id
+            FROM MembershipRole mr
+            WHERE mr.membership.organization.id = :organizationId
+              AND mr.membership.user.id = :userId
+              AND mr.membership.status = com.theron.wallet.enums.MembershipStatus.ACTIVE
+            """)
+    List<UUID> findRoleIdsByOrganizationAndUser(
+            @Param("organizationId") UUID organizationId,
+            @Param("userId") UUID userId);
 }

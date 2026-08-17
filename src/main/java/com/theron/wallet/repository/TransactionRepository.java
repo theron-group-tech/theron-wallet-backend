@@ -63,11 +63,79 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
               )
               AND t.createdAt >= :dayStart
               AND t.createdAt < :dayEnd
+              AND (:excludeId IS NULL OR t.id <> :excludeId)
             """)
     java.math.BigDecimal sumPixAmountForAccountOnDay(
             @Param("accountId") UUID accountId,
             @Param("dayStart") java.time.LocalDateTime dayStart,
-            @Param("dayEnd") java.time.LocalDateTime dayEnd);
+            @Param("dayEnd") java.time.LocalDateTime dayEnd,
+            @Param("excludeId") UUID excludeId);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.organization.id = :organizationId
+              AND t.type = :type
+              AND t.status IN (
+                  com.theron.wallet.enums.TransactionStatus.PENDING,
+                  com.theron.wallet.enums.TransactionStatus.PENDING_APPROVAL,
+                  com.theron.wallet.enums.TransactionStatus.PROCESSING,
+                  com.theron.wallet.enums.TransactionStatus.COMPLETED
+              )
+              AND t.createdAt >= :periodStart
+              AND t.createdAt < :periodEnd
+              AND (:excludeId IS NULL OR t.id <> :excludeId)
+            """)
+    java.math.BigDecimal sumByOrganizationAndTypeInPeriod(
+            @Param("organizationId") UUID organizationId,
+            @Param("type") TransactionType type,
+            @Param("periodStart") java.time.LocalDateTime periodStart,
+            @Param("periodEnd") java.time.LocalDateTime periodEnd,
+            @Param("excludeId") UUID excludeId);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.account.id = :accountId
+              AND t.type = :type
+              AND t.status IN (
+                  com.theron.wallet.enums.TransactionStatus.PENDING,
+                  com.theron.wallet.enums.TransactionStatus.PENDING_APPROVAL,
+                  com.theron.wallet.enums.TransactionStatus.PROCESSING,
+                  com.theron.wallet.enums.TransactionStatus.COMPLETED
+              )
+              AND t.createdAt >= :periodStart
+              AND t.createdAt < :periodEnd
+              AND (:excludeId IS NULL OR t.id <> :excludeId)
+            """)
+    java.math.BigDecimal sumByAccountAndTypeInPeriod(
+            @Param("accountId") UUID accountId,
+            @Param("type") TransactionType type,
+            @Param("periodStart") java.time.LocalDateTime periodStart,
+            @Param("periodEnd") java.time.LocalDateTime periodEnd,
+            @Param("excludeId") UUID excludeId);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.createdBy.id = :userId
+              AND t.type = :type
+              AND t.status IN (
+                  com.theron.wallet.enums.TransactionStatus.PENDING,
+                  com.theron.wallet.enums.TransactionStatus.PENDING_APPROVAL,
+                  com.theron.wallet.enums.TransactionStatus.PROCESSING,
+                  com.theron.wallet.enums.TransactionStatus.COMPLETED
+              )
+              AND t.createdAt >= :periodStart
+              AND t.createdAt < :periodEnd
+              AND (:excludeId IS NULL OR t.id <> :excludeId)
+            """)
+    java.math.BigDecimal sumByCreatedByAndTypeInPeriod(
+            @Param("userId") UUID userId,
+            @Param("type") TransactionType type,
+            @Param("periodStart") java.time.LocalDateTime periodStart,
+            @Param("periodEnd") java.time.LocalDateTime periodEnd,
+            @Param("excludeId") UUID excludeId);
 
     Optional<Transaction> findByExternalReference(String externalReference);
 }

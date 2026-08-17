@@ -21,6 +21,7 @@ import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.BeneficiaryStatus;
+import com.theron.wallet.enums.LimitTransactionType;
 import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.TransactionStatus;
@@ -41,15 +42,17 @@ import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.PermissionCodes;
-import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AccountLimitService;
+import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.ApprovalPolicyService;
 import com.theron.wallet.service.ApprovalWorkflowService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
+import com.theron.wallet.service.LimitContext;
 import com.theron.wallet.service.PixService;
 import com.theron.wallet.service.TransactionLifecycleService;
+import com.theron.wallet.service.TransactionLimitService;
 import com.theron.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +75,7 @@ public class PixServiceImpl implements PixService {
     private final AuthorizationService authorizationService;
     private final AccountAsaasGateway accountAsaasGateway;
     private final AccountLimitService accountLimitService;
+    private final TransactionLimitService transactionLimitService;
     private final ApprovalPolicyService approvalPolicyService;
     private final ApprovalWorkflowService approvalWorkflowService;
     private final PixKeyRepository pixKeyRepository;
@@ -272,7 +276,7 @@ public class PixServiceImpl implements PixService {
         Transaction persisted;
         try {
             if (requiredApprovals == 0) {
-                persisted = persistTransfer(request, account, destination, idempotencyKey, requestHash);
+                persisted = persistTransfer(actorUserId, request, account, destination, idempotencyKey, requestHash);
             } else {
                 Transaction held = persistPendingApproval(
                         actorUserId, request, account, destination, idempotencyKey, requestHash, requiredApprovals);
@@ -305,6 +309,7 @@ public class PixServiceImpl implements PixService {
                     .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
 
             accountLimitService.assertWithinLimits(managedAccount.getId(), request.getAmount());
+            assertHierarchicalPixLimits(managedAccount, actorUserId, request.getAmount(), null);
 
             Wallet wallet = walletRepository.findByAccountIdWithLock(managedAccount.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", managedAccount.getId()));
@@ -329,7 +334,8 @@ public class PixServiceImpl implements PixService {
                     .reference(ProviderCall.referenceOf(request.getDescription()))
                     .idempotencyKey(idempotencyKey)
                     .requestHash(requestHash)
-                    .beneficiary(destination.beneficiary());
+                    .beneficiary(destination.beneficiary())
+                    .createdBy(requester);
             idempotencyService.applyOwner(builder, wallet);
             Transaction transaction = transactionRepository.save(builder.build());
 
@@ -367,7 +373,13 @@ public class PixServiceImpl implements PixService {
                 accountId = locked.getWallet().getAccount().getId();
             }
 
-            accountLimitService.assertWithinLimits(accountId, locked.getAmount());
+            accountLimitService.assertWithinLimits(accountId, locked.getAmount(), transactionId);
+            Account accountWithOrg = accountRepository.findByIdWithOrganization(accountId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+            UUID actorId = locked.getCreatedBy() != null ? locked.getCreatedBy().getId() : null;
+            if (actorId != null) {
+                assertHierarchicalPixLimits(accountWithOrg, actorId, locked.getAmount(), transactionId);
+            }
 
             Wallet wallet = walletRepository.findByAccountIdWithLock(accountId)
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
@@ -399,6 +411,7 @@ public class PixServiceImpl implements PixService {
     }
 
     private Transaction persistTransfer(
+            UUID actorUserId,
             CreatePixTransferRequest request,
             Account account,
             TransferDestination destination,
@@ -411,6 +424,7 @@ public class PixServiceImpl implements PixService {
 
             // Limits before Asaas — lock limit row + count daily spend
             accountLimitService.assertWithinLimits(managedAccount.getId(), request.getAmount());
+            assertHierarchicalPixLimits(managedAccount, actorUserId, request.getAmount(), null);
 
             Wallet wallet = walletRepository.findByAccountIdWithLock(managedAccount.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", managedAccount.getId()));
@@ -424,6 +438,9 @@ public class PixServiceImpl implements PixService {
             // Ensure Asaas rail still configured (no local-only money movement)
             accountAsaasGateway.requireConfiguredSubaccount(managedAccount.getId());
 
+            User actor = userRepository.findById(actorUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
+
             wallet.debit(request.getAmount());
             walletRepository.save(wallet);
 
@@ -436,7 +453,8 @@ public class PixServiceImpl implements PixService {
                     .reference(ProviderCall.referenceOf(request.getDescription()))
                     .idempotencyKey(idempotencyKey)
                     .requestHash(requestHash)
-                    .beneficiary(destination.beneficiary());
+                    .beneficiary(destination.beneficiary())
+                    .createdBy(actor);
             idempotencyService.applyOwner(builder, wallet);
             Transaction transaction = transactionRepository.save(builder.build());
 
@@ -606,6 +624,17 @@ public class PixServiceImpl implements PixService {
             throw new InvalidRequestException("Account is not configured with an Asaas Subaccount");
         }
         return reloaded.getAccount();
+    }
+
+    private void assertHierarchicalPixLimits(
+            Account account, UUID actorUserId, java.math.BigDecimal amount, UUID excludeTransactionId) {
+        transactionLimitService.assertWithinLimits(new LimitContext(
+                account.getOrganization().getId(),
+                account.getId(),
+                actorUserId,
+                LimitTransactionType.PIX,
+                amount,
+                excludeTransactionId));
     }
 
     private record TransferDestination(String pixKey, PixKeyType pixKeyType, Beneficiary beneficiary) {

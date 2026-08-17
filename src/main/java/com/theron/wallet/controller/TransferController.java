@@ -2,6 +2,7 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.response.InternalTransferResponse;
+import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.InternalTransferService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -17,13 +18,18 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/v1/transfers")
 @RequiredArgsConstructor
 @Tag(name = "Transfers", description = "Internal wallet-to-wallet transfer operations")
 public class TransferController {
 
+    public static final String ACTOR_HEADER = "X-Actor-User-Id";
+
     private final InternalTransferService internalTransferService;
+    private final ActorResolver actorResolver;
 
     @PostMapping("/internal")
     @Operation(
@@ -37,12 +43,14 @@ public class TransferController {
             @ApiResponse(responseCode = "409", description = "Saldo insuficiente")
     })
     public ResponseEntity<InternalTransferResponse> internalTransfer(
+            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody InternalTransferRequest request) {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             request.setIdempotencyKey(idempotencyKey.trim());
         }
-        InternalTransferResponse response = internalTransferService.transfer(request);
+        InternalTransferResponse response = internalTransferService.transfer(
+                actorResolver.requireProductUserId(actorUserId), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }

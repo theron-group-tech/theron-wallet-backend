@@ -6,6 +6,7 @@ import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.DepositRequest;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.DepositResponse;
@@ -63,6 +64,9 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
     private WithdrawService withdrawService;
 
     @Autowired
+    private UserService userService;
+
+    @Autowired
     private WebhookService webhookService;
 
     @Autowired
@@ -88,6 +92,7 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
 
     private Subaccount subaccount;
     private Wallet wallet;
+    private UUID actorUserId;
 
     @BeforeEach
     void setUp() {
@@ -95,6 +100,11 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
         subaccount.setAsaasCustomerId("cus_test_" + UUID.randomUUID().toString().substring(0, 12));
         subaccount = subaccountRepository.save(subaccount);
         wallet = walletRepository.save(TestFixtures.aWalletWithBalance(subaccount, new BigDecimal("500.00")));
+        actorUserId = userService.create(CreateUserRequest.builder()
+                .name("Lifecycle Actor")
+                .email("lifecycle-actor@theron.test")
+                .password("SenhaForte1!")
+                .build()).getId();
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
         when(asaasPaymentClient.createPayment(anyString(), any()))
                 .thenReturn(AsaasPaymentResponse.builder().id("pay_lifecycle").status("PENDING").build());
@@ -239,7 +249,7 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
         when(asaasTransferClient.createTransfer(anyString(), any()))
                 .thenThrow(new AsaasApiException("Asaas error", 500, "fail"));
 
-        assertThatThrownBy(() -> withdrawService.createWithdraw(WithdrawRequest.builder()
+        assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, WithdrawRequest.builder()
                 .subaccountId(subaccount.getId())
                 .amount(new BigDecimal("50.00"))
                 .pixAddressKey("12345678901")
@@ -269,10 +279,10 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
                 .idempotencyKey(key)
                 .build();
 
-        assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+        assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                 .isInstanceOf(AsaasApiException.class);
 
-        WithdrawResponse retry = withdrawService.createWithdraw(request);
+        WithdrawResponse retry = withdrawService.createWithdraw(actorUserId, request);
         assertThat(retry.getStatus()).isEqualTo("FAILED");
         assertThat(transactionRepository.findAll()).hasSize(1);
         verify(asaasTransferClient, times(1)).createTransfer(anyString(), any());

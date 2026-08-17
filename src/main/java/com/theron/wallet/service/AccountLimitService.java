@@ -13,4 +13,10 @@ public interface AccountLimitService {
      * Must run inside the same DB transaction as the debit.
      */
     void assertWithinLimits(UUID accountId, BigDecimal amount);
+
+    /**
+     * Same as {@link #assertWithinLimits(UUID, BigDecimal)} but excludes {@code excludeTransactionId}
+     * from the daily SUM (PIX hold already counted as PENDING_APPROVAL).
+     */
+    void assertWithinLimits(UUID accountId, BigDecimal amount, UUID excludeTransactionId);
 }

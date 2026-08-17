@@ -2,6 +2,7 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.WithdrawService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -25,7 +26,10 @@ import java.util.UUID;
 @Tag(name = "Withdrawals", description = "Cash-out operations via Asaas transfers")
 public class WithdrawController {
 
+    public static final String ACTOR_HEADER = "X-Actor-User-Id";
+
     private final WithdrawService withdrawService;
+    private final ActorResolver actorResolver;
 
     @PostMapping
     @Operation(summary = "Criar saque via Pix",
@@ -38,12 +42,14 @@ public class WithdrawController {
             @ApiResponse(responseCode = "422", description = "Subconta não elegível para saques (status inválido)")
     })
     public ResponseEntity<WithdrawResponse> createWithdraw(
+            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody WithdrawRequest request) {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             request.setIdempotencyKey(idempotencyKey.trim());
         }
-        WithdrawResponse response = withdrawService.createWithdraw(request);
+        WithdrawResponse response = withdrawService.createWithdraw(
+                actorResolver.requireProductUserId(actorUserId), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

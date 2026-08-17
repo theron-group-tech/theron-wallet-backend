@@ -26,6 +26,12 @@ public class AccountLimitServiceImpl implements AccountLimitService {
     @Override
     @Transactional
     public void assertWithinLimits(UUID accountId, BigDecimal amount) {
+        assertWithinLimits(accountId, amount, null);
+    }
+
+    @Override
+    @Transactional
+    public void assertWithinLimits(UUID accountId, BigDecimal amount, UUID excludeTransactionId) {
         AccountLimit limit = accountLimitRepository.findByAccountIdForUpdate(accountId)
                 .orElseThrow(() -> new InvalidRequestException(
                         "Account has no financial limits configured"));
@@ -39,7 +45,8 @@ public class AccountLimitServiceImpl implements AccountLimitService {
         LocalDate today = LocalDate.now();
         LocalDateTime dayStart = today.atStartOfDay();
         LocalDateTime dayEnd = today.plusDays(1).atStartOfDay();
-        BigDecimal spent = transactionRepository.sumPixAmountForAccountOnDay(accountId, dayStart, dayEnd);
+        BigDecimal spent = transactionRepository.sumPixAmountForAccountOnDay(
+                accountId, dayStart, dayEnd, excludeTransactionId);
         if (spent == null) {
             spent = BigDecimal.ZERO;
         }

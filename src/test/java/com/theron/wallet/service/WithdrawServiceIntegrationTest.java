@@ -4,6 +4,7 @@ import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
 import com.theron.wallet.entity.Subaccount;
@@ -43,6 +44,9 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
     private WithdrawService withdrawService;
 
     @Autowired
+    private UserService userService;
+
+    @Autowired
     private WebhookService webhookService;
 
     @Autowired
@@ -56,11 +60,17 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
     private Subaccount savedSubaccount;
     private Wallet savedWallet;
+    private UUID actorUserId;
 
     @BeforeEach
     void setUp() {
         savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
         savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedSubaccount, new BigDecimal("500.00")));
+        actorUserId = userService.create(CreateUserRequest.builder()
+                .name("Withdraw Actor")
+                .email("withdraw-actor@theron.test")
+                .password("SenhaForte1!")
+                .build()).getId();
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
     }
 
@@ -82,7 +92,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasTransferClient.createTransfer(anyString(), any())).thenReturn(transferResponse);
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("100.00"));
-            WithdrawResponse response = withdrawService.createWithdraw(request);
+            WithdrawResponse response = withdrawService.createWithdraw(actorUserId, request);
 
             assertThat(response.getTransactionId()).isNotNull();
             assertThat(response.getWalletId()).isEqualTo(savedWallet.getId());
@@ -110,7 +120,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_full").status("PENDING").build());
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("500.00"));
-            WithdrawResponse response = withdrawService.createWithdraw(request);
+            WithdrawResponse response = withdrawService.createWithdraw(actorUserId, request);
 
             assertThat(response.getStatus()).isEqualTo("PROCESSING");
 
@@ -127,7 +137,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_sub").status("PENDING").build());
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
-            withdrawService.createWithdraw(request);
+            withdrawService.createWithdraw(actorUserId, request);
 
             verify(asaasTransferClient).createTransfer(eq(subaccountKey), any());
             verify(asaasTransferClient, never()).createTransfer(eq("root-api-key"), any());
@@ -143,7 +153,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         void shouldRejectInsufficientBalance() {
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("600.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(InsufficientBalanceException.class)
                     .hasMessageContaining("Insufficient balance");
 
@@ -162,7 +172,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
         void shouldRejectUnknownSubaccount() {
             WithdrawRequest request = TestFixtures.aWithdrawRequest(UUID.randomUUID(), new BigDecimal("50.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Subaccount");
         }
@@ -180,7 +190,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(unsynced.getId(), new BigDecimal("50.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("not synced with Asaas");
         }
@@ -193,7 +203,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(noWalletSubaccount.getId(), new BigDecimal("50.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Wallet");
         }
@@ -207,7 +217,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(SubaccountOperationBlockedException.class)
                     .hasMessageContaining("EVALUATION_BLOCKED");
 
@@ -231,7 +241,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("100.00"));
 
-            assertThatThrownBy(() -> withdrawService.createWithdraw(request))
+            assertThatThrownBy(() -> withdrawService.createWithdraw(actorUserId, request))
                     .isInstanceOf(AsaasApiException.class);
 
             Wallet wallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
@@ -263,8 +273,8 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .idempotencyKey(idempotencyKey)
                     .build();
 
-            WithdrawResponse first = withdrawService.createWithdraw(request);
-            WithdrawResponse second = withdrawService.createWithdraw(request);
+            WithdrawResponse first = withdrawService.createWithdraw(actorUserId, request);
+            WithdrawResponse second = withdrawService.createWithdraw(actorUserId, request);
 
             assertThat(second.getTransactionId()).isEqualTo(first.getTransactionId());
 
@@ -299,8 +309,8 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .idempotencyKey("key-2")
                     .build();
 
-            WithdrawResponse first = withdrawService.createWithdraw(request1);
-            WithdrawResponse second = withdrawService.createWithdraw(request2);
+            WithdrawResponse first = withdrawService.createWithdraw(actorUserId, request1);
+            WithdrawResponse second = withdrawService.createWithdraw(actorUserId, request2);
 
             assertThat(second.getTransactionId()).isNotEqualTo(first.getTransactionId());
 
@@ -484,7 +494,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                     .thenReturn(AsaasTransferResponse.builder().id("transfer_find").status("PENDING").build());
 
             WithdrawRequest request = TestFixtures.aWithdrawRequest(savedSubaccount.getId(), new BigDecimal("50.00"));
-            WithdrawResponse created = withdrawService.createWithdraw(request);
+            WithdrawResponse created = withdrawService.createWithdraw(actorUserId, request);
 
             WithdrawResponse found = withdrawService.findById(created.getTransactionId());
 

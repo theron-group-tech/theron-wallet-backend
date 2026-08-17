@@ -9,7 +9,7 @@ import java.util.UUID;
 
 public interface WithdrawService {
 
-    WithdrawResponse createWithdraw(WithdrawRequest request);
+    WithdrawResponse createWithdraw(UUID actorUserId, WithdrawRequest request);
 
     WithdrawResponse findById(UUID transactionId);
 

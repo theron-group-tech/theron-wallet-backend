@@ -180,6 +180,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(post("/api/v1/withdraws")
+                        .header(ACTOR_HEADER, ownerA.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())
@@ -238,6 +239,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
         stubAsaasTransfer("transfer_beneficiary");
 
         mockMvc.perform(post("/api/v1/withdraws")
+                        .header(ACTOR_HEADER, ownerA.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())
@@ -284,6 +286,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/withdraws")
+                        .header(ACTOR_HEADER, ownerA.getId())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())

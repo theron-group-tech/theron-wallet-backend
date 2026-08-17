@@ -24,6 +24,7 @@ import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
 import com.theron.wallet.repository.SubaccountRepository;
+import com.theron.wallet.repository.TransactionLimitRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -57,6 +58,8 @@ public abstract class BaseIntegrationTest {
     private SubaccountRepository baseSubaccountRepository;
     @Autowired
     private TransactionRepository baseTransactionRepository;
+    @Autowired
+    private TransactionLimitRepository baseTransactionLimitRepository;
     @Autowired
     private PixTransactionRepository basePixTransactionRepository;
     @Autowired
@@ -98,10 +101,10 @@ public abstract class BaseIntegrationTest {
 
     /**
      * Central cleanup respecting FK order:
-     * audit → ledger → approval_action → approval_request → pix_transaction → transaction →
-     * approval_policy → pix_key → account_limit → beneficiary → wallet → subaccount →
-     * account → customer → auth_session → device → membership_role → membership →
-     * app_user → organization
+     * subaccount_api_key_audit → ledger → approval_action → approval_request → pix_transaction →
+     * transaction → transaction_limit → approval_policy → pix_key → account_limit → beneficiary →
+     * wallet → subaccount → account → customer → auth_session → device → membership_role →
+     * membership → app_user → organization
      */
     @BeforeEach
     void cleanDatabase() {
@@ -113,6 +116,7 @@ public abstract class BaseIntegrationTest {
         baseApprovalRequestRepository.deleteAll();
         basePixTransactionRepository.deleteAll();
         baseTransactionRepository.deleteAll();
+        baseTransactionLimitRepository.deleteAll();
         baseApprovalPolicyRepository.deleteAll();
         basePixKeyRepository.deleteAll();
         baseAccountLimitRepository.deleteAll();

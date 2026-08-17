@@ -8,8 +8,10 @@ import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Beneficiary;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
+import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.BeneficiaryStatus;
+import com.theron.wallet.enums.LimitTransactionType;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
@@ -17,16 +19,23 @@ import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.exception.UnauthorizedException;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.TransactionMapper;
+import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
+import com.theron.wallet.service.LimitContext;
 import com.theron.wallet.service.TransactionLifecycleService;
+import com.theron.wallet.service.TransactionLimitService;
 import com.theron.wallet.service.WalletService;
 import com.theron.wallet.service.WithdrawService;
 import lombok.RequiredArgsConstructor;
@@ -53,16 +62,23 @@ public class WithdrawServiceImpl implements WithdrawService {
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
     private final BeneficiaryRepository beneficiaryRepository;
+    private final UserRepository userRepository;
+    private final AccountRepository accountRepository;
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
     private final LedgerService ledgerService;
     private final WalletService walletService;
     private final IdempotencyService idempotencyService;
     private final TransactionLifecycleService transactionLifecycleService;
+    private final AuthorizationService authorizationService;
+    private final TransactionLimitService transactionLimitService;
     private final PlatformTransactionManager transactionManager;
 
     @Override
-    public WithdrawResponse createWithdraw(WithdrawRequest request) {
+    public WithdrawResponse createWithdraw(UUID actorUserId, WithdrawRequest request) {
+        if (actorUserId == null) {
+            throw new UnauthorizedException("Authentication required");
+        }
         log.info("Creating withdrawal: subaccountId={}, amount={}", request.getSubaccountId(), request.getAmount());
 
         String idempotencyKey = idempotencyService.resolveKey(null, request.getIdempotencyKey());
@@ -70,13 +86,14 @@ public class WithdrawServiceImpl implements WithdrawService {
 
         return idempotencyService.findExisting(idempotencyKey, requestHash)
                 .map(existing -> resumeWithdrawProvider(existing, request))
-                .orElseGet(() -> createNewWithdraw(request, idempotencyKey, requestHash));
+                .orElseGet(() -> createNewWithdraw(actorUserId, request, idempotencyKey, requestHash));
     }
 
-    private WithdrawResponse createNewWithdraw(WithdrawRequest request, String idempotencyKey, String requestHash) {
+    private WithdrawResponse createNewWithdraw(
+            UUID actorUserId, WithdrawRequest request, String idempotencyKey, String requestHash) {
         Transaction persisted;
         try {
-            persisted = persistWithdraw(request, idempotencyKey, requestHash);
+            persisted = persistWithdraw(actorUserId, request, idempotencyKey, requestHash);
         } catch (RuntimeException ex) {
             if (!ProviderCall.isUniqueConstraint(ex)) {
                 throw ex;
@@ -86,7 +103,8 @@ public class WithdrawServiceImpl implements WithdrawService {
         return resumeWithdrawProvider(persisted, request);
     }
 
-    private Transaction persistWithdraw(WithdrawRequest request, String idempotencyKey, String requestHash) {
+    private Transaction persistWithdraw(
+            UUID actorUserId, WithdrawRequest request, String idempotencyKey, String requestHash) {
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         return tx.execute(status -> {
             Subaccount subaccount = subaccountRepository.findById(request.getSubaccountId())
@@ -104,6 +122,10 @@ public class WithdrawServiceImpl implements WithdrawService {
 
             WithdrawDestination destination = resolveDestination(request);
             assertBeneficiaryMatchesWallet(destination.beneficiary(), wallet);
+
+            User actor = userRepository.findById(actorUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
+            authorizeAndLimitIfAccountPresent(wallet, actor, request.getAmount());
 
             if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
                 throw new InsufficientBalanceException(
@@ -123,7 +145,8 @@ public class WithdrawServiceImpl implements WithdrawService {
                     .description(request.getDescription())
                     .reference(ProviderCall.referenceOf(request.getDescription()))
                     .idempotencyKey(idempotencyKey)
-                    .requestHash(requestHash);
+                    .requestHash(requestHash)
+                    .createdBy(actor);
             idempotencyService.applyOwner(builder, wallet);
             Transaction transaction = transactionRepository.save(builder.build());
 
@@ -256,6 +279,27 @@ public class WithdrawServiceImpl implements WithdrawService {
         if (!walletOrgId.equals(beneficiaryOrgId)) {
             throw new ForbiddenException("Beneficiary does not belong to the wallet organization");
         }
+    }
+
+    private void authorizeAndLimitIfAccountPresent(Wallet wallet, User actor, java.math.BigDecimal amount) {
+        Account account = wallet.getAccount();
+        if (account == null) {
+            return;
+        }
+        Account managed = accountRepository.findByIdWithOrganization(account.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
+        UUID orgId = managed.getOrganization().getId();
+        if (!authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.WALLET_TRANSFER)
+                && !authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.TRANSACTIONS_CREATE)) {
+            throw new ForbiddenException("Missing wallet.transfer or transactions.create");
+        }
+        transactionLimitService.assertWithinLimits(new LimitContext(
+                orgId,
+                managed.getId(),
+                actor.getId(),
+                LimitTransactionType.WITHDRAWAL,
+                amount,
+                null));
     }
 
     private record WithdrawDestination(String pixKey, String pixKeyType, Beneficiary beneficiary) {
