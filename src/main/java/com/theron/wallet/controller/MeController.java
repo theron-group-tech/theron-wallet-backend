@@ -40,7 +40,7 @@ public class MeController {
     @GetMapping
     @Operation(summary = "Current user profile and organizations")
     public ResponseEntity<MeResponse> me() {
-        return ResponseEntity.ok(meService.me(actorResolver.requireProductUserId(null)));
+        return ResponseEntity.ok(meService.me(actorResolver.requireProductUserId()));
     }
 
     @GetMapping("/dashboard")
@@ -49,7 +49,7 @@ public class MeController {
             @RequestParam(required = false) UUID organizationId,
             @RequestParam(required = false) UUID accountId) {
         return ResponseEntity.ok(meService.dashboard(
-                actorResolver.requireProductUserId(null), organizationId, accountId));
+                actorResolver.requireProductUserId(), organizationId, accountId));
     }
 
     @GetMapping("/accounts")
@@ -59,7 +59,7 @@ public class MeController {
             @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(meService.accounts(
-                actorResolver.requireProductUserId(null), organizationId, pageable));
+                actorResolver.requireProductUserId(), organizationId, pageable));
     }
 
     @GetMapping("/wallets")
@@ -70,7 +70,7 @@ public class MeController {
             @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(meService.wallets(
-                actorResolver.requireProductUserId(null), organizationId, accountId, pageable));
+                actorResolver.requireProductUserId(), organizationId, accountId, pageable));
     }
 
     @GetMapping("/transactions")
@@ -87,7 +87,7 @@ public class MeController {
             @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(meService.transactions(
-                actorResolver.requireProductUserId(null),
+                actorResolver.requireProductUserId(),
                 organizationId,
                 accountId,
                 from,
@@ -107,6 +107,6 @@ public class MeController {
             @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(meService.notifications(
-                actorResolver.requireProductUserId(null), organizationId, unreadOnly, pageable));
+                actorResolver.requireProductUserId(), organizationId, unreadOnly, pageable));
     }
 }

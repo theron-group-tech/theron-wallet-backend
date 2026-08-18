@@ -2,48 +2,41 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.exception.InvalidRequestException;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.TransactionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
-@Slf4j
 @RestController
 @RequestMapping("/api/v1/transactions")
 @RequiredArgsConstructor
-@Tag(name = "Transactions", description = "Global transaction history — search across all wallets and subaccounts")
+@Tag(name = "Transactions", description = "Transaction history scoped to a wallet or subaccount the caller can read")
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @GetMapping
-    @Operation(
-            summary = "Listar transações (global)",
-            description = """
-                    Lista transações com filtros opcionais e paginação.
-                    
-                    Combinações suportadas:
-                    - Sem filtros → todas as transações (ordenadas por `createdAt DESC`)
-                    - `?walletId=xxx` → transações de uma carteira específica
-                    - `?subaccountId=xxx` → transações de todas as carteiras de uma subconta
-                    - `?walletId=xxx&type=DEPOSIT` → depósitos de uma carteira
-                    - `?subaccountId=xxx&type=WITHDRAWAL` → saques de uma subconta
-                    
-                    Tipos disponíveis: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`,
-                    `TRANSFER`, `PIX`, `PAYMENT`, `REFUND`, `FEE`
-                    """
-    )
+    @Operation(summary = "Listar transações", description = "walletId or subaccountId is required. Unscoped listing is forbidden.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
     })
@@ -52,7 +45,14 @@ public class TransactionController {
             @RequestParam(required = false) UUID subaccountId,
             @RequestParam(required = false) TransactionType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        log.info("GET /api/v1/transactions — walletId={}, subaccountId={}, type={}", walletId, subaccountId, type);
+        UUID actor = actorResolver.requireProductUserId();
+        if (walletId != null) {
+            resourceAuthorization.requireWallet(actor, walletId, PermissionCodes.TRANSACTIONS_READ);
+        } else if (subaccountId != null) {
+            resourceAuthorization.requireSubaccount(actor, subaccountId, PermissionCodes.TRANSACTIONS_READ);
+        } else {
+            throw new InvalidRequestException("walletId or subaccountId is required");
+        }
         return ResponseEntity.ok(transactionService.findAll(walletId, subaccountId, type, pageable));
     }
 
@@ -63,8 +63,8 @@ public class TransactionController {
             @ApiResponse(responseCode = "404", description = "Transação não encontrada")
     })
     public ResponseEntity<TransactionResponse> findById(@PathVariable UUID transactionId) {
-        log.info("GET /api/v1/transactions/{}", transactionId);
+        resourceAuthorization.requireTransaction(
+                actorResolver.requireProductUserId(), transactionId, PermissionCodes.TRANSACTIONS_READ);
         return ResponseEntity.ok(transactionService.findById(transactionId));
     }
 }
-

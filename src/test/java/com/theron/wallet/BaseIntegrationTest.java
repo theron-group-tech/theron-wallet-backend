@@ -1,10 +1,14 @@
 package com.theron.wallet;
+import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
+import com.theron.wallet.dto.asaas.AsaasTransferResponse;
+import com.theron.wallet.dto.request.LoginRequest;
 import com.theron.wallet.integration.AsaasCustomerClient;
 import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.integration.AsaasWebhookClient;
+import com.theron.wallet.service.AuthService;
 import com.theron.wallet.repository.AccountLimitRepository;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.ApprovalActionRepository;
@@ -37,6 +41,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.math.BigDecimal;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+
 @SpringBootTest
 @ActiveProfiles("test")
 public abstract class BaseIntegrationTest {
@@ -54,6 +63,8 @@ public abstract class BaseIntegrationTest {
     protected AsaasPixClient asaasPixClient;
     @MockitoBean
     protected AsaasApiKeyResolver asaasApiKeyResolver;
+    @Autowired
+    protected AuthService authService;
     @Autowired
     private SubaccountApiKeyAuditRepository baseAuditRepository;
     @Autowired
@@ -144,5 +155,38 @@ public abstract class BaseIntegrationTest {
         baseMembershipRepository.deleteAll();
         baseUserRepository.deleteAll();
         baseOrganizationRepository.deleteAll();
+        when(asaasPaymentClient.retrievePayment(any(), any())).thenAnswer(invocation ->
+                AsaasPaymentResponse.builder()
+                        .id(invocation.getArgument(1))
+                        .status("RECEIVED")
+                        .value(new BigDecimal("200.00"))
+                        .build());
+        when(asaasTransferClient.retrieveTransfer(any(), any())).thenAnswer(invocation ->
+                AsaasTransferResponse.builder()
+                        .id(invocation.getArgument(1))
+                        .status("DONE")
+                        .value(new BigDecimal("100.00"))
+                        .build());
+    }
+
+    protected String productAccessToken(String email) {
+        return productAccessToken(email, "SenhaForte1!");
+    }
+
+    protected String productAccessToken(String email, String password) {
+        return authService.login(
+                LoginRequest.builder()
+                        .email(email)
+                        .password(password)
+                        .deviceId("junit-" + java.util.UUID.randomUUID())
+                        .deviceName("JUnit")
+                        .platform("test")
+                        .build(),
+                "127.0.0.1",
+                "JUnit").getAccessToken();
+    }
+
+    protected static String bearer(String accessToken) {
+        return "Bearer " + accessToken;
     }
 }

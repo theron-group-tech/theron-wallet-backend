@@ -61,7 +61,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR = "X-Actor-User-Id";
     private static final String IDEMPOTENCY = "Idempotency-Key";
 
     @Autowired private UserService userService;
@@ -84,6 +83,10 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
     private UserResponse finance2;
     private UserResponse employee;
     private AccountResponse account;
+    private String tokenOwner;
+    private String tokenFinance1;
+    private String tokenFinance2;
+    private String tokenEmployee;
 
     @BeforeEach
     void setUp() {
@@ -106,6 +109,10 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(org.getId(), finance1.getId(), List.of(RoleCode.FINANCE.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), finance2.getId(), List.of(RoleCode.FINANCE.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), employee.getId(), List.of(RoleCode.EMPLOYEE.name()));
+        tokenOwner = productAccessToken(owner.getEmail());
+        tokenFinance1 = productAccessToken(finance1.getEmail());
+        tokenFinance2 = productAccessToken(finance2.getEmail());
+        tokenEmployee = productAccessToken(employee.getEmail());
 
         account = accountService.create(org.getId(), CreateAccountRequest.builder()
                 .name("Approval Account").type(AccountType.MAIN).build());
@@ -129,7 +136,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         stubAsaasTransfer("asaas_zero");
 
         mockMvc.perform(post("/api/v1/pix/transfers")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .header(IDEMPOTENCY, "appr-zero-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(transfer("50.00"))))
@@ -146,7 +153,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         reset(asaasTransferClient);
 
         MvcResult result = mockMvc.perform(post("/api/v1/pix/transfers")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .header(IDEMPOTENCY, "appr-hold-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(transfer("150.00"))))
@@ -170,7 +177,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         stubAsaasTransfer("asaas_approve_1");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
@@ -188,7 +195,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         reset(asaasTransferClient);
 
         mockMvc.perform(post("/api/v1/approvals/{id}/reject", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"comment\":\"nope\"}"))
                 .andExpect(status().isOk())
@@ -205,7 +212,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         UUID requestId = createHeldTransfer("appr-emp-1", "150.00");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, employee.getId())
+                        .header("Authorization", bearer(tokenEmployee))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isForbidden());
@@ -217,7 +224,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         UUID requestId = createHeldTransfer("appr-self-1", "150.00");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isForbidden());
@@ -231,7 +238,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         stubAsaasTransfer("asaas_two");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
@@ -243,7 +250,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         assertBalance("5000.00");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance2.getId())
+                        .header("Authorization", bearer(tokenFinance2))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
@@ -261,14 +268,14 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         UUID requestId = createHeldTransfer("appr-dup-1", "600.00");
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.approvedCount").value(1));
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isConflict());
@@ -288,7 +295,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
                 requestId);
 
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance1.getId())
+                        .header("Authorization", bearer(tokenFinance1))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnprocessableEntity());
@@ -305,7 +312,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         reset(asaasTransferClient);
 
         mockMvc.perform(post("/api/v1/approvals/{id}/cancel", requestId)
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
@@ -329,7 +336,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
         try {
             Callable<Void> fin1 = () -> {
                 int status = mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                                .header(ACTOR, finance1.getId())
+                                .header("Authorization", bearer(tokenFinance1))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{}"))
                         .andReturn()
@@ -344,7 +351,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
             };
             Callable<Void> fin2 = () -> {
                 int status = mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                                .header(ACTOR, finance2.getId())
+                                .header("Authorization", bearer(tokenFinance2))
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{}"))
                         .andReturn()
@@ -375,7 +382,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
 
     private UUID createHeldTransfer(String idempotencyKey, String amount) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/pix/transfers")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .header(IDEMPOTENCY, idempotencyKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(transfer(amount))))
@@ -392,7 +399,7 @@ class ApprovalWorkflowIntegrationTest extends BaseIntegrationTest {
     private void createPolicy(String min, String max, int required) {
         try {
             mockMvc.perform(post("/api/v1/approvals/policies")
-                            .header(ACTOR, owner.getId())
+                            .header("Authorization", bearer(tokenOwner))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateApprovalPolicyRequest.builder()
                                     .accountId(account.getId())

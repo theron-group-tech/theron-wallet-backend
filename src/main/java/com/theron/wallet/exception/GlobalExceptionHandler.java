@@ -74,7 +74,7 @@ public class GlobalExceptionHandler {
                 .map(fe -> ApiErrorResponse.FieldError.builder()
                         .field(fe.getField())
                         .message(fe.getDefaultMessage())
-                        .rejectedValue(fe.getRejectedValue())
+                        .rejectedValue(sensitiveField(fe.getField()) ? null : fe.getRejectedValue())
                         .build())
                 .toList();
 
@@ -143,5 +143,14 @@ public class GlobalExceptionHandler {
                 "Internal Server Error",
                 "An unexpected error occurred. Please try again later.",
                 request.getRequestURI()));
+    }
+
+    private static boolean sensitiveField(String field) {
+        if (field == null) {
+            return false;
+        }
+        String lower = field.toLowerCase();
+        return lower.contains("password") || lower.contains("token") || lower.contains("secret")
+                || lower.contains("apikey") || lower.contains("api-key");
     }
 }

@@ -102,7 +102,7 @@ class UserMembershipIntegrationTest extends BaseIntegrationTest {
 
             assertThatThrownBy(() -> userService.create(validUserRequest("DUP@empresa.com.br")))
                     .isInstanceOf(DuplicateResourceException.class)
-                    .hasMessageContaining("email");
+                    .hasMessageContaining("registration");
         }
 
         @Test
@@ -128,7 +128,9 @@ class UserMembershipIntegrationTest extends BaseIntegrationTest {
             assertThat(updated.getName()).isEqualTo("Maria Atualizada");
             assertThat(updated.getStatus()).isEqualTo(UserStatus.SUSPENDED);
 
-            mockMvc.perform(delete("/api/v1/users/{id}", created.getId()))
+            UserResponse watcher = userService.create(validUserRequest("del-check@empresa.com.br"));
+            mockMvc.perform(delete("/api/v1/users/{id}", created.getId())
+                            .header("Authorization", bearer(productAccessToken(watcher.getEmail()))))
                     .andExpect(status().isMethodNotAllowed());
             assertThat(userRepository.existsById(created.getId())).isTrue();
         }

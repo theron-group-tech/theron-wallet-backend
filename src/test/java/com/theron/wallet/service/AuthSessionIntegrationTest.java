@@ -12,10 +12,13 @@ import com.theron.wallet.dto.request.UpdateUserRequest;
 import com.theron.wallet.dto.response.LoginResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.enums.UserStatus;
+import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.exception.UnauthorizedException;
+import com.theron.wallet.repository.AdminUserRepository;
 import com.theron.wallet.repository.AuthSessionRepository;
 import com.theron.wallet.security.JwtTokenProvider;
 import com.theron.wallet.service.impl.AuthServiceImpl;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -63,6 +66,12 @@ class AuthSessionIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private AuthSessionRepository authSessionRepository;
+
+    @Autowired
+    private AdminUserRepository adminUserRepository;
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
 
     @Value("${app.admin.email}")
     private String adminEmail;
@@ -384,6 +393,7 @@ class AuthSessionIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("admin login regression still returns token and adminId")
     void adminLoginRegression() throws Exception {
+        ensureAdminCredentials();
         mockMvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(LoginRequest.builder()
@@ -426,6 +436,19 @@ class AuthSessionIntegrationTest extends BaseIntegrationTest {
                 .deviceName("JUnit " + deviceId)
                 .platform("test")
                 .build();
+    }
+
+    private void ensureAdminCredentials() {
+        String email = adminEmail.trim().toLowerCase();
+        AdminUser admin = adminUserRepository.findByEmail(email).orElseGet(() -> AdminUser.builder()
+                .name("Theron Admin")
+                .email(email)
+                .role("ADMIN")
+                .active(true)
+                .build());
+        admin.setActive(true);
+        admin.setPasswordHash(passwordEncoder.encode(adminPassword));
+        adminUserRepository.save(admin);
     }
 
     private LoginResponse loginProduct(String email, String deviceId) throws Exception {

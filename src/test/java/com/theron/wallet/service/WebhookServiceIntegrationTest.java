@@ -21,6 +21,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 class WebhookServiceIntegrationTest extends BaseIntegrationTest {
 
@@ -154,6 +156,12 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("PAYMENT_REFUNDED should mark transaction FAILED")
         void shouldFailOnRefund() {
+            when(asaasPaymentClient.retrievePayment(any(), any())).thenReturn(
+                    com.theron.wallet.dto.asaas.AsaasPaymentResponse.builder()
+                            .id(asaasPaymentId)
+                            .status("REFUNDED")
+                            .value(new BigDecimal("200.00"))
+                            .build());
             webhookService.processPaymentWebhook(buildPayload("PAYMENT_REFUNDED", asaasPaymentId));
 
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();

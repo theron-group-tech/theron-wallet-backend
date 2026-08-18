@@ -6,6 +6,7 @@ import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
+import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateBeneficiaryRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
@@ -14,12 +15,15 @@ import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.BeneficiaryResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.UserResponse;
+import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Subaccount;
+import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.BeneficiaryStatus;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
+import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -53,7 +57,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR_HEADER = "X-Actor-User-Id";
     private static final String PIX_KEY = "12345678901";
 
     @Autowired
@@ -67,6 +70,12 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private RoleAssignmentService roleAssignmentService;
+
+    @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private AccountRepository accountRepository;
 
     @Autowired
     private BeneficiaryRepository beneficiaryRepository;
@@ -91,6 +100,9 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     private UserResponse ownerA;
     private UserResponse employeeA;
     private UserResponse ownerB;
+    private String tokenOwnerA;
+    private String tokenEmployeeA;
+    private String tokenOwnerB;
 
     @BeforeEach
     void setUpBeneficiaries() {
@@ -107,13 +119,16 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
 
         roleAssignmentService.assignRolesInternal(orgA.getId(), ownerA.getId(), List.of(RoleCode.OWNER.name()));
         roleAssignmentService.assignRolesInternal(orgB.getId(), ownerB.getId(), List.of(RoleCode.OWNER.name()));
+        tokenOwnerA = productAccessToken(ownerA.getEmail());
+        tokenEmployeeA = productAccessToken(employeeA.getEmail());
+        tokenOwnerB = productAccessToken(ownerB.getEmail());
     }
 
     @Test
     @DisplayName("1. CRUD — POST/GET list/GET id/PATCH name")
     void crud() throws Exception {
         MvcResult createdResult = mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(orgA.getId(), "Fornecedor ACME", PIX_KEY))))
                 .andExpect(status().isCreated())
@@ -129,7 +144,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
         BeneficiaryResponse created = read(createdResult);
 
         mockMvc.perform(get("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .param("organizationId", orgA.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
@@ -137,13 +152,13 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$[0].name").value("Fornecedor ACME"));
 
         mockMvc.perform(get("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(created.getId().toString()))
                 .andExpect(jsonPath("$.name").value("Fornecedor ACME"));
 
         mockMvc.perform(patch("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateBeneficiaryRequest.builder()
                                 .name("Nome atualizado")
@@ -157,13 +172,13 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("2. Duplicidade — mesma org + mesma pix key → 409")
     void duplicatePixKey() throws Exception {
         mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(orgA.getId(), "Primeiro", PIX_KEY))))
                 .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(orgA.getId(), "Segundo", PIX_KEY))))
                 .andExpect(status().isConflict());
@@ -172,15 +187,16 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("3. Inativo — DELETE lógico; saque com beneficiaryId → 422; GET ainda 200 INACTIVE")
     void inactiveCannotBeUsedInWithdraw() throws Exception {
-        BeneficiaryResponse created = createPixBeneficiary(ownerA.getId(), orgA.getId(), "Inativo", PIX_KEY);
+        BeneficiaryResponse created = createPixBeneficiary(tokenOwnerA, orgA.getId(), "Inativo", PIX_KEY);
         Subaccount subaccount = persistFundedSubaccount();
 
         mockMvc.perform(delete("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(post("/api/v1/withdraws")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())
@@ -190,7 +206,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isUnprocessableEntity());
 
         mockMvc.perform(get("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("INACTIVE"));
     }
@@ -198,16 +214,16 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("4. Cross-tenant — list org B vazio; GET id de A com ator B → 403")
     void crossTenantIsolation() throws Exception {
-        BeneficiaryResponse created = createPixBeneficiary(ownerA.getId(), orgA.getId(), "De A", PIX_KEY);
+        BeneficiaryResponse created = createPixBeneficiary(tokenOwnerA, orgA.getId(), "De A", PIX_KEY);
 
         mockMvc.perform(get("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerB.getId())
+                        .header("Authorization", bearer(tokenOwnerB))
                         .param("organizationId", orgB.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
 
         mockMvc.perform(get("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerB.getId()))
+                        .header("Authorization", bearer(tokenOwnerB)))
                 .andExpect(status().isForbidden());
     }
 
@@ -215,31 +231,32 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("5. Sem permission — EMPLOYEE POST ou DELETE → 403")
     void employeeCannotCreateOrDelete() throws Exception {
         mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, employeeA.getId())
+                        .header("Authorization", bearer(tokenEmployeeA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(orgA.getId(), "Bloqueado", PIX_KEY))))
                 .andExpect(status().isForbidden());
 
-        BeneficiaryResponse created = createPixBeneficiary(ownerA.getId(), orgA.getId(), "Do owner", PIX_KEY);
+        BeneficiaryResponse created = createPixBeneficiary(tokenOwnerA, orgA.getId(), "Do owner", PIX_KEY);
 
         mockMvc.perform(get("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, employeeA.getId()))
+                        .header("Authorization", bearer(tokenEmployeeA)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(delete("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, employeeA.getId()))
+                        .header("Authorization", bearer(tokenEmployeeA)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     @DisplayName("6. Usado em transferência — saque com beneficiaryId grava FK; DELETE lógico ainda 204")
     void usedInWithdrawThenLogicalDelete() throws Exception {
-        BeneficiaryResponse created = createPixBeneficiary(ownerA.getId(), orgA.getId(), "Pix destino", PIX_KEY);
+        BeneficiaryResponse created = createPixBeneficiary(tokenOwnerA, orgA.getId(), "Pix destino", PIX_KEY);
         Subaccount subaccount = persistFundedSubaccount();
         stubAsaasTransfer("transfer_beneficiary");
 
         mockMvc.perform(post("/api/v1/withdraws")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())
@@ -258,7 +275,7 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(captor.getValue().getPixAddressKeyType()).isEqualTo("CPF");
 
         mockMvc.perform(delete("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isNoContent());
         assertThat(beneficiaryRepository.findById(created.getId())).isPresent();
     }
@@ -270,11 +287,11 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
         Subaccount subaccount = persistFundedSubaccount();
 
         mockMvc.perform(get("/api/v1/beneficiaries/{id}", missing)
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(patch("/api/v1/beneficiaries/{id}", missing)
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateBeneficiaryRequest.builder()
                                 .name("x")
@@ -282,11 +299,12 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(delete("/api/v1/beneficiaries/{id}", missing)
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/withdraws")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
+                        .header("Idempotency-Key", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(WithdrawRequest.builder()
                                 .subaccountId(subaccount.getId())
@@ -299,10 +317,10 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("8. Delete lógico — unique ainda bloqueia; PATCH status=ACTIVE reativa")
     void logicalDeleteKeepsUniqueAndCanReactivate() throws Exception {
-        BeneficiaryResponse created = createPixBeneficiary(ownerA.getId(), orgA.getId(), "Reativavel", PIX_KEY);
+        BeneficiaryResponse created = createPixBeneficiary(tokenOwnerA, orgA.getId(), "Reativavel", PIX_KEY);
 
         mockMvc.perform(delete("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId()))
+                        .header("Authorization", bearer(tokenOwnerA)))
                 .andExpect(status().isNoContent());
 
         assertThat(beneficiaryRepository.findById(created.getId())).isPresent();
@@ -310,13 +328,13 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .isEqualTo(BeneficiaryStatus.INACTIVE);
 
         mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(orgA.getId(), "Clone", PIX_KEY))))
                 .andExpect(status().isConflict());
 
         mockMvc.perform(patch("/api/v1/beneficiaries/{id}", created.getId())
-                        .header(ACTOR_HEADER, ownerA.getId())
+                        .header("Authorization", bearer(tokenOwnerA))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateBeneficiaryRequest.builder()
                                 .status(BeneficiaryStatus.ACTIVE)
@@ -325,10 +343,10 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
-    private BeneficiaryResponse createPixBeneficiary(UUID actorId, UUID organizationId, String name, String pixKey)
+    private BeneficiaryResponse createPixBeneficiary(String token, UUID organizationId, String name, String pixKey)
             throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/beneficiaries")
-                        .header(ACTOR_HEADER, actorId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(pixRequest(organizationId, name, pixKey))))
                 .andExpect(status().isCreated())
@@ -348,6 +366,13 @@ class BeneficiaryServiceIntegrationTest extends BaseIntegrationTest {
     private Subaccount persistFundedSubaccount() {
         Subaccount subaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
         walletRepository.save(TestFixtures.aWalletWithBalance(subaccount, new BigDecimal("500.00")));
+        var created = accountService.create(orgA.getId(), CreateAccountRequest.builder()
+                .name("Withdraw " + subaccount.getId())
+                .type(AccountType.EMPLOYEE)
+                .build());
+        Account account = accountRepository.findById(created.getId()).orElseThrow();
+        subaccount.setAccount(account);
+        subaccountRepository.save(subaccount);
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
         return subaccount;
     }

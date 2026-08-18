@@ -44,7 +44,7 @@ asaas:
 
 # Encryption (AES-256-GCM for API key storage)
 encryption:
-  aes-key: ${ENCRYPTION_AES_KEY:nIlpBopPKbJrzQqLsQcY/EItC724S8pmH2ZI/bTRQrE=}
+  aes-key: ${ENCRYPTION_AES_KEY}
 
 # Actuator / Health
 management:
@@ -66,16 +66,16 @@ springdoc:
 
 # JWT
 jwt:
-  secret: ${JWT_SECRET:theronGroupWalletServiceSecretKey2024MustBe256BitsLong!}
+  secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
   refresh-expiration-days: ${JWT_REFRESH_EXPIRATION_DAYS:30}
 
-# Default admin seed (first-boot only)
+# Default admin seed (first-boot only; no hardcoded password)
 app:
   admin:
-    email: ${DEFAULT_ADMIN_EMAIL:alexsandro.nunes@proton.me}
-    password: ${DEFAULT_ADMIN_PASSWORD:62862055}
+    email: ${DEFAULT_ADMIN_EMAIL:}
+    password: ${DEFAULT_ADMIN_PASSWORD:}
 
 # Logging
 logging:

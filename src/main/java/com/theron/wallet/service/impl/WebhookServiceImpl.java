@@ -1,8 +1,10 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
+import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
-import com.theron.wallet.entity.PixTransaction;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AsaasPaymentEvent;
@@ -11,10 +13,14 @@ import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.UnauthorizedException;
+import com.theron.wallet.integration.AsaasPaymentClient;
+import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
@@ -28,8 +34,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -42,15 +50,31 @@ public class WebhookServiceImpl implements WebhookService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
+    private static final Set<String> PAYMENT_CONFIRMED_REMOTE = Set.of(
+            "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH");
+    private static final Set<String> PAYMENT_REVERSED_REMOTE = Set.of(
+            "REFUNDED", "CHARGEBACK_REQUESTED", "CHARGEBACK_DISPUTE");
+    private static final Set<String> TRANSFER_DONE_REMOTE = Set.of("DONE");
+    private static final Set<String> TRANSFER_FAILED_REMOTE = Set.of("FAILED", "CANCELLED", "BLOCKED");
+
     private final AsaasProperties asaasProperties;
     private final SubaccountRepository subaccountRepository;
     private final AsaasWebhookEventPersister asaasWebhookEventPersister;
+    private final AsaasPaymentClient asaasPaymentClient;
+    private final AsaasTransferClient asaasTransferClient;
+    private final AsaasApiKeyResolver asaasApiKeyResolver;
 
     @Override
     @Transactional
     public void receive(String token, AsaasWebhookPayload payload) {
-        if (!isValidWebhookToken(token)) {
+        if (!isRecognizedWebhookToken(token)) {
             throw new UnauthorizedException("Invalid webhook token");
+        }
+
+        if (!isGlobalWebhookToken(token) && !tokenMatchesOwnerTransaction(token, payload)) {
+            log.warn("Webhook token does not belong to the transaction owner; ignoring event={}",
+                    payload != null ? payload.getEvent() : null);
+            return;
         }
 
         String eventId = resolveEventId(payload);
@@ -73,18 +97,47 @@ public class WebhookServiceImpl implements WebhookService {
         }
     }
 
-    private boolean isValidWebhookToken(String token) {
+    private boolean isRecognizedWebhookToken(String token) {
         if (token == null || token.isBlank()) {
             return false;
         }
+        return isGlobalWebhookToken(token) || subaccountRepository.findByWebhookToken(token).isPresent();
+    }
+
+    private boolean isGlobalWebhookToken(String token) {
         String expectedToken = asaasProperties.getWebhookToken();
-        if (expectedToken != null && !expectedToken.isBlank()
+        return expectedToken != null && !expectedToken.isBlank()
                 && MessageDigest.isEqual(
                 expectedToken.getBytes(StandardCharsets.UTF_8),
-                token.getBytes(StandardCharsets.UTF_8))) {
-            return true;
+                token.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private boolean tokenMatchesOwnerTransaction(String token, AsaasWebhookPayload payload) {
+        String resourceId = AsaasWebhookEventPersister.resourceId(payload);
+        if (resourceId == null) {
+            return false;
         }
-        return subaccountRepository.findByWebhookToken(token).isPresent();
+        Optional<Transaction> transaction = transactionRepository.findByAsaasPaymentId(resourceId);
+        if (transaction.isEmpty()) {
+            return false;
+        }
+        Subaccount owner = ownerSubaccount(transaction.get());
+        if (owner == null || owner.getWebhookToken() == null || owner.getWebhookToken().isBlank()) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                owner.getWebhookToken().getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private Subaccount ownerSubaccount(Transaction transaction) {
+        if (transaction.getWallet() != null && transaction.getWallet().getSubaccount() != null) {
+            return transaction.getWallet().getSubaccount();
+        }
+        if (transaction.getAccount() != null) {
+            return subaccountRepository.findByAccount_Id(transaction.getAccount().getId()).orElse(null);
+        }
+        return null;
     }
 
     static String resolveEventId(AsaasWebhookPayload payload) {
@@ -147,6 +200,9 @@ public class WebhookServiceImpl implements WebhookService {
                     transaction.getId(), transaction.getStatus());
             return;
         }
+        if (!remotePaymentMatches(transaction, PAYMENT_CONFIRMED_REMOTE)) {
+            return;
+        }
         transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
         syncPixTransaction(transaction);
         walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
@@ -180,6 +236,9 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private void handlePaymentReversal(Transaction transaction, AsaasPaymentEvent event) {
+        if (!remotePaymentMatches(transaction, PAYMENT_REVERSED_REMOTE)) {
+            return;
+        }
         if (transaction.getStatus() == TransactionStatus.COMPLETED) {
             transactionLifecycleService.transition(transaction, TransactionStatus.REVERSED);
             syncPixTransaction(transaction);
@@ -244,6 +303,9 @@ public class WebhookServiceImpl implements WebhookService {
                     transaction.getId(), transaction.getStatus());
             return;
         }
+        if (!remoteTransferMatches(transaction, TRANSFER_DONE_REMOTE)) {
+            return;
+        }
         transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
         syncPixTransaction(transaction);
 
@@ -263,6 +325,9 @@ public class WebhookServiceImpl implements WebhookService {
         if (!awaitsProvider(transaction)) {
             log.info("Transaction already in terminal state: transactionId={}, status={}",
                     transaction.getId(), transaction.getStatus());
+            return;
+        }
+        if (!remoteTransferMatches(transaction, TRANSFER_FAILED_REMOTE)) {
             return;
         }
         TransactionStatus newStatus = (event == AsaasTransferEvent.TRANSFER_CANCELLED)
@@ -291,6 +356,74 @@ public class WebhookServiceImpl implements WebhookService {
     private static boolean awaitsProvider(Transaction transaction) {
         return transaction.getStatus() == TransactionStatus.PENDING
                 || transaction.getStatus() == TransactionStatus.PROCESSING;
+    }
+
+    private boolean remotePaymentMatches(Transaction transaction, Set<String> expectedStatuses) {
+        String asaasId = transaction.getAsaasPaymentId();
+        if (asaasId == null || asaasId.isBlank()) {
+            log.warn("Ignoring payment webhook without Asaas id: transactionId={}", transaction.getId());
+            return false;
+        }
+        try {
+            AsaasPaymentResponse remote = asaasPaymentClient.retrievePayment(resolveApiKey(transaction), asaasId);
+            if (remote == null || !statusIn(remote.getStatus(), expectedStatuses)) {
+                log.warn("Ignoring payment webhook; Asaas status incompatible: transactionId={}, remoteStatus={}",
+                        transaction.getId(), remote != null ? remote.getStatus() : null);
+                return false;
+            }
+            return true;
+        } catch (AsaasApiException ex) {
+            if (ex.getAsaasStatusCode() == 404) {
+                log.warn("Ignoring payment webhook; Asaas payment not found: transactionId={}", transaction.getId());
+                return false;
+            }
+            throw ex;
+        }
+    }
+
+    private boolean remoteTransferMatches(Transaction transaction, Set<String> expectedStatuses) {
+        String asaasId = transaction.getAsaasPaymentId();
+        if (asaasId == null || asaasId.isBlank()) {
+            log.warn("Ignoring transfer webhook without Asaas id: transactionId={}", transaction.getId());
+            return false;
+        }
+        try {
+            AsaasTransferResponse remote = asaasTransferClient.retrieveTransfer(resolveApiKey(transaction), asaasId);
+            if (remote == null || !statusIn(remote.getStatus(), expectedStatuses)) {
+                log.warn("Ignoring transfer webhook; Asaas status incompatible: transactionId={}, remoteStatus={}",
+                        transaction.getId(), remote != null ? remote.getStatus() : null);
+                return false;
+            }
+            return true;
+        } catch (AsaasApiException ex) {
+            if (ex.getAsaasStatusCode() == 404) {
+                log.warn("Ignoring transfer webhook; Asaas transfer not found: transactionId={}", transaction.getId());
+                return false;
+            }
+            throw ex;
+        }
+    }
+
+    private String resolveApiKey(Transaction transaction) {
+        try {
+            Subaccount owner = ownerSubaccount(transaction);
+            if (owner != null && owner.getEncryptedApiKey() != null) {
+                String key = asaasApiKeyResolver.resolveForSubaccount(owner.getId());
+                if (key != null && !key.isBlank()) {
+                    return key;
+                }
+            }
+        } catch (RuntimeException ex) {
+            log.debug("Falling back to root Asaas key for webhook retrieve: {}", ex.getMessage());
+        }
+        return asaasProperties.getKey();
+    }
+
+    private static boolean statusIn(String status, Set<String> expected) {
+        if (status == null) {
+            return false;
+        }
+        return expected.contains(status.trim().toUpperCase(Locale.ROOT));
     }
 
     private UUID resolveOrganizationId(Transaction transaction) {

@@ -25,11 +25,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/audit-logs")
 @RequiredArgsConstructor
-@Tag(name = "Audit Logs", description = "Append-only audit trail. Actor from JWT or X-Actor-User-Id.")
+@Tag(name = "Audit Logs", description = "Append-only audit trail. Requires JWT access token.")
 public class AuditLogController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final AuditLogService auditLogService;
     private final ActorResolver actorResolver;
     private final AuthorizationService authorizationService;
@@ -37,13 +34,12 @@ public class AuditLogController {
     @GetMapping
     @Operation(summary = "List audit logs for an organization", description = "Requires audit.read")
     public ResponseEntity<Page<AuditLogResponse>> list(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID organizationId,
             @RequestParam(required = false) AuditAction action,
             @RequestParam(required = false) UUID userId,
             @RequestParam(required = false) String resourceType,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        UUID actor = actorResolver.requireProductUserId(actorUserId);
+        UUID actor = actorResolver.requireProductUserId();
         authorizationService.requirePermission(organizationId, actor, PermissionCodes.AUDIT_READ);
         return ResponseEntity.ok(auditLogService.list(
                 organizationId,

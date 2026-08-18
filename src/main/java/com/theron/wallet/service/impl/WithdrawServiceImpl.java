@@ -270,11 +270,14 @@ public class WithdrawServiceImpl implements WithdrawService {
         if (beneficiary == null) {
             return;
         }
-        Account account = wallet.getAccount();
-        if (account == null) {
-            return;
+        Account resolved = wallet.getAccount();
+        if (resolved == null && wallet.getSubaccount() != null && wallet.getSubaccount().getAccount() != null) {
+            resolved = wallet.getSubaccount().getAccount();
         }
-        UUID walletOrgId = account.getOrganization().getId();
+        if (resolved == null) {
+            throw new ForbiddenException("Wallet is not linked to an organization");
+        }
+        UUID walletOrgId = resolved.getOrganization().getId();
         UUID beneficiaryOrgId = beneficiary.getOrganization().getId();
         if (!walletOrgId.equals(beneficiaryOrgId)) {
             throw new ForbiddenException("Beneficiary does not belong to the wallet organization");
@@ -282,17 +285,18 @@ public class WithdrawServiceImpl implements WithdrawService {
     }
 
     private void authorizeAndLimitIfAccountPresent(Wallet wallet, User actor, java.math.BigDecimal amount) {
-        Account account = wallet.getAccount();
-        if (account == null) {
-            return;
+        Account resolved = wallet.getAccount();
+        if (resolved == null && wallet.getSubaccount() != null && wallet.getSubaccount().getAccount() != null) {
+            resolved = wallet.getSubaccount().getAccount();
         }
-        Account managed = accountRepository.findByIdWithOrganization(account.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
+        if (resolved == null) {
+            throw new ForbiddenException("Wallet is not linked to an organization");
+        }
+        final UUID accountId = resolved.getId();
+        Account managed = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
         UUID orgId = managed.getOrganization().getId();
-        if (!authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.WALLET_TRANSFER)
-                && !authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.TRANSACTIONS_CREATE)) {
-            throw new ForbiddenException("Missing wallet.transfer or transactions.create");
-        }
+        authorizationService.requirePermission(orgId, actor.getId(), PermissionCodes.WALLET_TRANSFER);
         transactionLimitService.assertWithinLimits(new LimitContext(
                 orgId,
                 managed.getId(),

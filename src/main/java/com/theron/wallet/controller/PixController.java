@@ -35,44 +35,38 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/pix")
 @RequiredArgsConstructor
-@Tag(name = "PIX", description = "Theron PIX API. Actor from JWT or X-Actor-User-Id. Never exposes Asaas credentials.")
+@Tag(name = "PIX", description = "Theron PIX API. Requires JWT access token. Never exposes Asaas credentials.")
 public class PixController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final PixService pixService;
     private final ActorResolver actorResolver;
 
     @PostMapping("/keys")
     @Operation(summary = "Create PIX key for an Account")
     public ResponseEntity<AccountPixKeyResponse> createKey(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody CreateAccountPixKeyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createKey(actorResolver.requireProductUserId(actorUserId), request));
+                .body(pixService.createKey(actorResolver.requireProductUserId(), request));
     }
 
     @GetMapping("/keys")
     @Operation(summary = "List PIX keys of an Account")
     public ResponseEntity<List<AccountPixKeyResponse>> listKeys(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID accountId) {
-        return ResponseEntity.ok(pixService.listKeys(actorResolver.requireProductUserId(actorUserId), accountId));
+        return ResponseEntity.ok(pixService.listKeys(actorResolver.requireProductUserId(), accountId));
     }
 
     @DeleteMapping("/keys/{id}")
     @Operation(summary = "Remove PIX key (logical + Asaas)")
     public ResponseEntity<Void> deleteKey(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
-        pixService.deleteKey(actorResolver.requireProductUserId(actorUserId), id);
+            @PathVariable UUID id
+            ) {
+        pixService.deleteKey(actorResolver.requireProductUserId(), id);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/transfers")
     @Operation(summary = "Create PIX transfer", description = "Idempotency-Key header is mandatory.")
     public ResponseEntity<PixTransferResponse> createTransfer(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreatePixTransferRequest request) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
@@ -80,33 +74,31 @@ public class PixController {
         }
         request.setIdempotencyKey(idempotencyKey.trim());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createTransfer(actorResolver.requireProductUserId(actorUserId), request));
+                .body(pixService.createTransfer(actorResolver.requireProductUserId(), request));
     }
 
     @GetMapping("/transfers/{id}")
     @Operation(summary = "Get PIX transfer by id")
     public ResponseEntity<PixTransferResponse> getTransfer(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
-        return ResponseEntity.ok(pixService.getTransfer(actorResolver.requireProductUserId(actorUserId), id));
+            @PathVariable UUID id
+            ) {
+        return ResponseEntity.ok(pixService.getTransfer(actorResolver.requireProductUserId(), id));
     }
 
     @GetMapping("/transfers")
     @Operation(summary = "List PIX transfers of an Account")
     public ResponseEntity<Page<PixTransferResponse>> listTransfers(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID accountId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(pixService.listTransfers(
-                actorResolver.requireProductUserId(actorUserId), accountId, pageable));
+                actorResolver.requireProductUserId(), accountId, pageable));
     }
 
     @PostMapping("/qr-codes")
     @Operation(summary = "Create static PIX QR code")
     public ResponseEntity<AccountPixQrCodeResponse> createQrCode(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody CreateAccountPixQrCodeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createQrCode(actorResolver.requireProductUserId(actorUserId), request));
+                .body(pixService.createQrCode(actorResolver.requireProductUserId(), request));
     }
 }

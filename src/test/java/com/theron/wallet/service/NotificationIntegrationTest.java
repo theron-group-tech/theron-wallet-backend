@@ -66,7 +66,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class NotificationIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR = "X-Actor-User-Id";
     private static final String IDEMPOTENCY = "Idempotency-Key";
     private static final String PASSWORD = "SenhaForte1!";
 
@@ -96,6 +95,9 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
     private UserResponse ownerB;
     private AccountResponse account;
     private AccountResponse accountDest;
+    private String tokenOwner;
+    private String tokenFinance;
+    private String tokenOwnerB;
 
     @BeforeEach
     void setUp() {
@@ -111,6 +113,9 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(org.getId(), owner.getId(), List.of(RoleCode.OWNER.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), finance.getId(), List.of(RoleCode.FINANCE.name()));
         roleAssignmentService.assignRolesInternal(orgB.getId(), ownerB.getId(), List.of(RoleCode.OWNER.name()));
+        tokenOwner = productAccessToken(owner.getEmail());
+        tokenFinance = productAccessToken(finance.getEmail());
+        tokenOwnerB = productAccessToken(ownerB.getEmail());
 
         account = accountService.create(org.getId(), CreateAccountRequest.builder()
                 .name("Notif Account").type(AccountType.MAIN).build());
@@ -155,13 +160,13 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         login(owner.getEmail(), "device-list-a");
         login(ownerB.getEmail(), "device-list-b");
 
-        mockMvc.perform(get("/api/v1/notifications").header(ACTOR, owner.getId()))
+        mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
                 .andExpect(jsonPath("$.content.length()", greaterThan(0)))
                 .andExpect(jsonPath("$.content[0].userId").value(owner.getId().toString()));
 
-        String body = mockMvc.perform(get("/api/v1/notifications").header(ACTOR, ownerB.getId()))
+        String body = mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenOwnerB)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -175,7 +180,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
     void unreadCountMatches() throws Exception {
         login(owner.getEmail(), "device-unread");
         long unread = notificationRepository.countByUser_IdAndReadAtIsNull(owner.getId());
-        mockMvc.perform(get("/api/v1/notifications/unread-count").header(ACTOR, owner.getId()))
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value((int) unread));
     }
@@ -191,11 +196,11 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
                 .orElseThrow()
                 .getId();
 
-        mockMvc.perform(post("/api/v1/notifications/{id}/read", id).header(ACTOR, owner.getId()))
+        mockMvc.perform(post("/api/v1/notifications/{id}/read", id).header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.readAt").isNotEmpty());
 
-        mockMvc.perform(get("/api/v1/notifications/unread-count").header(ACTOR, owner.getId()))
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value((int) (before - 1)));
     }
@@ -206,10 +211,10 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         login(owner.getEmail(), "device-read-all");
         changePassword(owner.getId());
 
-        mockMvc.perform(post("/api/v1/notifications/read-all").header(ACTOR, owner.getId()))
+        mockMvc.perform(post("/api/v1/notifications/read-all").header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(0));
-        mockMvc.perform(get("/api/v1/notifications/unread-count").header(ACTOR, owner.getId()))
+        mockMvc.perform(get("/api/v1/notifications/unread-count").header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(0));
     }
@@ -223,10 +228,10 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
-        mockMvc.perform(post("/api/v1/notifications/{id}/read", owners.getId()).header(ACTOR, ownerB.getId()))
+        mockMvc.perform(post("/api/v1/notifications/{id}/read", owners.getId()).header("Authorization", bearer(tokenOwnerB)))
                 .andExpect(status().isForbidden());
 
-        String body = mockMvc.perform(get("/api/v1/notifications").header(ACTOR, ownerB.getId()))
+        String body = mockMvc.perform(get("/api/v1/notifications").header("Authorization", bearer(tokenOwnerB)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -269,6 +274,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
 
     private void changePassword(UUID userId) throws Exception {
         mockMvc.perform(patch("/api/v1/users/{id}", userId)
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateUserRequest.builder()
                                 .password("SenhaForte2!")
@@ -329,7 +335,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
 
     private PixTransferResponse postPix(String amount, String idempotencyKey) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/pix/transfers")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .header(IDEMPOTENCY, idempotencyKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(CreatePixTransferRequest.builder()
@@ -346,7 +352,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
 
     private void approve(UUID requestId) throws Exception {
         mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header(ACTOR, finance.getId())
+                        .header("Authorization", bearer(tokenFinance))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk());
@@ -354,7 +360,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
 
     private void reject(UUID requestId) throws Exception {
         mockMvc.perform(post("/api/v1/approvals/{id}/reject", requestId)
-                        .header(ACTOR, finance.getId())
+                        .header("Authorization", bearer(tokenFinance))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk());
@@ -407,7 +413,7 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
     private void createPolicy(String min, String max, int required) {
         try {
             mockMvc.perform(post("/api/v1/approvals/policies")
-                            .header(ACTOR, owner.getId())
+                            .header("Authorization", bearer(tokenOwner))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateApprovalPolicyRequest.builder()
                                     .accountId(account.getId())

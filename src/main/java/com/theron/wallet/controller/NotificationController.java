@@ -25,23 +25,19 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/notifications")
 @RequiredArgsConstructor
-@Tag(name = "Notifications", description = "In-app inbox. Actor from JWT or X-Actor-User-Id.")
+@Tag(name = "Notifications", description = "In-app inbox. Requires JWT access token.")
 public class NotificationController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final NotificationService notificationService;
     private final ActorResolver actorResolver;
 
     @GetMapping
     @Operation(summary = "List notifications for the current user")
     public ResponseEntity<Page<NotificationResponse>> list(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam(required = false) UUID organizationId,
             @RequestParam(required = false, defaultValue = "false") boolean unreadOnly,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(notificationService.list(
-                actorResolver.requireProductUserId(actorUserId),
+                actorResolver.requireProductUserId(),
                 organizationId,
                 unreadOnly,
                 pageable));
@@ -50,27 +46,24 @@ public class NotificationController {
     @GetMapping("/unread-count")
     @Operation(summary = "Unread notification count")
     public ResponseEntity<UnreadCountResponse> unreadCount(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam(required = false) UUID organizationId) {
         return ResponseEntity.ok(notificationService.unreadCount(
-                actorResolver.requireProductUserId(actorUserId), organizationId));
+                actorResolver.requireProductUserId(), organizationId));
     }
 
     @PostMapping("/{id}/read")
     @Operation(summary = "Mark a notification as read")
     public ResponseEntity<NotificationResponse> markRead(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @PathVariable UUID id) {
         return ResponseEntity.ok(notificationService.markRead(
-                actorResolver.requireProductUserId(actorUserId), id));
+                actorResolver.requireProductUserId(), id));
     }
 
     @PostMapping("/read-all")
     @Operation(summary = "Mark all notifications as read")
     public ResponseEntity<UnreadCountResponse> markAllRead(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam(required = false) UUID organizationId) {
         return ResponseEntity.ok(notificationService.markAllRead(
-                actorResolver.requireProductUserId(actorUserId), organizationId));
+                actorResolver.requireProductUserId(), organizationId));
     }
 }

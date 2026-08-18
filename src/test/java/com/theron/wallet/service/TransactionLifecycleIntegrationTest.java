@@ -6,14 +6,21 @@ import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
+import com.theron.wallet.dto.request.CreateAccountRequest;
+import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.DepositRequest;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.DepositResponse;
 import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
@@ -90,12 +97,33 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private OrganizationService organizationService;
+
+    @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private OrganizationMembershipService membershipService;
+
+    @Autowired
+    private RoleAssignmentService roleAssignmentService;
+
+    @Autowired
+    private com.theron.wallet.repository.AccountRepository accountRepository;
+
     private Subaccount subaccount;
     private Wallet wallet;
     private UUID actorUserId;
+    private String token;
 
     @BeforeEach
     void setUp() {
+        var org = organizationService.create(CreateOrganizationRequest.builder()
+                .legalName("Lifecycle Org")
+                .document("11122233000903")
+                .documentType(DocumentType.CNPJ)
+                .build());
         subaccount = TestFixtures.aSubaccount(SubaccountStatus.ACTIVE);
         subaccount.setAsaasCustomerId("cus_test_" + UUID.randomUUID().toString().substring(0, 12));
         subaccount = subaccountRepository.save(subaccount);
@@ -105,11 +133,25 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
                 .email("lifecycle-actor@theron.test")
                 .password("SenhaForte1!")
                 .build()).getId();
+        membershipService.addMember(org.getId(), AddOrganizationMemberRequest.builder()
+                .userId(actorUserId)
+                .build());
+        roleAssignmentService.assignRolesInternal(org.getId(), actorUserId, List.of(RoleCode.OWNER.name()));
+        var created = accountService.create(org.getId(), CreateAccountRequest.builder()
+                .name("Lifecycle")
+                .type(AccountType.MAIN)
+                .build());
+        Account account = accountRepository.findById(created.getId()).orElseThrow();
+        subaccount.setAccount(account);
+        subaccount = subaccountRepository.save(subaccount);
+        token = productAccessToken("lifecycle-actor@theron.test");
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
         when(asaasPaymentClient.createPayment(anyString(), any()))
                 .thenReturn(AsaasPaymentResponse.builder().id("pay_lifecycle").status("PENDING").build());
         when(asaasTransferClient.createTransfer(anyString(), any()))
                 .thenReturn(AsaasTransferResponse.builder().id("transfer_lifecycle").status("PENDING").build());
+        when(asaasPaymentClient.retrievePayment(any(), any()))
+                .thenReturn(AsaasPaymentResponse.builder().id("pay_transition").status("REFUNDED").value(new BigDecimal("80.00")).build());
     }
 
     @Test
@@ -117,6 +159,7 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
     void createWithIdempotencyHeader() throws Exception {
         String key = UUID.randomUUID().toString();
         MvcResult result = mockMvc.perform(post("/api/v1/deposits")
+                        .header("Authorization", bearer(token))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(DepositRequest.builder()
@@ -198,12 +241,14 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
                 .build();
 
         MvcResult first = mockMvc.perform(post("/api/v1/deposits")
+                        .header("Authorization", bearer(token))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isCreated())
                 .andReturn();
         MvcResult second = mockMvc.perform(post("/api/v1/deposits")
+                        .header("Authorization", bearer(token))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
@@ -221,6 +266,7 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
     void sameKeyDifferentPayloadConflict() throws Exception {
         String key = UUID.randomUUID().toString();
         mockMvc.perform(post("/api/v1/deposits")
+                        .header("Authorization", bearer(token))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(DepositRequest.builder()
@@ -230,6 +276,7 @@ class TransactionLifecycleIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated());
 
         mockMvc.perform(post("/api/v1/deposits")
+                        .header("Authorization", bearer(token))
                         .header("Idempotency-Key", key)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(DepositRequest.builder()

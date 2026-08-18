@@ -2,7 +2,10 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.WithdrawService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -25,11 +28,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Withdrawals", description = "Cash-out operations via Asaas transfers")
 public class WithdrawController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final WithdrawService withdrawService;
     private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
     @Operation(summary = "Criar saque via Pix",
@@ -42,14 +43,14 @@ public class WithdrawController {
             @ApiResponse(responseCode = "422", description = "Subconta não elegível para saques (status inválido)")
     })
     public ResponseEntity<WithdrawResponse> createWithdraw(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody WithdrawRequest request) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            request.setIdempotencyKey(idempotencyKey.trim());
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for withdrawals");
         }
+        request.setIdempotencyKey(idempotencyKey.trim());
         WithdrawResponse response = withdrawService.createWithdraw(
-                actorResolver.requireProductUserId(actorUserId), request);
+                actorResolver.requireProductUserId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -65,6 +66,14 @@ public class WithdrawController {
             @RequestParam(required = false) UUID walletId,
             @RequestParam(required = false) UUID subaccountId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        UUID actor = actorResolver.requireProductUserId();
+        if (walletId != null) {
+            resourceAuthorization.requireWallet(actor, walletId, PermissionCodes.TRANSACTIONS_READ);
+        } else if (subaccountId != null) {
+            resourceAuthorization.requireSubaccount(actor, subaccountId, PermissionCodes.TRANSACTIONS_READ);
+        } else {
+            throw new InvalidRequestException("walletId or subaccountId is required");
+        }
         return ResponseEntity.ok(withdrawService.findAll(walletId, subaccountId, pageable));
     }
 
@@ -75,6 +84,8 @@ public class WithdrawController {
             @ApiResponse(responseCode = "404", description = "Transaction not found")
     })
     public ResponseEntity<WithdrawResponse> findById(@PathVariable UUID transactionId) {
+        resourceAuthorization.requireTransaction(
+                actorResolver.requireProductUserId(), transactionId, PermissionCodes.TRANSACTIONS_READ);
         return ResponseEntity.ok(withdrawService.findById(transactionId));
     }
 }

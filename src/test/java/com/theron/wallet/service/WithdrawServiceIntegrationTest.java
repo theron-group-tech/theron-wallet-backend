@@ -4,12 +4,19 @@ import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
+import com.theron.wallet.dto.request.CreateAccountRequest;
+import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.WithdrawRequest;
 import com.theron.wallet.dto.response.WithdrawResponse;
+import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
@@ -27,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,12 +66,32 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionRepository transactionRepository;
 
+    @Autowired
+    private OrganizationService organizationService;
+
+    @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private OrganizationMembershipService membershipService;
+
+    @Autowired
+    private RoleAssignmentService roleAssignmentService;
+
+    @Autowired
+    private com.theron.wallet.repository.AccountRepository accountRepository;
+
     private Subaccount savedSubaccount;
     private Wallet savedWallet;
     private UUID actorUserId;
 
     @BeforeEach
     void setUp() {
+        var org = organizationService.create(CreateOrganizationRequest.builder()
+                .legalName("Withdraw Org")
+                .document("11122233000902")
+                .documentType(DocumentType.CNPJ)
+                .build());
         savedSubaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
         savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(savedSubaccount, new BigDecimal("500.00")));
         actorUserId = userService.create(CreateUserRequest.builder()
@@ -71,6 +99,17 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                 .email("withdraw-actor@theron.test")
                 .password("SenhaForte1!")
                 .build()).getId();
+        membershipService.addMember(org.getId(), AddOrganizationMemberRequest.builder()
+                .userId(actorUserId)
+                .build());
+        roleAssignmentService.assignRolesInternal(org.getId(), actorUserId, List.of(RoleCode.OWNER.name()));
+        var created = accountService.create(org.getId(), CreateAccountRequest.builder()
+                .name("Withdraw")
+                .type(AccountType.MAIN)
+                .build());
+        Account account = accountRepository.findById(created.getId()).orElseThrow();
+        savedSubaccount.setAccount(account);
+        savedSubaccount = subaccountRepository.save(savedSubaccount);
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("root-api-key");
     }
 
@@ -358,6 +397,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             AsaasWebhookPayload payload = buildTransferPayload("TRANSFER_FAILED", "transfer_fail_1",
                     new BigDecimal("150.00"));
+            stubRemoteTransfer("transfer_fail_1", "FAILED");
 
             webhookService.processTransferWebhook(payload);
 
@@ -380,6 +420,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             AsaasWebhookPayload payload = buildTransferPayload("TRANSFER_CANCELLED", "transfer_cancel_1",
                     new BigDecimal("200.00"));
+            stubRemoteTransfer("transfer_cancel_1", "CANCELLED");
 
             webhookService.processTransferWebhook(payload);
 
@@ -401,6 +442,7 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
 
             AsaasWebhookPayload payload = buildTransferPayload("TRANSFER_BLOCKED", "transfer_blocked_1",
                     new BigDecimal("75.00"));
+            stubRemoteTransfer("transfer_blocked_1", "BLOCKED");
 
             webhookService.processTransferWebhook(payload);
 
@@ -521,5 +563,14 @@ class WithdrawServiceIntegrationTest extends BaseIntegrationTest {
                         .operationType("PIX")
                         .build())
                 .build();
+    }
+
+    private void stubRemoteTransfer(String transferId, String status) {
+        when(asaasTransferClient.retrieveTransfer(any(), eq(transferId)))
+                .thenReturn(AsaasTransferResponse.builder()
+                        .id(transferId)
+                        .status(status)
+                        .value(new BigDecimal("100.00"))
+                        .build());
     }
 }

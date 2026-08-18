@@ -12,6 +12,7 @@ public final class ApiErrorCodes {
     public static final String INVALID_REQUEST = "INVALID_REQUEST";
     public static final String METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED";
     public static final String ASAAS_ERROR = "ASAAS_ERROR";
+    public static final String RATE_LIMITED = "RATE_LIMITED";
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 
     private ApiErrorCodes() {
@@ -38,6 +39,9 @@ public final class ApiErrorCodes {
         }
         if (exception instanceof AsaasApiException) {
             return ASAAS_ERROR;
+        }
+        if (exception instanceof RateLimitException) {
+            return RATE_LIMITED;
         }
         return of(exception.getStatus());
     }

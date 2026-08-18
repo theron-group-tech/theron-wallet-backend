@@ -2,6 +2,9 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -28,6 +31,8 @@ import java.util.UUID;
 public class OrganizationAccountController {
 
     private final AccountService accountService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
     @Operation(summary = "Create account", description = "Creates an account and a zero-balance wallet. Does not provision Asaas.")
@@ -40,8 +45,11 @@ public class OrganizationAccountController {
     public ResponseEntity<AccountResponse> create(
             @PathVariable UUID organizationId,
             @Valid @RequestBody CreateAccountRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(accountService.create(organizationId, request));
+        UUID actor = actorResolver.requireProductUserId();
+        resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.ORGANIZATION_UPDATE);
+        AccountResponse created = accountService.create(organizationId, request);
+        resourceAuthorization.requirePathOrganization(organizationId, created.getOrganizationId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
     @GetMapping
@@ -51,6 +59,8 @@ public class OrganizationAccountController {
             @ApiResponse(responseCode = "404", description = "Organization not found")
     })
     public ResponseEntity<List<AccountResponse>> list(@PathVariable UUID organizationId) {
+        UUID actor = actorResolver.requireProductUserId();
+        resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.listByOrganization(organizationId));
     }
 }

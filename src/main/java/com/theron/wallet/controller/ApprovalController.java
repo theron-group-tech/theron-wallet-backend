@@ -30,11 +30,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/approvals")
 @RequiredArgsConstructor
-@Tag(name = "Approvals", description = "Financial approval policies and workflow for PIX transfers. Actor from JWT or X-Actor-User-Id.")
+@Tag(name = "Approvals", description = "Financial approval policies and workflow for PIX transfers. Requires JWT access token.")
 public class ApprovalController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final ApprovalPolicyService approvalPolicyService;
     private final ApprovalWorkflowService approvalWorkflowService;
     private final ActorResolver actorResolver;
@@ -47,37 +44,34 @@ public class ApprovalController {
             @ApiResponse(responseCode = "422", description = "Overlapping range or invalid account")
     })
     public ResponseEntity<ApprovalPolicyResponse> createPolicy(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody CreateApprovalPolicyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(approvalPolicyService.create(actorResolver.requireProductUserId(actorUserId), request));
+                .body(approvalPolicyService.create(actorResolver.requireProductUserId(), request));
     }
 
     @GetMapping("/policies")
     @Operation(summary = "List approval policies by account", description = "Requires approval.read")
     public ResponseEntity<List<ApprovalPolicyResponse>> listPolicies(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID accountId) {
         return ResponseEntity.ok(approvalPolicyService.listByAccount(
-                actorResolver.requireProductUserId(actorUserId), accountId));
+                actorResolver.requireProductUserId(), accountId));
     }
 
     @GetMapping
     @Operation(summary = "List approval requests by account", description = "Requires approval.read")
     public ResponseEntity<List<ApprovalRequestResponse>> listRequests(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID accountId) {
         return ResponseEntity.ok(approvalWorkflowService.listByAccount(
-                actorResolver.requireProductUserId(actorUserId), accountId));
+                actorResolver.requireProductUserId(), accountId));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Get approval request by id", description = "Requires approval.read")
     public ResponseEntity<ApprovalRequestResponse> getById(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+            @PathVariable UUID id
+            ) {
         return ResponseEntity.ok(approvalWorkflowService.getById(
-                actorResolver.requireProductUserId(actorUserId), id));
+                actorResolver.requireProductUserId(), id));
     }
 
     @PostMapping("/{id}/approve")
@@ -90,36 +84,33 @@ public class ApprovalController {
     })
     public ResponseEntity<ApprovalRequestResponse> approve(
             @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) ApprovalDecisionRequest body) {
         ApprovalDecisionRequest decision = mergeDecision(body, idempotencyKey);
         return ResponseEntity.ok(approvalWorkflowService.approve(
-                actorResolver.requireProductUserId(actorUserId), id, decision));
+                actorResolver.requireProductUserId(), id, decision));
     }
 
     @PostMapping("/{id}/reject")
     @Operation(summary = "Reject request", description = "Requires approval.reject")
     public ResponseEntity<ApprovalRequestResponse> reject(
             @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) ApprovalDecisionRequest body) {
         ApprovalDecisionRequest decision = mergeDecision(body, idempotencyKey);
         return ResponseEntity.ok(approvalWorkflowService.reject(
-                actorResolver.requireProductUserId(actorUserId), id, decision));
+                actorResolver.requireProductUserId(), id, decision));
     }
 
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel request", description = "Requester or approval.create")
     public ResponseEntity<ApprovalRequestResponse> cancel(
             @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @RequestBody(required = false) ApprovalDecisionRequest body) {
         ApprovalDecisionRequest decision = mergeDecision(body, idempotencyKey);
         return ResponseEntity.ok(approvalWorkflowService.cancel(
-                actorResolver.requireProductUserId(actorUserId), id, decision));
+                actorResolver.requireProductUserId(), id, decision));
     }
 
     private static ApprovalDecisionRequest mergeDecision(ApprovalDecisionRequest body, String headerKey) {

@@ -3,6 +3,10 @@ package com.theron.wallet.controller;
 import com.theron.wallet.dto.request.DepositRequest;
 import com.theron.wallet.dto.response.DepositResponse;
 import com.theron.wallet.dto.response.PixQrCodeResponse;
+import com.theron.wallet.exception.InvalidRequestException;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.DepositService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -27,6 +31,8 @@ import java.util.UUID;
 public class DepositController {
 
     private final DepositService depositService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
     @Operation(summary = "Criar depósito via Pix",
@@ -40,9 +46,12 @@ public class DepositController {
     public ResponseEntity<DepositResponse> createPixDeposit(
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody DepositRequest request) {
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            request.setIdempotencyKey(idempotencyKey.trim());
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for deposits");
         }
+        request.setIdempotencyKey(idempotencyKey.trim());
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), request.getSubaccountId(), PermissionCodes.TRANSACTIONS_CREATE);
         DepositResponse response = depositService.createPixDeposit(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -59,6 +68,14 @@ public class DepositController {
             @RequestParam(required = false) UUID walletId,
             @RequestParam(required = false) UUID subaccountId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        UUID actor = actorResolver.requireProductUserId();
+        if (walletId != null) {
+            resourceAuthorization.requireWallet(actor, walletId, PermissionCodes.TRANSACTIONS_READ);
+        } else if (subaccountId != null) {
+            resourceAuthorization.requireSubaccount(actor, subaccountId, PermissionCodes.TRANSACTIONS_READ);
+        } else {
+            throw new InvalidRequestException("walletId or subaccountId is required");
+        }
         return ResponseEntity.ok(depositService.findAll(walletId, subaccountId, pageable));
     }
 
@@ -69,6 +86,8 @@ public class DepositController {
             @ApiResponse(responseCode = "404", description = "Transaction not found")
     })
     public ResponseEntity<DepositResponse> findById(@PathVariable UUID transactionId) {
+        resourceAuthorization.requireTransaction(
+                actorResolver.requireProductUserId(), transactionId, PermissionCodes.TRANSACTIONS_READ);
         return ResponseEntity.ok(depositService.findById(transactionId));
     }
 
@@ -80,6 +99,8 @@ public class DepositController {
             @ApiResponse(responseCode = "404", description = "Transaction not found or QR code not available")
     })
     public ResponseEntity<PixQrCodeResponse> getPixQrCode(@PathVariable UUID transactionId) {
+        resourceAuthorization.requireTransaction(
+                actorResolver.requireProductUserId(), transactionId, PermissionCodes.TRANSACTIONS_READ);
         return ResponseEntity.ok(depositService.getPixQrCode(transactionId));
     }
 }

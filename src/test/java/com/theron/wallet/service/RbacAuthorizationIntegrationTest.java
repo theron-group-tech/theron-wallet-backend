@@ -61,6 +61,7 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
     private UserResponse adminA;
     private UserResponse auditorA;
     private UserResponse employeeB;
+    private String tokenOwnerA;
 
     @BeforeEach
     void setUpRbac() {
@@ -87,6 +88,7 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(orgA.getId(), adminA.getId(), List.of(RoleCode.ADMIN.name()));
         roleAssignmentService.assignRolesInternal(orgA.getId(), auditorA.getId(), List.of(RoleCode.AUDITOR.name()));
         // employeeA keeps EMPLOYEE; employeeB keeps EMPLOYEE in orgB
+        tokenOwnerA = productAccessToken(ownerA.getEmail());
     }
 
     @Nested
@@ -209,7 +211,7 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
         void httpPathIsTenantSource() throws Exception {
             mockMvc.perform(put("/api/v1/organizations/{organizationId}/members/{userId}/roles",
                             orgB.getId(), employeeB.getId())
-                            .header("X-Actor-User-Id", ownerA.getId().toString())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"roleCodes\":[\"ADMIN\"],\"organizationId\":\"" + orgA.getId() + "\"}"))
                     .andExpect(status().isForbidden());

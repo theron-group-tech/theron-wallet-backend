@@ -29,11 +29,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/limits")
 @RequiredArgsConstructor
-@Tag(name = "Transaction Limits", description = "Hierarchical financial limits. Actor from JWT or X-Actor-User-Id.")
+@Tag(name = "Transaction Limits", description = "Hierarchical financial limits. Requires JWT access token.")
 public class LimitController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final TransactionLimitService transactionLimitService;
     private final ActorResolver actorResolver;
 
@@ -45,37 +42,34 @@ public class LimitController {
             @ApiResponse(responseCode = "409", description = "Duplicate scope+type+period")
     })
     public ResponseEntity<TransactionLimitResponse> create(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody CreateTransactionLimitRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(transactionLimitService.create(actorResolver.requireProductUserId(actorUserId), request));
+                .body(transactionLimitService.create(actorResolver.requireProductUserId(), request));
     }
 
     @GetMapping
     @Operation(summary = "List limits by organization", description = "Requires limits.read")
     public ResponseEntity<List<TransactionLimitResponse>> list(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID organizationId) {
         return ResponseEntity.ok(transactionLimitService.listByOrganization(
-                actorResolver.requireProductUserId(actorUserId), organizationId));
+                actorResolver.requireProductUserId(), organizationId));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Get limit by id", description = "Requires limits.read")
     public ResponseEntity<TransactionLimitResponse> getById(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+            @PathVariable UUID id
+            ) {
         return ResponseEntity.ok(transactionLimitService.getById(
-                actorResolver.requireProductUserId(actorUserId), id));
+                actorResolver.requireProductUserId(), id));
     }
 
     @PatchMapping("/{id}")
     @Operation(summary = "Update limit", description = "Requires limits.manage")
     public ResponseEntity<TransactionLimitResponse> update(
             @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody UpdateTransactionLimitRequest request) {
         return ResponseEntity.ok(transactionLimitService.update(
-                actorResolver.requireProductUserId(actorUserId), id, request));
+                actorResolver.requireProductUserId(), id, request));
     }
 }

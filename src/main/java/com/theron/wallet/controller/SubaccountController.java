@@ -3,6 +3,10 @@ package com.theron.wallet.controller;
 import com.theron.wallet.dto.request.CreateSubaccountRequest;
 import com.theron.wallet.dto.response.SubaccountResponse;
 import com.theron.wallet.enums.SubaccountStatus;
+import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.SubaccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -27,6 +31,8 @@ import java.util.UUID;
 public class SubaccountController {
 
     private final SubaccountService subaccountService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
     @Operation(
@@ -49,6 +55,7 @@ public class SubaccountController {
             @ApiResponse(responseCode = "422", description = "Erro de validação retornado pelo Asaas")
     })
     public ResponseEntity<SubaccountResponse> create(@Valid @RequestBody CreateSubaccountRequest request) {
+        actorResolver.requireProductUserId();
         SubaccountResponse response = subaccountService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -65,7 +72,8 @@ public class SubaccountController {
     public ResponseEntity<Page<SubaccountResponse>> findAll(
             @RequestParam(required = false) SubaccountStatus status,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(subaccountService.findAll(status, pageable));
+        actorResolver.requireProductUserId();
+        throw new ForbiddenException("Listing all subaccounts is not allowed");
     }
 
     @GetMapping("/{subaccountId}")
@@ -78,6 +86,8 @@ public class SubaccountController {
             @ApiResponse(responseCode = "404", description = "Subconta não encontrada")
     })
     public ResponseEntity<SubaccountResponse> findById(@PathVariable UUID subaccountId) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(subaccountService.findById(subaccountId));
     }
 
@@ -91,6 +101,9 @@ public class SubaccountController {
             @ApiResponse(responseCode = "404", description = "Subconta não encontrada para este CPF/CNPJ")
     })
     public ResponseEntity<SubaccountResponse> findByCpfCnpj(@PathVariable String cpfCnpj) {
-        return ResponseEntity.ok(subaccountService.findByCpfCnpj(cpfCnpj));
+        SubaccountResponse response = subaccountService.findByCpfCnpj(cpfCnpj);
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), response.getId(), PermissionCodes.WALLET_READ);
+        return ResponseEntity.ok(response);
     }
 }

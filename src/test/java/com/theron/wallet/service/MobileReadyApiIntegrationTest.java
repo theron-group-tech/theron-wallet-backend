@@ -442,8 +442,4 @@ class MobileReadyApiIntegrationTest extends BaseIntegrationTest {
                 .andReturn();
         return objectMapper.readValue(result.getResponse().getContentAsString(), LoginResponse.class);
     }
-
-    private static String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

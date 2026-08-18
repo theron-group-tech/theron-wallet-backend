@@ -6,6 +6,10 @@ import com.theron.wallet.dto.request.UpdateOrganizationStatusRequest;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.OrganizationStatusResponse;
 import com.theron.wallet.enums.OrganizationStatus;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.OrganizationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -14,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -37,6 +42,9 @@ import java.util.UUID;
 public class OrganizationController {
 
     private final OrganizationService organizationService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
+    private final AuthorizationService authorizationService;
 
     @PostMapping
     @Operation(summary = "Criar organization", description = "Cria uma empresa cliente com status ACTIVE. Não provisiona Asaas.")
@@ -47,6 +55,7 @@ public class OrganizationController {
             @ApiResponse(responseCode = "422", description = "Documento inválido para o tipo informado")
     })
     public ResponseEntity<OrganizationResponse> create(@Valid @RequestBody CreateOrganizationRequest request) {
+        actorResolver.requireProductUserId();
         OrganizationResponse response = organizationService.create(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -58,6 +67,8 @@ public class OrganizationController {
             @ApiResponse(responseCode = "404", description = "Organization não encontrada")
     })
     public ResponseEntity<OrganizationResponse> findById(@PathVariable UUID id) {
+        resourceAuthorization.requireOrganization(
+                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_READ);
         return ResponseEntity.ok(organizationService.findById(id));
     }
 
@@ -74,6 +85,8 @@ public class OrganizationController {
     public ResponseEntity<OrganizationResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateOrganizationRequest request) {
+        resourceAuthorization.requireOrganization(
+                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_UPDATE);
         return ResponseEntity.ok(organizationService.update(id, request));
     }
 
@@ -86,6 +99,8 @@ public class OrganizationController {
     public ResponseEntity<OrganizationStatusResponse> updateStatus(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateOrganizationStatusRequest request) {
+        resourceAuthorization.requireOrganization(
+                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_UPDATE);
         return ResponseEntity.ok(organizationService.updateStatus(id, request));
     }
 
@@ -100,7 +115,13 @@ public class OrganizationController {
     public ResponseEntity<Page<OrganizationResponse>> findAll(
             @RequestParam(required = false) OrganizationStatus status,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(organizationService.findAll(status, pageable));
+        UUID actor = actorResolver.requireProductUserId();
+        Page<OrganizationResponse> page = organizationService.findAll(status, pageable);
+        var visible = page.getContent().stream()
+                .filter(org -> authorizationService.hasPermission(
+                        org.getId(), actor, PermissionCodes.ORGANIZATION_READ))
+                .toList();
+        return ResponseEntity.ok(new PageImpl<>(visible, pageable, visible.size()));
     }
 
     @GetMapping("/{id}/status")
@@ -110,6 +131,8 @@ public class OrganizationController {
             @ApiResponse(responseCode = "404", description = "Organization não encontrada")
     })
     public ResponseEntity<OrganizationStatusResponse> getStatus(@PathVariable UUID id) {
+        resourceAuthorization.requireOrganization(
+                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_READ);
         return ResponseEntity.ok(organizationService.getStatus(id));
     }
 }

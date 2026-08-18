@@ -23,6 +23,19 @@ asaas:
 encryption:
   aes-key: nIlpBopPKbJrzQqLsQcY/EItC724S8pmH2ZI/bTRQrE=
 
+jwt:
+  secret: theronTestJwtSecretKeyMustBeAtLeast256BitsLong!!
+
+app:
+  admin:
+    email: admin@theron.test
+    password: TestAdminPass1!
+
+theron:
+  security:
+    login-max-attempts: 10000
+    login-window-seconds: 300
+
 logging:
   level:
     root: WARN

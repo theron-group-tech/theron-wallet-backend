@@ -4,6 +4,8 @@ import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.UpdateUserRequest;
 import com.theron.wallet.dto.response.UserOrganizationResponse;
 import com.theron.wallet.dto.response.UserResponse;
+import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,6 +33,7 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final ActorResolver actorResolver;
 
     @PostMapping
     @Operation(summary = "Criar usuário", description = "Cria usuário ACTIVE. Email único globalmente. Senha armazenada com BCrypt.")
@@ -50,6 +53,7 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "Usuário não encontrado")
     })
     public ResponseEntity<UserResponse> findById(@PathVariable UUID id) {
+        requireSelf(id);
         return ResponseEntity.ok(userService.findById(id));
     }
 
@@ -62,6 +66,7 @@ public class UserController {
     public ResponseEntity<UserResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request) {
+        requireSelf(id);
         return ResponseEntity.ok(userService.update(id, request));
     }
 
@@ -72,6 +77,14 @@ public class UserController {
             @ApiResponse(responseCode = "404", description = "Usuário não encontrado")
     })
     public ResponseEntity<List<UserOrganizationResponse>> listOrganizations(@PathVariable UUID id) {
+        requireSelf(id);
         return ResponseEntity.ok(userService.listOrganizations(id));
+    }
+
+    private void requireSelf(UUID userId) {
+        UUID actor = actorResolver.requireProductUserId();
+        if (!actor.equals(userId)) {
+            throw new ForbiddenException("Cannot access another user's profile");
+        }
     }
 }

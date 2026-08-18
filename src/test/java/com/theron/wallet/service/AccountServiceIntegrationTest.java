@@ -3,16 +3,20 @@ package com.theron.wallet.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
+import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.UpdateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.repository.SubaccountRepository;
@@ -61,12 +65,36 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private OrganizationMembershipService membershipService;
+
+    @Autowired
+    private RoleAssignmentService roleAssignmentService;
+
+    private String ownerToken(OrganizationResponse org) {
+        UserResponse user = userService.create(CreateUserRequest.builder()
+                .name("Account Owner")
+                .email("acc-owner-" + org.getId() + "@theron.test")
+                .password("SenhaForte1!")
+                .build());
+        membershipService.addMember(org.getId(), AddOrganizationMemberRequest.builder()
+                .userId(user.getId())
+                .build());
+        roleAssignmentService.assignRolesInternal(org.getId(), user.getId(), List.of(RoleCode.OWNER.name()));
+        return productAccessToken(user.getEmail());
+    }
+
     @Test
     @DisplayName("1. create MAIN account with zero-balance wallet")
     void createMainAccount() throws Exception {
         OrganizationResponse org = createOrg("11122233000101");
+        String token = ownerToken(org);
 
         MvcResult result = mockMvc.perform(post("/api/v1/organizations/{organizationId}/accounts", org.getId())
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(CreateAccountRequest.builder()
                                 .name("Conta principal")
@@ -122,11 +150,11 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
         OrganizationResponse orgB = createOrg("11122233000105");
         AccountResponse accountA = accountService.create(orgA.getId(),
                 CreateAccountRequest.builder().name("A-main").type(AccountType.MAIN).build());
+        String tokenA = ownerToken(orgA);
 
-        mockMvc.perform(get("/api/v1/organizations/{organizationId}/accounts", orgB.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$.length()").value(0));
+        mockMvc.perform(get("/api/v1/organizations/{organizationId}/accounts", orgB.getId())
+                        .header("Authorization", bearer(tokenA)))
+                .andExpect(status().isForbidden());
 
         List<AccountResponse> fromA = accountService.listByOrganization(orgA.getId());
         assertThat(fromA).extracting(AccountResponse::getId).containsExactly(accountA.getId());
@@ -135,7 +163,10 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("5. missing organization returns 404")
     void missingOrganization() throws Exception {
+        OrganizationResponse org = createOrg("11122233000106");
+        String token = ownerToken(org);
         mockMvc.perform(post("/api/v1/organizations/{organizationId}/accounts", UUID.randomUUID())
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(CreateAccountRequest.builder()
                                 .name("Orphan")
@@ -151,10 +182,12 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("6. PATCH status is persisted")
     void patchStatus() throws Exception {
         OrganizationResponse org = createOrg("11122233000106");
+        String token = ownerToken(org);
         AccountResponse created = accountService.create(org.getId(),
                 CreateAccountRequest.builder().name("Status").type(AccountType.MAIN).build());
 
         mockMvc.perform(patch("/api/v1/accounts/{id}", created.getId())
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateAccountRequest.builder()
                                 .status(AccountStatus.SUSPENDED)
@@ -163,6 +196,7 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("SUSPENDED"));
 
         mockMvc.perform(patch("/api/v1/accounts/{id}", created.getId())
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateAccountRequest.builder()
                                 .status(AccountStatus.CLOSED)
@@ -177,10 +211,12 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("7. GET wallet associated to account")
     void getAssociatedWallet() throws Exception {
         OrganizationResponse org = createOrg("11122233000107");
+        String token = ownerToken(org);
         AccountResponse created = accountService.create(org.getId(),
                 CreateAccountRequest.builder().name("With wallet").type(AccountType.MAIN).build());
 
-        mockMvc.perform(get("/api/v1/accounts/{id}/wallet", created.getId()))
+        mockMvc.perform(get("/api/v1/accounts/{id}/wallet", created.getId())
+                        .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountId").value(created.getId().toString()))
                 .andExpect(jsonPath("$.balance").value(0))
@@ -191,15 +227,18 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("8. Asaas secrets are not exposed on account or wallet JSON")
     void secretsNotExposed() throws Exception {
         OrganizationResponse org = createOrg("11122233000108");
+        String token = ownerToken(org);
         AccountResponse created = accountService.create(org.getId(),
                 CreateAccountRequest.builder().name("Secrets").type(AccountType.MAIN).build());
 
-        String accountJson = mockMvc.perform(get("/api/v1/accounts/{id}", created.getId()))
+        String accountJson = mockMvc.perform(get("/api/v1/accounts/{id}", created.getId())
+                        .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        String walletJson = mockMvc.perform(get("/api/v1/accounts/{id}/wallet", created.getId()))
+        String walletJson = mockMvc.perform(get("/api/v1/accounts/{id}/wallet", created.getId())
+                        .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -227,11 +266,14 @@ class AccountServiceIntegrationTest extends BaseIntegrationTest {
         assertThat(created.getAccountId()).isNull();
         assertThat(walletRepository.findBySubaccountId(subaccount.getId())).isPresent();
 
-        mockMvc.perform(get("/api/v1/wallets/subaccount/{subaccountId}", subaccount.getId()))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(created.getId().toString()))
-                .andExpect(jsonPath("$.subaccountId").value(subaccount.getId().toString()))
-                .andExpect(jsonPath("$.accountId").doesNotExist());
+        mockMvc.perform(get("/api/v1/wallets/subaccount/{subaccountId}", subaccount.getId())
+                        .header("Authorization", bearer(productAccessToken(
+                                userService.create(CreateUserRequest.builder()
+                                        .name("Legacy")
+                                        .email("legacy-wallet@theron.test")
+                                        .password("SenhaForte1!")
+                                        .build()).getEmail()))))
+                .andExpect(status().isForbidden());
     }
 
     @Test

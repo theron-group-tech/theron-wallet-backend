@@ -190,10 +190,11 @@ public class PixServiceImpl implements PixService {
             throw new InvalidRequestException("Idempotency-Key is required for PIX transfers");
         }
 
-        Subaccount configured = accountAsaasGateway.requireConfiguredSubaccount(request.getAccountId());
-        Account account = requireAccount(configured, request.getAccountId());
+        Account account = accountRepository.findByIdWithOrganization(request.getAccountId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", request.getAccountId()));
         authorizationService.requirePermission(
                 account.getOrganization().getId(), actorUserId, PermissionCodes.PIX_TRANSFER);
+        accountAsaasGateway.requireConfiguredSubaccount(request.getAccountId());
 
         String idempotencyKey = idempotencyService.resolveKey(null, request.getIdempotencyKey());
         TransferDestination destination = resolveDestination(request, account);

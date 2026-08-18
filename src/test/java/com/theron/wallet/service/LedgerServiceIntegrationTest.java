@@ -134,7 +134,19 @@ class LedgerServiceIntegrationTest extends BaseIntegrationTest {
 
         assertThat(ledgerService.reconstructBalance(account.getId())).isEqualByComparingTo(amount);
 
-        mockMvc.perform(get("/api/v1/accounts/{id}/ledger-balance", account.getId()))
+        UserResponse actor = userService.create(CreateUserRequest.builder()
+                .name("Ledger HTTP")
+                .email("ledger-http@theron.test")
+                .password("SenhaForte1!")
+                .build());
+        membershipService.addMember(account.getOrganizationId(), AddOrganizationMemberRequest.builder()
+                .userId(actor.getId())
+                .build());
+        roleAssignmentService.assignRolesInternal(
+                account.getOrganizationId(), actor.getId(), List.of(RoleCode.OWNER.name()));
+
+        mockMvc.perform(get("/api/v1/accounts/{id}/ledger-balance", account.getId())
+                        .header("Authorization", bearer(productAccessToken(actor.getEmail()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accountId").value(account.getId().toString()))
                 .andExpect(jsonPath("$.currency").value("BRL"))

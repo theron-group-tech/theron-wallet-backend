@@ -2,10 +2,12 @@ package com.theron.wallet.service;
 
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationStatusRequest;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.OrganizationStatusResponse;
+import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.OrganizationStatus;
@@ -41,6 +43,9 @@ class OrganizationServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private UserService userService;
 
     @Autowired
     private MockMvc mockMvc;
@@ -101,7 +106,13 @@ class OrganizationServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("should reject required fields via HTTP validation")
         void shouldRejectMissingRequiredFieldsViaHttp() throws Exception {
+            UserResponse user = userService.create(CreateUserRequest.builder()
+                    .name("Org Actor")
+                    .email("org-http@theron.test")
+                    .password("SenhaForte1!")
+                    .build());
             mockMvc.perform(post("/api/v1/organizations")
+                            .header("Authorization", bearer(productAccessToken(user.getEmail())))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))
                     .andExpect(status().isBadRequest())
@@ -203,8 +214,14 @@ class OrganizationServiceIntegrationTest extends BaseIntegrationTest {
         @DisplayName("physical DELETE via HTTP must be forbidden (405)")
         void shouldForbidPhysicalDeleteViaHttp() throws Exception {
             OrganizationResponse created = organizationService.create(validCnpjRequest());
+            UserResponse user = userService.create(CreateUserRequest.builder()
+                    .name("Org Delete Actor")
+                    .email("org-delete@theron.test")
+                    .password("SenhaForte1!")
+                    .build());
 
-            mockMvc.perform(delete("/api/v1/organizations/{id}", created.getId()))
+            mockMvc.perform(delete("/api/v1/organizations/{id}", created.getId())
+                            .header("Authorization", bearer(productAccessToken(user.getEmail()))))
                     .andExpect(status().isMethodNotAllowed());
 
             assertThat(organizationRepository.existsById(created.getId())).isTrue();

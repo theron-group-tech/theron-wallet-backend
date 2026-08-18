@@ -80,7 +80,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class PixServiceIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR = "X-Actor-User-Id";
     private static final String IDEMPOTENCY = "Idempotency-Key";
     private static final String WEBHOOK_TOKEN = "test-webhook-token";
 
@@ -113,6 +112,9 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
     private AccountResponse accountA;
     private AccountResponse accountB;
     private Subaccount asaasA;
+    private String tokenOwnerA;
+    private String tokenEmployeeA;
+    private String tokenOwnerB;
 
     @BeforeEach
     void setUpPix() {
@@ -143,7 +145,22 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         fundWallet(accountA.getId(), "1000.00");
         fundWallet(accountB.getId(), "1000.00");
 
+        tokenOwnerA = productAccessToken(ownerA.getEmail());
+        tokenEmployeeA = productAccessToken(employeeA.getEmail());
+        tokenOwnerB = productAccessToken(ownerB.getEmail());
+
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("encrypted-resolved-key");
+        when(asaasTransferClient.retrieveTransfer(any(), any())).thenAnswer(invocation -> {
+            String id = invocation.getArgument(1);
+            String status = "tr_fail".equals(id) ? "FAILED" : "DONE";
+            return AsaasTransferResponse.builder().id(id).status(status).value(new BigDecimal("40.00")).build();
+        });
+        when(asaasPaymentClient.retrievePayment(any(), any())).thenAnswer(invocation ->
+                com.theron.wallet.dto.asaas.AsaasPaymentResponse.builder()
+                        .id(invocation.getArgument(1))
+                        .status("RECEIVED")
+                        .value(new BigDecimal("80.00"))
+                        .build());
     }
 
     @Nested
@@ -159,7 +176,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
 
             stubCreatePixKey("pix_1", "evp-key-1");
             MvcResult result = mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -183,7 +200,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .name("Sem Asaas").type(AccountType.RESERVE).build());
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(orphan.getId())
@@ -196,7 +213,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             linkAsaasSubaccount(noKey.getId(), "22345678903", false);
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(noKey.getId())
@@ -211,7 +228,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void crossTenantBlocked() throws Exception {
             stubCreatePixKey("pix_a", "key-a");
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -220,7 +237,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isCreated());
 
             mockMvc.perform(get("/api/v1/pix/keys")
-                            .header(ACTOR, ownerB.getId())
+                            .header("Authorization", bearer(tokenOwnerB))
                             .param("accountId", accountA.getId().toString()))
                     .andExpect(status().isForbidden());
         }
@@ -235,7 +252,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void crudKeys() throws Exception {
             stubCreatePixKey("prov_1", "11122233344");
             MvcResult created = mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -247,13 +264,13 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     created.getResponse().getContentAsString(), AccountPixKeyResponse.class);
 
             mockMvc.perform(get("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .param("accountId", accountA.getId().toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(1));
 
             mockMvc.perform(delete("/api/v1/pix/keys/{id}", key.getId())
-                            .header(ACTOR, ownerA.getId()))
+                            .header("Authorization", bearer(tokenOwnerA)))
                     .andExpect(status().isNoContent());
             verify(asaasPixClient).deletePixKey(anyString(), org.mockito.ArgumentMatchers.eq("prov_1"));
         }
@@ -263,7 +280,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void keyValidations() throws Exception {
             stubCreatePixKey("prov_dup", "dup-key");
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -274,7 +291,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasPixClient.createPixKey(anyString(), any()))
                     .thenReturn(AsaasPixKeyResponse.builder().id("prov_dup2").key("dup-key").type("EVP").status("ACTIVE").build());
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -283,7 +300,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isConflict());
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(UUID.randomUUID())
@@ -292,7 +309,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isNotFound());
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header(ACTOR, employeeA.getId())
+                            .header("Authorization", bearer(tokenEmployeeA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
@@ -311,7 +328,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void transferHappyPath() throws Exception {
             stubTransfer("tr_ok");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "50.00"))))
@@ -325,7 +342,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void insufficientBalance() throws Exception {
             fundWallet(accountA.getId(), "10.00");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "50.00"))))
@@ -338,7 +355,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void aboveOperationLimit() throws Exception {
             configureLimits(accountA.getId(), "100.00", "1000.00");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "100.01"))))
@@ -352,7 +369,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             configureLimits(accountA.getId(), "100.00", "1000.00");
             stubTransfer("tr_exact");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "100.00"))))
@@ -365,7 +382,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             configureLimits(accountA.getId(), "200.00", "100.00");
             stubTransfer("tr_d1");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "100.00"))))
@@ -373,7 +390,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
 
             reset(asaasTransferClient);
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "0.01"))))
@@ -390,7 +407,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             fundWallet(noLimit.getId(), "100.00");
 
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(noLimit.getId(), "10.00"))))
@@ -402,7 +419,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         @DisplayName("27 Bypass accountId cross-tenant")
         void bypassAccountId() throws Exception {
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerB.getId())
+                            .header("Authorization", bearer(tokenOwnerB))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "10.00"))))
@@ -418,7 +435,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             CreatePixTransferRequest body = transferBody(accountA.getId(), "25.00");
 
             MvcResult first = mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, key)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(body)))
@@ -427,7 +444,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             PixTransferResponse r1 = objectMapper.readValue(first.getResponse().getContentAsString(), PixTransferResponse.class);
 
             MvcResult second = mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, key)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(body)))
@@ -439,7 +456,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
 
             CreatePixTransferRequest different = transferBody(accountA.getId(), "26.00");
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, key)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(different)))
@@ -458,7 +475,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             Callable<Void> task = () -> {
                 try {
                     mockMvc.perform(post("/api/v1/pix/transfers")
-                                    .header(ACTOR, ownerA.getId())
+                                    .header("Authorization", bearer(tokenOwnerA))
                                     .header(IDEMPOTENCY, UUID.randomUUID().toString())
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "60.00"))))
@@ -529,7 +546,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         @DisplayName("Permission denied EMPLOYEE transfer")
         void employeeCannotTransfer() throws Exception {
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, employeeA.getId())
+                            .header("Authorization", bearer(tokenEmployeeA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "10.00"))))
@@ -546,7 +563,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void webhooksAndLedger() throws Exception {
             stubTransfer("tr_wh");
             MvcResult created = mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "40.00"))))
@@ -593,7 +610,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             stubTransfer("tr_fail");
             BigDecimal before = walletRepository.findByAccount_Id(accountA.getId()).orElseThrow().getBalance();
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "30.00"))))
@@ -615,7 +632,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void reversedNotRefunded() throws Exception {
             stubTransfer("tr_rev");
             MvcResult created = mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "20.00"))))
@@ -643,7 +660,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             stubTransfer("tr_led");
             BigDecimal before = walletRepository.findByAccount_Id(accountA.getId()).orElseThrow().getBalance();
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header(ACTOR, ownerA.getId())
+                            .header("Authorization", bearer(tokenOwnerA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "55.00"))))

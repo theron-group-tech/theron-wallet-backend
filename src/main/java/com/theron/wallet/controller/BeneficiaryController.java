@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,11 +29,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/beneficiaries")
 @RequiredArgsConstructor
-@Tag(name = "Beneficiaries", description = "Organization payees. Actor comes from JWT when present; X-Actor-User-Id is fallback.")
+@Tag(name = "Beneficiaries", description = "Organization payees. Requires JWT access token.")
 public class BeneficiaryController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final BeneficiaryService beneficiaryService;
     private final ActorResolver actorResolver;
 
@@ -47,10 +43,9 @@ public class BeneficiaryController {
             @ApiResponse(responseCode = "409", description = "Duplicate PIX key or bank account in the organization")
     })
     public ResponseEntity<BeneficiaryResponse> create(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody CreateBeneficiaryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(beneficiaryService.create(actorResolver.requireProductUserId(actorUserId), request));
+                .body(beneficiaryService.create(actorResolver.requireProductUserId(), request));
     }
 
     @GetMapping
@@ -61,10 +56,9 @@ public class BeneficiaryController {
             @ApiResponse(responseCode = "403", description = "Missing permission")
     })
     public ResponseEntity<List<BeneficiaryResponse>> list(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestParam UUID organizationId) {
         return ResponseEntity.ok(beneficiaryService.listByOrganization(
-                actorResolver.requireProductUserId(actorUserId), organizationId));
+                actorResolver.requireProductUserId(), organizationId));
     }
 
     @GetMapping("/{id}")
@@ -75,9 +69,9 @@ public class BeneficiaryController {
             @ApiResponse(responseCode = "404", description = "Beneficiary not found")
     })
     public ResponseEntity<BeneficiaryResponse> findById(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
-        return ResponseEntity.ok(beneficiaryService.findById(actorResolver.requireProductUserId(actorUserId), id));
+            @PathVariable UUID id
+            ) {
+        return ResponseEntity.ok(beneficiaryService.findById(actorResolver.requireProductUserId(), id));
     }
 
     @PatchMapping("/{id}")
@@ -89,10 +83,9 @@ public class BeneficiaryController {
     })
     public ResponseEntity<BeneficiaryResponse> update(
             @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody UpdateBeneficiaryRequest request) {
         return ResponseEntity.ok(beneficiaryService.update(
-                actorResolver.requireProductUserId(actorUserId), id, request));
+                actorResolver.requireProductUserId(), id, request));
     }
 
     @DeleteMapping("/{id}")
@@ -103,9 +96,9 @@ public class BeneficiaryController {
             @ApiResponse(responseCode = "404", description = "Beneficiary not found")
     })
     public ResponseEntity<Void> delete(
-            @PathVariable UUID id,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
-        beneficiaryService.delete(actorResolver.requireProductUserId(actorUserId), id);
+            @PathVariable UUID id
+            ) {
+        beneficiaryService.delete(actorResolver.requireProductUserId(), id);
         return ResponseEntity.noContent().build();
     }
 }

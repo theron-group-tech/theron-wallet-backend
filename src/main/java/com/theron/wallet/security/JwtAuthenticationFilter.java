@@ -1,9 +1,11 @@
 package com.theron.wallet.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.entity.AuthSession;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.ApiErrorResponse;
+import com.theron.wallet.repository.AdminUserRepository;
 import com.theron.wallet.repository.AuthSessionRepository;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -32,6 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthSessionRepository authSessionRepository;
+    private final AdminUserRepository adminUserRepository;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -71,10 +74,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
         } else {
+            AdminUser admin = adminUserRepository.findByEmailAndActiveTrue(claims.getSubject()).orElse(null);
+            if (admin == null) {
+                writeUnauthorized(request, response, "Authentication required");
+                return;
+            }
             principal = UserPrincipal.builder()
                     .principalType(UserPrincipal.PRINCIPAL_ADMIN)
-                    .email(claims.getSubject())
-                    .role(claims.get(JwtTokenProvider.CLAIM_ROLE, String.class))
+                    .email(admin.getEmail())
+                    .role(admin.getRole())
                     .build();
         }
 

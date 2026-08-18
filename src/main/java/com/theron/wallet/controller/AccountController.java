@@ -9,6 +9,8 @@ import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.StatementService;
@@ -45,6 +47,7 @@ public class AccountController {
     private final LedgerService ledgerService;
     private final StatementService statementService;
     private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @GetMapping("/{id}")
     @Operation(summary = "Get account by id")
@@ -53,6 +56,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<AccountResponse> findById(@PathVariable UUID id) {
+        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findById(id));
     }
 
@@ -66,6 +70,8 @@ public class AccountController {
     public ResponseEntity<AccountResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateAccountRequest request) {
+        resourceAuthorization.requireAccount(
+                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_UPDATE);
         return ResponseEntity.ok(accountService.update(id, request));
     }
 
@@ -76,6 +82,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account or wallet not found")
     })
     public ResponseEntity<WalletResponse> findWallet(@PathVariable UUID id) {
+        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findWallet(id));
     }
 
@@ -86,6 +93,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<LedgerBalanceResponse> ledgerBalance(@PathVariable UUID id) {
+        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(ledgerService.getBalance(id));
     }
 
@@ -108,7 +116,7 @@ public class AccountController {
             @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return ResponseEntity.ok(statementService.statement(
-                actorResolver.requireProductUserId(null),
+                actorResolver.requireProductUserId(),
                 accountId,
                 from,
                 to,

@@ -67,7 +67,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class TransactionLimitIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR = "X-Actor-User-Id";
     private static final String IDEMPOTENCY = "Idempotency-Key";
 
     @Autowired private UserService userService;
@@ -93,6 +92,9 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
     private AccountResponse accountA;
     private AccountResponse accountB;
     private UUID financeRoleId;
+    private String tokenOwner;
+    private String tokenFinance;
+    private String tokenEmployee;
 
     @BeforeEach
     void setUp() {
@@ -111,6 +113,9 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(org.getId(), owner.getId(), List.of(RoleCode.OWNER.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), finance.getId(), List.of(RoleCode.FINANCE.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), employee.getId(), List.of(RoleCode.EMPLOYEE.name()));
+        tokenOwner = productAccessToken(owner.getEmail());
+        tokenFinance = productAccessToken(finance.getEmail());
+        tokenEmployee = productAccessToken(employee.getEmail());
 
         financeRoleId = roleRepository.findByCode(RoleCode.FINANCE.name()).orElseThrow().getId();
 
@@ -137,7 +142,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         createLimit(orgWide(LimitPeriod.PER_TRANSACTION, "100.00"));
         stubTransfer("tr_lim_ok");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
         assertBalance(accountA.getId(), "920.00");
     }
@@ -147,7 +152,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
     void abovePerTransactionLimit() throws Exception {
         createLimit(orgWide(LimitPeriod.PER_TRANSACTION, "100.00"));
 
-        pix(owner.getId(), accountA.getId(), "100.01")
+        pix(tokenOwner, accountA.getId(), "100.01")
                 .andExpect(status().isUnprocessableEntity());
 
         assertBalance(accountA.getId(), "1000.00");
@@ -160,11 +165,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         createLimit(orgWide(LimitPeriod.DAILY, "100.00"));
         stubTransfer("tr_lim_day");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
 
         reset(asaasTransferClient);
-        pix(owner.getId(), accountA.getId(), "30.00")
+        pix(tokenOwner, accountA.getId(), "30.00")
                 .andExpect(status().isUnprocessableEntity());
 
         assertBalance(accountA.getId(), "920.00");
@@ -177,11 +182,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         createLimit(orgWide(LimitPeriod.MONTHLY, "100.00"));
         stubTransfer("tr_lim_month");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
 
         reset(asaasTransferClient);
-        pix(owner.getId(), accountA.getId(), "30.00")
+        pix(tokenOwner, accountA.getId(), "30.00")
                 .andExpect(status().isUnprocessableEntity());
 
         assertBalance(accountA.getId(), "920.00");
@@ -200,11 +205,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .build());
         stubTransfer("tr_lim_user");
 
-        pix(finance.getId(), accountA.getId(), "80.00")
+        pix(tokenFinance, accountA.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
         assertBalance(accountA.getId(), "1000.00");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
         assertBalance(accountA.getId(), "920.00");
     }
@@ -221,11 +226,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .build());
         stubTransfer("tr_lim_role");
 
-        pix(finance.getId(), accountA.getId(), "80.00")
+        pix(tokenFinance, accountA.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
         assertBalance(accountA.getId(), "1000.00");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
         assertBalance(accountA.getId(), "920.00");
     }
@@ -242,11 +247,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .build());
         stubTransfer("tr_lim_acc");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
         assertBalance(accountA.getId(), "1000.00");
 
-        pix(owner.getId(), accountB.getId(), "80.00")
+        pix(tokenOwner, accountB.getId(), "80.00")
                 .andExpect(status().isCreated());
         assertBalance(accountB.getId(), "920.00");
     }
@@ -263,7 +268,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         Callable<Void> task = () -> {
             try {
                 mockMvc.perform(post("/api/v1/pix/transfers")
-                                .header(ACTOR, owner.getId())
+                                .header("Authorization", bearer(tokenOwner))
                                 .header(IDEMPOTENCY, UUID.randomUUID().toString())
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(objectMapper.writeValueAsString(
@@ -301,11 +306,11 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         UUID limitId = createLimit(orgWide(LimitPeriod.PER_TRANSACTION, "100.00"));
         stubTransfer("tr_lim_patch");
 
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
 
         mockMvc.perform(patch("/api/v1/limits/{id}", limitId)
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateTransactionLimitRequest.builder()
                                 .maxAmount(new BigDecimal("50.00"))
@@ -313,7 +318,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isOk());
 
         reset(asaasTransferClient);
-        pix(owner.getId(), accountA.getId(), "80.00")
+        pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
         verify(asaasTransferClient, never()).createTransfer(anyString(), any());
     }
@@ -324,13 +329,13 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         UUID limitId = createLimit(orgWide(LimitPeriod.PER_TRANSACTION, "100.00"));
 
         mockMvc.perform(post("/api/v1/limits")
-                        .header(ACTOR, employee.getId())
+                        .header("Authorization", bearer(tokenEmployee))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(orgWide(LimitPeriod.DAILY, "200.00"))))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(patch("/api/v1/limits/{id}", limitId)
-                        .header(ACTOR, employee.getId())
+                        .header("Authorization", bearer(tokenEmployee))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(UpdateTransactionLimitRequest.builder()
                                 .maxAmount(new BigDecimal("10.00"))
@@ -338,18 +343,18 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/limits")
-                        .header(ACTOR, employee.getId())
+                        .header("Authorization", bearer(tokenEmployee))
                         .param("organizationId", org.getId().toString()))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/limits/{id}", limitId)
-                        .header(ACTOR, employee.getId()))
+                        .header("Authorization", bearer(tokenEmployee)))
                 .andExpect(status().isForbidden());
     }
 
     private UUID createLimit(CreateTransactionLimitRequest request) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/limits")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -358,10 +363,10 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 result.getResponse().getContentAsString(), TransactionLimitResponse.class).getId();
     }
 
-    private org.springframework.test.web.servlet.ResultActions pix(UUID actorId, UUID accountId, String amount)
+    private org.springframework.test.web.servlet.ResultActions pix(String token, UUID accountId, String amount)
             throws Exception {
         return mockMvc.perform(post("/api/v1/pix/transfers")
-                .header(ACTOR, actorId)
+                .header("Authorization", bearer(token))
                 .header(IDEMPOTENCY, UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(transferBody(accountId, amount))));

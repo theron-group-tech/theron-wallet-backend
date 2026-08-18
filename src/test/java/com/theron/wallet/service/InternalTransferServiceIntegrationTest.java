@@ -23,6 +23,15 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
+import com.theron.wallet.dto.request.CreateAccountRequest;
+import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.entity.Account;
+import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.RoleCode;
+import com.theron.wallet.repository.AccountRepository;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,14 +61,36 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired
     private TransactionRepository transactionRepository;
 
+    @Autowired
+    private OrganizationService organizationService;
+
+    @Autowired
+    private AccountService accountService;
+
+    @Autowired
+    private OrganizationMembershipService membershipService;
+
+    @Autowired
+    private RoleAssignmentService roleAssignmentService;
+
+    @Autowired
+    private AccountRepository accountRepository;
+
     private Subaccount sender;
     private Subaccount receiver;
     private Wallet senderWallet;
     private Wallet receiverWallet;
     private UUID actorUserId;
+    private UUID organizationId;
 
     @BeforeEach
     void setUp() {
+        var org = organizationService.create(CreateOrganizationRequest.builder()
+                .legalName("Transfer Org")
+                .document("11122233000901")
+                .documentType(DocumentType.CNPJ)
+                .build());
+        organizationId = org.getId();
         sender = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
         receiver = subaccountRepository.save(TestFixtures.aSubaccount("98765432100", SubaccountStatus.ACTIVE));
         senderWallet = walletRepository.save(TestFixtures.aWalletWithBalance(sender, new BigDecimal("500.00")));
@@ -69,6 +100,22 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
                 .email("transfer-actor@theron.test")
                 .password("SenhaForte1!")
                 .build()).getId();
+        membershipService.addMember(org.getId(), AddOrganizationMemberRequest.builder()
+                .userId(actorUserId)
+                .build());
+        roleAssignmentService.assignRolesInternal(org.getId(), actorUserId, List.of(RoleCode.OWNER.name()));
+        bindSubaccount(sender, org.getId(), "Sender");
+        bindSubaccount(receiver, org.getId(), "Receiver");
+    }
+
+    private void bindSubaccount(Subaccount subaccount, UUID organizationId, String accountName) {
+        var created = accountService.create(organizationId, CreateAccountRequest.builder()
+                .name(accountName)
+                .type(AccountType.MAIN)
+                .build());
+        Account account = accountRepository.findById(created.getId()).orElseThrow();
+        subaccount.setAccount(account);
+        subaccountRepository.save(subaccount);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -197,6 +244,7 @@ class InternalTransferServiceIntegrationTest extends BaseIntegrationTest {
             Subaccount zeroSender = subaccountRepository.save(
                     TestFixtures.aSubaccount("11111111111", SubaccountStatus.ACTIVE));
             walletRepository.save(TestFixtures.aWalletWithBalance(zeroSender, BigDecimal.ZERO));
+            bindSubaccount(zeroSender, organizationId, "Zero");
 
             InternalTransferRequest request = TestFixtures.anInternalTransferRequest(
                     zeroSender.getId(), receiver.getId(), new BigDecimal("0.01"));

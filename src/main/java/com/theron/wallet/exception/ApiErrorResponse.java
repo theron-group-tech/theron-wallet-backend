@@ -26,6 +26,7 @@ public class ApiErrorResponse {
 
     @Getter
     @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class FieldError {
         private final String field;
         private final String message;

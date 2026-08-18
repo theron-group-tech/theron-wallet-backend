@@ -199,24 +199,25 @@ public class InternalTransferServiceImpl implements InternalTransferService {
     }
 
     private void authorizeAndLimitIfAccountPresent(Wallet wallet, User actor, java.math.BigDecimal amount) {
+        UUID orgId = orgIdOf(wallet);
+        if (orgId == null) {
+            throw new ForbiddenException("Wallet is not linked to an organization");
+        }
         Account account = wallet.getAccount();
-        if (account == null) {
-            return;
+        Account managed = account != null
+                ? accountRepository.findByIdWithOrganization(account.getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()))
+                : null;
+        authorizationService.requirePermission(orgId, actor.getId(), PermissionCodes.WALLET_TRANSFER);
+        if (managed != null) {
+            transactionLimitService.assertWithinLimits(new LimitContext(
+                    orgId,
+                    managed.getId(),
+                    actor.getId(),
+                    LimitTransactionType.TRANSFER,
+                    amount,
+                    null));
         }
-        Account managed = accountRepository.findByIdWithOrganization(account.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
-        UUID orgId = managed.getOrganization().getId();
-        if (!authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.WALLET_TRANSFER)
-                && !authorizationService.hasPermission(orgId, actor.getId(), PermissionCodes.TRANSACTIONS_CREATE)) {
-            throw new ForbiddenException("Missing wallet.transfer or transactions.create");
-        }
-        transactionLimitService.assertWithinLimits(new LimitContext(
-                orgId,
-                managed.getId(),
-                actor.getId(),
-                LimitTransactionType.TRANSFER,
-                amount,
-                null));
     }
 
     private static UUID orgIdOf(Wallet wallet) {

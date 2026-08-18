@@ -4,6 +4,9 @@ import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.TransactionService;
 import com.theron.wallet.service.WalletService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +34,8 @@ public class WalletController {
 
     private final WalletService walletService;
     private final TransactionService transactionService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     @GetMapping("/subaccount/{subaccountId}")
     @Operation(summary = "Buscar carteira por subconta", description = "Retorna a carteira de uma subconta")
@@ -39,6 +44,8 @@ public class WalletController {
             @ApiResponse(responseCode = "404", description = "Carteira não encontrada para a subconta")
     })
     public ResponseEntity<WalletResponse> findBySubaccountId(@PathVariable UUID subaccountId) {
+        UUID actor = actorResolver.requireProductUserId();
+        resourceAuthorization.requireSubaccount(actor, subaccountId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(walletService.findBySubaccountId(subaccountId));
     }
 
@@ -49,6 +56,7 @@ public class WalletController {
             @ApiResponse(responseCode = "404", description = "Wallet not found")
     })
     public ResponseEntity<WalletResponse> findById(@PathVariable UUID walletId) {
+        resourceAuthorization.requireWallet(actorResolver.requireProductUserId(), walletId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(walletService.findById(walletId));
     }
 
@@ -59,6 +67,8 @@ public class WalletController {
             @RequestParam(required = false) TransactionType type,
             @RequestParam(required = false) TransactionStatus status,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+        resourceAuthorization.requireWallet(
+                actorResolver.requireProductUserId(), walletId, PermissionCodes.TRANSACTIONS_READ);
 
         Page<TransactionResponse> page;
         if (type != null) {
@@ -68,7 +78,6 @@ public class WalletController {
         } else {
             page = transactionService.findByWalletId(walletId, pageable);
         }
-
         return ResponseEntity.ok(page);
     }
 }

@@ -4,6 +4,9 @@ import com.theron.wallet.dto.request.CreatePixKeyRequest;
 import com.theron.wallet.dto.request.CreatePixStaticQrCodeRequest;
 import com.theron.wallet.dto.response.PixKeyResponse;
 import com.theron.wallet.dto.response.PixStaticQrCodeResponse;
+import com.theron.wallet.security.ActorResolver;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.PixKeyService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -25,6 +28,8 @@ import java.util.UUID;
 public class PixKeyController {
 
     private final PixKeyService pixKeyService;
+    private final ActorResolver actorResolver;
+    private final ResourceAuthorization resourceAuthorization;
 
     // ── Chaves Pix ───────────────────────────────────────────────────────────
 
@@ -43,6 +48,8 @@ public class PixKeyController {
     public ResponseEntity<PixKeyResponse> createPixKey(
             @PathVariable UUID subaccountId,
             @Valid @RequestBody CreatePixKeyRequest request) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.PIX_CREATE);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(pixKeyService.createPixKey(subaccountId, request));
     }
@@ -58,6 +65,8 @@ public class PixKeyController {
             @ApiResponse(responseCode = "404", description = "Subconta não encontrada")
     })
     public ResponseEntity<List<PixKeyResponse>> listPixKeys(@PathVariable UUID subaccountId) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.PIX_READ);
         return ResponseEntity.ok(pixKeyService.listPixKeys(subaccountId));
     }
 
@@ -74,6 +83,8 @@ public class PixKeyController {
     public ResponseEntity<Void> deletePixKey(
             @PathVariable UUID subaccountId,
             @PathVariable String pixKeyId) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.PIX_CREATE);
         pixKeyService.deletePixKey(subaccountId, pixKeyId);
         return ResponseEntity.noContent().build();
     }
@@ -100,6 +111,8 @@ public class PixKeyController {
             @PathVariable UUID subaccountId,
             @PathVariable String pixKeyId,
             @Valid @RequestBody CreatePixStaticQrCodeRequest request) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.PIX_CREATE);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(pixKeyService.createStaticQrCode(subaccountId, pixKeyId, request));
     }
@@ -117,6 +130,8 @@ public class PixKeyController {
     public ResponseEntity<Void> deleteStaticQrCode(
             @PathVariable UUID subaccountId,
             @PathVariable String qrCodeId) {
+        resourceAuthorization.requireSubaccount(
+                actorResolver.requireProductUserId(), subaccountId, PermissionCodes.PIX_CREATE);
         pixKeyService.deleteStaticQrCode(subaccountId, qrCodeId);
         return ResponseEntity.noContent().build();
     }

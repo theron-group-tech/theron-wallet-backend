@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,11 +23,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/members/{userId}")
 @RequiredArgsConstructor
-@Tag(name = "Member Roles", description = "RBAC role assignment. Actor comes from JWT when present; X-Actor-User-Id is fallback.")
+@Tag(name = "Member Roles", description = "RBAC role assignment. Requires JWT access token.")
 public class MemberRoleController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final RoleAssignmentService roleAssignmentService;
     private final ActorResolver actorResolver;
 
@@ -40,10 +36,10 @@ public class MemberRoleController {
     })
     public ResponseEntity<List<String>> listRoles(
             @PathVariable UUID organizationId,
-            @PathVariable UUID userId,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+            @PathVariable UUID userId
+            ) {
         return ResponseEntity.ok(roleAssignmentService.listRoles(
-                actorResolver.requireProductUserId(actorUserId), organizationId, userId));
+                actorResolver.requireProductUserId(), organizationId, userId));
     }
 
     @PutMapping("/roles")
@@ -56,20 +52,19 @@ public class MemberRoleController {
     public ResponseEntity<List<String>> replaceRoles(
             @PathVariable UUID organizationId,
             @PathVariable UUID userId,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @Valid @RequestBody ReplaceMemberRolesRequest request) {
         // organizationId from path only — body cannot change tenant; actor never from body
         return ResponseEntity.ok(roleAssignmentService.replaceRoles(
-                actorResolver.requireProductUserId(actorUserId), organizationId, userId, request.getRoleCodes()));
+                actorResolver.requireProductUserId(), organizationId, userId, request.getRoleCodes()));
     }
 
     @GetMapping("/permissions")
     @Operation(summary = "List effective permissions for member")
     public ResponseEntity<List<String>> listPermissions(
             @PathVariable UUID organizationId,
-            @PathVariable UUID userId,
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId) {
+            @PathVariable UUID userId
+            ) {
         return ResponseEntity.ok(roleAssignmentService.listPermissions(
-                actorResolver.requireProductUserId(actorUserId), organizationId, userId));
+                actorResolver.requireProductUserId(), organizationId, userId));
     }
 }

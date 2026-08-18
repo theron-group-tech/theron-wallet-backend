@@ -61,7 +61,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class AuditLogIntegrationTest extends BaseIntegrationTest {
 
-    private static final String ACTOR = "X-Actor-User-Id";
     private static final String PASSWORD = "SenhaForte1!";
 
     @Autowired private UserService userService;
@@ -85,6 +84,10 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
     private UserResponse auditor;
     private UserResponse ownerB;
     private AccountResponse account;
+    private String tokenOwner;
+    private String tokenEmployee;
+    private String tokenAuditor;
+    private String tokenOwnerB;
 
     @BeforeEach
     void setUp() {
@@ -103,6 +106,10 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(org.getId(), employee.getId(), List.of(RoleCode.EMPLOYEE.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), auditor.getId(), List.of(RoleCode.AUDITOR.name()));
         roleAssignmentService.assignRolesInternal(orgB.getId(), ownerB.getId(), List.of(RoleCode.OWNER.name()));
+        tokenOwner = productAccessToken(owner.getEmail());
+        tokenEmployee = productAccessToken(employee.getEmail());
+        tokenAuditor = productAccessToken(auditor.getEmail());
+        tokenOwnerB = productAccessToken(ownerB.getEmail());
 
         account = accountService.create(org.getId(), CreateAccountRequest.builder()
                 .name("Audit Account").type(AccountType.MAIN).build());
@@ -116,7 +123,7 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
         login(owner.getEmail(), "device-audit", null);
         stubPixKey("pix_audit", "evp-audit-1");
         mockMvc.perform(post("/api/v1/pix/keys")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                 .accountId(account.getId())
@@ -224,12 +231,12 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
                 .hasStackTraceContaining("append-only");
 
         mockMvc.perform(patch("/api/v1/audit-logs")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isMethodNotAllowed());
         mockMvc.perform(delete("/api/v1/audit-logs")
-                        .header(ACTOR, owner.getId()))
+                        .header("Authorization", bearer(tokenOwner)))
                 .andExpect(status().isMethodNotAllowed());
     }
 
@@ -275,7 +282,7 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
     @DisplayName("8. Cross-tenant — GET da org A com ator da org B → 403")
     void crossTenantForbidden() throws Exception {
         mockMvc.perform(get("/api/v1/audit-logs")
-                        .header(ACTOR, ownerB.getId())
+                        .header("Authorization", bearer(tokenOwnerB))
                         .param("organizationId", org.getId().toString()))
                 .andExpect(status().isForbidden());
     }
@@ -284,21 +291,21 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
     @DisplayName("9. Consulta — OWNER/AUDITOR GET 200; EMPLOYEE 403")
     void queryRequiresAuditRead() throws Exception {
         mockMvc.perform(get("/api/v1/audit-logs")
-                        .header(ACTOR, owner.getId())
+                        .header("Authorization", bearer(tokenOwner))
                         .param("organizationId", org.getId().toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isArray())
                 .andExpect(jsonPath("$.content.length()", greaterThan(0)));
 
         mockMvc.perform(get("/api/v1/audit-logs")
-                        .header(ACTOR, auditor.getId())
+                        .header("Authorization", bearer(tokenAuditor))
                         .param("organizationId", org.getId().toString())
                         .param("action", "MEMBER_ADDED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].organizationId").value(org.getId().toString()));
 
         mockMvc.perform(get("/api/v1/audit-logs")
-                        .header(ACTOR, employee.getId())
+                        .header("Authorization", bearer(tokenEmployee))
                         .param("organizationId", org.getId().toString()))
                 .andExpect(status().isForbidden());
     }

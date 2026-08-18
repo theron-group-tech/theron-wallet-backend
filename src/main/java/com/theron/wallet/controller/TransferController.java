@@ -25,9 +25,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Transfers", description = "Internal wallet-to-wallet transfer operations")
 public class TransferController {
-
-    public static final String ACTOR_HEADER = "X-Actor-User-Id";
-
     private final InternalTransferService internalTransferService;
     private final ActorResolver actorResolver;
 
@@ -43,14 +40,13 @@ public class TransferController {
             @ApiResponse(responseCode = "409", description = "Saldo insuficiente")
     })
     public ResponseEntity<InternalTransferResponse> internalTransfer(
-            @RequestHeader(value = ACTOR_HEADER, required = false) UUID actorUserId,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody InternalTransferRequest request) {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             request.setIdempotencyKey(idempotencyKey.trim());
         }
         InternalTransferResponse response = internalTransferService.transfer(
-                actorResolver.requireProductUserId(actorUserId), request);
+                actorResolver.requireProductUserId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 }

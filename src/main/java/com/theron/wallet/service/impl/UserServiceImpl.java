@@ -43,7 +43,7 @@ public class UserServiceImpl implements UserService {
     public UserResponse create(CreateUserRequest request) {
         String email = normalizeEmail(request.getEmail());
         if (userRepository.existsByEmail(email)) {
-            throw new DuplicateResourceException("User", "email", email);
+            throw new DuplicateResourceException("Unable to complete registration");
         }
 
         User user = User.builder()

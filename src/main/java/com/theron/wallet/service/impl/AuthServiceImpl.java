@@ -57,6 +57,8 @@ public class AuthServiceImpl implements AuthService {
     @Value("${jwt.refresh-expiration-days:30}")
     private long refreshExpirationDays;
 
+    private String dummyPasswordHash;
+
     @Override
     @Transactional
     public LoginResponse login(LoginRequest request, String ip, String userAgent) {
@@ -67,7 +69,12 @@ public class AuthServiceImpl implements AuthService {
         if (user != null) {
             return loginProductUser(user, request, ip, userAgent);
         }
-        return loginAdmin(email, request.getPassword());
+        AdminUser admin = adminUserRepository.findByEmailAndActiveTrue(email).orElse(null);
+        if (admin != null) {
+            return loginAdmin(admin, request.getPassword());
+        }
+        passwordEncoder.matches(request.getPassword() == null ? "" : request.getPassword(), dummyPasswordHash());
+        throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
 
     @Override
@@ -198,8 +205,9 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private LoginResponse loginProductUser(User user, LoginRequest request, String ip, String userAgent) {
-        if (user.getStatus() != UserStatus.ACTIVE
-                || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        boolean passwordOk = passwordEncoder.matches(
+                request.getPassword() == null ? "" : request.getPassword(), user.getPasswordHash());
+        if (user.getStatus() != UserStatus.ACTIVE || !passwordOk) {
             log.warn("Product login failed: userId={}", user.getId());
             throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
@@ -225,16 +233,10 @@ public class AuthServiceImpl implements AuthService {
         return productLoginResponse(user, session, plainRefresh);
     }
 
-    private LoginResponse loginAdmin(String email, String password) {
-        AdminUser admin = adminUserRepository.findByEmailAndActiveTrue(email)
-                .orElseThrow(() -> {
-                    log.warn("Login failed — user not found");
-                    return new ResourceNotFoundException(INVALID_CREDENTIALS);
-                });
-
-        if (!passwordEncoder.matches(password, admin.getPasswordHash())) {
+    private LoginResponse loginAdmin(AdminUser admin, String password) {
+        if (!passwordEncoder.matches(password == null ? "" : password, admin.getPasswordHash())) {
             log.warn("Login failed — wrong password: adminId={}", admin.getId());
-            throw new ResourceNotFoundException(INVALID_CREDENTIALS);
+            throw new UnauthorizedException(INVALID_CREDENTIALS);
         }
 
         String token = jwtTokenProvider.generateToken(admin.getEmail(), admin.getRole());
@@ -364,6 +366,13 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Authentication required");
         }
         return principal.getUserId();
+    }
+
+    private String dummyPasswordHash() {
+        if (dummyPasswordHash == null) {
+            dummyPasswordHash = passwordEncoder.encode("theron-dummy-password-not-used");
+        }
+        return dummyPasswordHash;
     }
 
     private static String truncate(String value, int max) {
