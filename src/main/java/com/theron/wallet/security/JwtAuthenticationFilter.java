@@ -22,7 +22,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -123,13 +122,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (response.isCommitted()) {
             return;
         }
-        ApiErrorResponse body = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpServletResponse.SC_UNAUTHORIZED)
-                .error("Unauthorized")
-                .message(message)
-                .path(request.getRequestURI())
-                .build();
+        ApiErrorResponse body = ApiErrorResponse.of(
+                HttpServletResponse.SC_UNAUTHORIZED,
+                "UNAUTHORIZED",
+                "Unauthorized",
+                message,
+                request.getRequestURI());
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getOutputStream(), body);

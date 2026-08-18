@@ -3,23 +3,36 @@ package com.theron.wallet.controller;
 import com.theron.wallet.dto.request.UpdateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.LedgerBalanceResponse;
+import com.theron.wallet.dto.response.PageResponse;
+import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.dto.response.WalletResponse;
+import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
+import com.theron.wallet.service.StatementService;
+import com.theron.wallet.web.MobilePageables;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +43,8 @@ public class AccountController {
 
     private final AccountService accountService;
     private final LedgerService ledgerService;
+    private final StatementService statementService;
+    private final ActorResolver actorResolver;
 
     @GetMapping("/{id}")
     @Operation(summary = "Get account by id")
@@ -72,5 +87,35 @@ public class AccountController {
     })
     public ResponseEntity<LedgerBalanceResponse> ledgerBalance(@PathVariable UUID id) {
         return ResponseEntity.ok(ledgerService.getBalance(id));
+    }
+
+    @GetMapping("/{accountId}/statement")
+    @Operation(summary = "Account statement for the authenticated product user")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Statement page"),
+            @ApiResponse(responseCode = "401", description = "Missing or invalid access token"),
+            @ApiResponse(responseCode = "403", description = "Account belongs to another organization"),
+            @ApiResponse(responseCode = "404", description = "Account not found")
+    })
+    public ResponseEntity<PageResponse<TransactionResponse>> statement(
+            @PathVariable UUID accountId,
+            @RequestParam(required = false) LocalDateTime from,
+            @RequestParam(required = false) LocalDateTime to,
+            @RequestParam(required = false) TransactionType type,
+            @RequestParam(required = false) TransactionStatus status,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @PageableDefault(size = MobilePageables.DEFAULT_SIZE, sort = "createdAt", direction = Sort.Direction.DESC)
+            Pageable pageable) {
+        return ResponseEntity.ok(statementService.statement(
+                actorResolver.requireProductUserId(null),
+                accountId,
+                from,
+                to,
+                type,
+                status,
+                minAmount,
+                maxAmount,
+                pageable));
     }
 }

@@ -30,6 +30,12 @@ public final class TransactionMapper {
                 .build();
     }
 
+    public static TransactionResponse toMobileResponse(Transaction entity) {
+        TransactionResponse response = toResponse(entity);
+        response.setAsaasPaymentId(null);
+        return response;
+    }
+
     public static DepositResponse toDepositResponse(Transaction entity) {
         return DepositResponse.builder()
                 .transactionId(entity.getId())

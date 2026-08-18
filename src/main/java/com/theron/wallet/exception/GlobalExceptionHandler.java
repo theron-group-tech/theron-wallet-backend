@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Slf4j
@@ -23,19 +22,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
         log.warn("Business exception: {} — path={}", ex.getMessage(), request.getRequestURI());
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(ex.getStatus().value())
-                .error(ex.getStatus().getReasonPhrase())
-                .message(ex.getMessage())
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.status(ex.getStatus()).body(response);
+        return ResponseEntity.status(ex.getStatus()).body(ApiErrorResponse.of(
+                ex.getStatus().value(),
+                ApiErrorCodes.of(ex),
+                ex.getStatus().getReasonPhrase(),
+                ex.getMessage(),
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(AsaasApiException.class)
     public ResponseEntity<ApiErrorResponse> handleAsaasApiException(AsaasApiException ex, HttpServletRequest request) {
-        // Surface the actual Asaas error description so callers know what to fix
         String asaasDescription = extractFirstAsaasErrorDescription(ex.getAsaasErrorBody());
         String message = asaasDescription != null
                 ? "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription)
@@ -45,14 +41,12 @@ public class GlobalExceptionHandler {
         log.error("Asaas API error: status={}, message={}, path={}",
                 ex.getAsaasStatusCode(), message, request.getRequestURI());
 
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(ex.getStatus().value())
-                .error(ex.getStatus().getReasonPhrase())
-                .message(message)
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.status(ex.getStatus()).body(response);
+        return ResponseEntity.status(ex.getStatus()).body(ApiErrorResponse.of(
+                ex.getStatus().value(),
+                ApiErrorCodes.ASAAS_ERROR,
+                ex.getStatus().getReasonPhrase(),
+                message,
+                request.getRequestURI()));
     }
 
     /**
@@ -85,81 +79,69 @@ public class GlobalExceptionHandler {
                 .toList();
 
         log.warn("Validation failed: {} errors — path={}", fieldErrors.size(), request.getRequestURI());
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Validation Failed")
-                .message("One or more fields have invalid values")
-                .path(request.getRequestURI())
-                .fieldErrors(fieldErrors)
-                .build();
-        return ResponseEntity.badRequest().body(response);
+        return ResponseEntity.badRequest().body(ApiErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCodes.VALIDATION_ERROR,
+                "Validation Failed",
+                "One or more fields have invalid values",
+                request.getRequestURI(),
+                fieldErrors));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleMalformedJson(
             HttpMessageNotReadableException ex, HttpServletRequest request) {
         log.warn("Malformed request body — path={}", request.getRequestURI());
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message("Malformed JSON request body")
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.badRequest().body(response);
+        return ResponseEntity.badRequest().body(ApiErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCodes.VALIDATION_ERROR,
+                "Bad Request",
+                "Malformed JSON request body",
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiErrorResponse> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         log.warn("Type mismatch: param={}, value={} — path={}", ex.getName(), ex.getValue(), request.getRequestURI());
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error("Bad Request")
-                .message(String.format("Invalid value '%s' for parameter '%s'", ex.getValue(), ex.getName()))
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.badRequest().body(response);
+        return ResponseEntity.badRequest().body(ApiErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCodes.VALIDATION_ERROR,
+                "Bad Request",
+                String.format("Invalid value '%s' for parameter '%s'", ex.getValue(), ex.getName()),
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(
             HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.METHOD_NOT_ALLOWED.value())
-                .error("Method Not Allowed")
-                .message(ex.getMessage())
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(response);
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(ApiErrorResponse.of(
+                HttpStatus.METHOD_NOT_ALLOWED.value(),
+                ApiErrorCodes.METHOD_NOT_ALLOWED,
+                "Method Not Allowed",
+                ex.getMessage(),
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiErrorResponse> handleNoResourceFound(
             NoResourceFoundException ex, HttpServletRequest request) {
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.NOT_FOUND.value())
-                .error("Not Found")
-                .message("The requested resource was not found")
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ApiErrorResponse.of(
+                HttpStatus.NOT_FOUND.value(),
+                ApiErrorCodes.NOT_FOUND,
+                "Not Found",
+                "The requested resource was not found",
+                request.getRequestURI()));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGenericException(Exception ex, HttpServletRequest request) {
         log.error("Unexpected error — path={}", request.getRequestURI(), ex);
-        ApiErrorResponse response = ApiErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .error("Internal Server Error")
-                .message("An unexpected error occurred. Please try again later.")
-                .path(request.getRequestURI())
-                .build();
-        return ResponseEntity.internalServerError().body(response);
+        return ResponseEntity.internalServerError().body(ApiErrorResponse.of(
+                HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                ApiErrorCodes.INTERNAL_ERROR,
+                "Internal Server Error",
+                "An unexpected error occurred. Please try again later.",
+                request.getRequestURI()));
     }
 }

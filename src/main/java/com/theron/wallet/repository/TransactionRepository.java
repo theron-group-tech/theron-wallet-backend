@@ -7,16 +7,20 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
     Page<Transaction> findByWalletId(UUID walletId, Pageable pageable);
 
@@ -138,4 +142,36 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("excludeId") UUID excludeId);
 
     Optional<Transaction> findByExternalReference(String externalReference);
+
+    Page<Transaction> findByAccount_IdInAndStatusIn(
+            Collection<UUID> accountIds, Collection<TransactionStatus> statuses, Pageable pageable);
+
+    Page<Transaction> findByAccount_IdIn(Collection<UUID> accountIds, Pageable pageable);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.account.id IN :accountIds
+              AND t.type IN :types
+              AND t.status = com.theron.wallet.enums.TransactionStatus.COMPLETED
+              AND t.completedAt >= :from
+              AND t.completedAt < :to
+            """)
+    BigDecimal sumCompletedByTypesAndCompletedAtBetween(
+            @Param("accountIds") Collection<UUID> accountIds,
+            @Param("types") Collection<TransactionType> types,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
+
+    @Query("""
+            SELECT COALESCE(SUM(t.amount), 0)
+            FROM Transaction t
+            WHERE t.account.id IN :accountIds
+              AND t.type = :type
+              AND t.status = :status
+            """)
+    BigDecimal sumByAccountIdsAndTypeAndStatus(
+            @Param("accountIds") Collection<UUID> accountIds,
+            @Param("type") TransactionType type,
+            @Param("status") TransactionStatus status);
 }

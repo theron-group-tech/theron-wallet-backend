@@ -30,4 +30,7 @@ public interface OrganizationMembershipRepository extends JpaRepository<Organiza
 
     @EntityGraph(attributePaths = {"organization"})
     List<OrganizationMembership> findByUserId(UUID userId);
+
+    @EntityGraph(attributePaths = {"organization"})
+    List<OrganizationMembership> findByUserIdAndStatus(UUID userId, MembershipStatus status);
 }

@@ -49,6 +49,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/sessions",
                                 "/api/v1/auth/sessions/**"
                         ).authenticated()
+                        .requestMatchers("/api/v1/me", "/api/v1/me/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/accounts/*/statement").authenticated()
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
