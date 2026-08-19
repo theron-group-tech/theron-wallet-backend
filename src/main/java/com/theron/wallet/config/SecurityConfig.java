@@ -97,6 +97,13 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout"
                         ).permitAll()
 
+                        // Swagger / OpenAPI
+                        .requestMatchers(
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**"
+                        ).permitAll()
+
                         // User registration
                         .requestMatchers(
                                 HttpMethod.POST,
