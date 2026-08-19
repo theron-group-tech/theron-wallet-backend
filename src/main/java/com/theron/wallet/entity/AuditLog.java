@@ -1,6 +1,7 @@
 package com.theron.wallet.entity;
 
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.AuditActorType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -48,7 +49,16 @@ public class AuditLog {
     private User user;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @Column(name = "actor_type", nullable = false, length = 10)
+    @Builder.Default
+    private AuditActorType actorType = AuditActorType.USER;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "admin_id")
+    private AdminUser admin;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 64)
     private AuditAction action;
 
     @Column(name = "resource_type", length = 80)

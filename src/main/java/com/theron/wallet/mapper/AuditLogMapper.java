@@ -13,6 +13,8 @@ public final class AuditLogMapper {
                 .id(log.getId())
                 .organizationId(log.getOrganization() != null ? log.getOrganization().getId() : null)
                 .userId(log.getUser() != null ? log.getUser().getId() : null)
+                .adminId(log.getAdmin() != null ? log.getAdmin().getId() : null)
+                .actorType(log.getActorType())
                 .action(log.getAction())
                 .resourceType(log.getResourceType())
                 .resourceId(log.getResourceId())

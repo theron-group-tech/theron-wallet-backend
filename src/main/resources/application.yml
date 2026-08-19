@@ -36,6 +36,16 @@ asaas:
     key: ${ASAAS_API_KEY}
     webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
     webhook-url: ${ASAAS_WEBHOOK_URL:}
+    master-wallet-id: ${ASAAS_MASTER_WALLET_ID:}
+    subaccount-defaults:
+      mobile: ${ASAAS_SUBACCOUNT_DEFAULT_MOBILE:11999999999}
+      postal-code: ${ASAAS_SUBACCOUNT_DEFAULT_POSTAL_CODE:01310100}
+      address: ${ASAAS_SUBACCOUNT_DEFAULT_ADDRESS:Avenida Paulista}
+      address-number: ${ASAAS_SUBACCOUNT_DEFAULT_ADDRESS_NUMBER:1000}
+      province: ${ASAAS_SUBACCOUNT_DEFAULT_PROVINCE:Bela Vista}
+      income-value: ${ASAAS_SUBACCOUNT_DEFAULT_INCOME_VALUE:10000}
+      company-type: ${ASAAS_SUBACCOUNT_DEFAULT_COMPANY_TYPE:LIMITED}
+      birth-date: ${ASAAS_SUBACCOUNT_DEFAULT_BIRTH_DATE:1990-01-01}
     timeout:
       connect: 5000
       read: 10000
@@ -74,8 +84,14 @@ jwt:
 # Default admin seed (first-boot only; no hardcoded password)
 app:
   admin:
-    email: ${DEFAULT_ADMIN_EMAIL:}
-    password: ${DEFAULT_ADMIN_PASSWORD:}
+    email: ${APP_ADMIN_EMAIL:${DEFAULT_ADMIN_EMAIL:}}
+    password: ${APP_ADMIN_PASSWORD:${DEFAULT_ADMIN_PASSWORD:}}
+
+platform:
+  split:
+    percent: ${PLATFORM_SPLIT_PERCENT:0}
+    fixed-amount: ${PLATFORM_SPLIT_FIXED_AMOUNT:0}
+    enabled: ${PLATFORM_SPLIT_ENABLED:false}
 
 # Logging
 logging:

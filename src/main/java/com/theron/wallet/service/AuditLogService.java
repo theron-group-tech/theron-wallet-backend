@@ -35,4 +35,12 @@ public interface AuditLogService {
             UUID userId,
             String resourceType,
             Pageable pageable);
+
+    void recordAdmin(
+            AuditAction action,
+            UUID organizationId,
+            UUID adminId,
+            String resourceType,
+            UUID resourceId,
+            Map<String, Object> metadata);
 }

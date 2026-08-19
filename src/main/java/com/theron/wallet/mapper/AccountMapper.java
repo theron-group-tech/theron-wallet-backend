@@ -12,6 +12,7 @@ public final class AccountMapper {
         return AccountResponse.builder()
                 .id(account.getId())
                 .organizationId(account.getOrganization().getId())
+                .ownerUserId(account.getOwnerUser() != null ? account.getOwnerUser().getId() : null)
                 .name(account.getName())
                 .type(account.getType())
                 .status(account.getStatus())

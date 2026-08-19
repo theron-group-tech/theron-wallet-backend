@@ -25,7 +25,14 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Query("""
             SELECT a FROM Account a
             JOIN FETCH a.organization
+            LEFT JOIN FETCH a.ownerUser
             WHERE a.id = :id
             """)
     Optional<Account> findByIdWithOrganization(@Param("id") UUID id);
+
+    Optional<Account> findByOrganization_IdAndOwnerUser_Id(UUID organizationId, UUID ownerUserId);
+
+    boolean existsByOrganization_IdAndOwnerUser_Id(UUID organizationId, UUID ownerUserId);
+
+    List<Account> findByOrganization_IdAndOwnerUser_IdOrderByCreatedAtDesc(UUID organizationId, UUID ownerUserId);
 }

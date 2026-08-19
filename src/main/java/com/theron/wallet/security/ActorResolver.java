@@ -1,5 +1,6 @@
 package com.theron.wallet.security;
 
+import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.UnauthorizedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +30,17 @@ public class ActorResolver {
             throw new UnauthorizedException("Authentication required");
         }
 
+        return principal;
+    }
+
+    public UserPrincipal requireAdmin() {
+        UserPrincipal principal = currentPrincipal();
+        if (principal == null) {
+            throw new UnauthorizedException("Authentication required");
+        }
+        if (!principal.isAdmin() || principal.getAdminId() == null) {
+            throw new ForbiddenException("Platform administrator authentication required");
+        }
         return principal;
     }
 

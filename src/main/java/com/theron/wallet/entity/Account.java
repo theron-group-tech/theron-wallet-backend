@@ -44,6 +44,11 @@ public class Account {
     @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
 
+    /** Product user who owns this account. Null on legacy rows. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_user_id")
+    private User ownerUser;
+
     @Column(nullable = false, length = 255)
     private String name;
 

@@ -117,6 +117,8 @@ public class SecurityConfig {
                         // Webhooks
                         .requestMatchers("/api/v1/webhooks/**").permitAll()
 
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+
                         // Everything else requires authentication
                         .anyRequest().authenticated()
                 )
@@ -128,6 +130,13 @@ public class SecurityConfig {
                                         request,
                                         response,
                                         "Authentication required"
+                                )
+                        )
+                        .accessDeniedHandler((request, response, denied) ->
+                                jwtAuthenticationFilter.writeForbidden(
+                                        request,
+                                        response,
+                                        "Forbidden"
                                 )
                         )
                 )

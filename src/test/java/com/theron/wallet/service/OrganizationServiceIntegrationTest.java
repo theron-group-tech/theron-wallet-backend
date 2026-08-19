@@ -118,6 +118,24 @@ class OrganizationServiceIntegrationTest extends BaseIntegrationTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.fieldErrors").isArray());
         }
+
+        @Test
+        @DisplayName("product JWT cannot create an organization")
+        void productCannotCreateOrganizationViaHttp() throws Exception {
+            UserResponse user = userService.create(CreateUserRequest.builder()
+                    .name("Org Actor")
+                    .email("org-forbidden@theron.test")
+                    .password("SenhaForte1!")
+                    .build());
+            mockMvc.perform(post("/api/v1/organizations")
+                            .header("Authorization", bearer(productAccessToken(user.getEmail())))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"legalName":"Nope","document":"22345678000191","documentType":"CNPJ"}
+                                    """))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        }
     }
 
     @Nested

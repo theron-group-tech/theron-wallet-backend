@@ -1,5 +1,6 @@
 package com.theron.wallet;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
+import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.LoginRequest;
 import com.theron.wallet.integration.AsaasCustomerClient;
@@ -167,6 +168,24 @@ public abstract class BaseIntegrationTest {
                         .status("DONE")
                         .value(new BigDecimal("100.00"))
                         .build());
+        when(asaasSubaccountClient.createSubaccount(any())).thenAnswer(invocation -> {
+            String suffix = java.util.UUID.randomUUID().toString().substring(0, 8);
+            return AsaasSubaccountResponse.builder()
+                    .id("asaas_" + suffix)
+                    .walletId("wal_" + suffix)
+                    .apiKey("$aact_hmlg_test_key_" + suffix)
+                    .build();
+        });
+    }
+
+    protected String adminAccessToken() {
+        return authService.login(
+                LoginRequest.builder()
+                        .email("admin@theron.test")
+                        .password("TestAdminPass1!")
+                        .build(),
+                "127.0.0.1",
+                "JUnit").getToken();
     }
 
     protected String productAccessToken(String email) {

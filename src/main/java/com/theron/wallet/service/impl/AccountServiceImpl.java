@@ -6,16 +6,20 @@ import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
+import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.OrganizationStatus;
+import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.AccountMapper;
 import com.theron.wallet.mapper.WalletMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.OrganizationRepository;
+import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
 import lombok.RequiredArgsConstructor;
@@ -33,12 +37,27 @@ public class AccountServiceImpl implements AccountService {
 
     private final AccountRepository accountRepository;
     private final OrganizationRepository organizationRepository;
+    private final UserRepository userRepository;
     private final WalletRepository walletRepository;
     private final LedgerService ledgerService;
+    private final AccountAsaasProvisioningService accountAsaasProvisioningService;
 
     @Override
     @Transactional
     public AccountResponse create(UUID organizationId, CreateAccountRequest request) {
+        return create(organizationId, request, null, null);
+    }
+
+    @Override
+    @Transactional
+    public AccountResponse create(UUID organizationId, CreateAccountRequest request, UUID ownerUserId) {
+        return create(organizationId, request, ownerUserId, null);
+    }
+
+    @Override
+    @Transactional
+    public AccountResponse create(
+            UUID organizationId, CreateAccountRequest request, UUID ownerUserId, String asaasDocument) {
         Organization organization = organizationRepository.findById(organizationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Organization", "id", organizationId));
 
@@ -46,9 +65,19 @@ public class AccountServiceImpl implements AccountService {
             throw new InvalidRequestException("Organization is not ACTIVE");
         }
 
+        User owner = null;
+        if (ownerUserId != null) {
+            if (accountRepository.existsByOrganization_IdAndOwnerUser_Id(organizationId, ownerUserId)) {
+                throw new DuplicateResourceException("Account already exists for this user in the organization");
+            }
+            owner = userRepository.findById(ownerUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", ownerUserId));
+        }
+
         String currency = normalizeCurrency(request.getCurrency());
         Account account = Account.builder()
                 .organization(organization)
+                .ownerUser(owner)
                 .name(request.getName().trim())
                 .type(request.getType())
                 .status(AccountStatus.ACTIVE)
@@ -63,7 +92,12 @@ public class AccountServiceImpl implements AccountService {
         walletRepository.save(wallet);
         ledgerService.provisionForAccount(account);
 
-        log.info("Account created: accountId={}, organizationId={}", account.getId(), organizationId);
+        if (owner != null) {
+            accountAsaasProvisioningService.provision(account, asaasDocument);
+        }
+
+        log.info("Account created: accountId={}, organizationId={}, ownerUserId={}",
+                account.getId(), organizationId, ownerUserId);
         return AccountMapper.toResponse(account);
     }
 

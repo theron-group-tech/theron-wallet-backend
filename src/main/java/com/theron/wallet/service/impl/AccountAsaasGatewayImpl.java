@@ -5,6 +5,7 @@ import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.SubaccountStatus;
+import com.theron.wallet.exception.AsaasErrorException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.repository.AccountRepository;
@@ -45,16 +46,11 @@ public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
         }
 
         Subaccount subaccount = subaccountRepository.findByAccount_Id(accountId)
-                .orElseThrow(() -> new InvalidRequestException(
-                        "Account is not configured with an Asaas Subaccount"));
+                .orElseThrow(() -> new AsaasErrorException(
+                        "Account is not linked to an Asaas subaccount"));
 
-        if (!ALLOWED_STATUSES.contains(subaccount.getStatus())) {
-            throw new InvalidRequestException(
-                    "Asaas Subaccount is not eligible for PIX. Current status: " + subaccount.getStatus());
-        }
-        if (subaccount.getEncryptedApiKey() == null) {
-            throw new InvalidRequestException(
-                    "Asaas Subaccount has no API key configured for this Account");
+        if (!ALLOWED_STATUSES.contains(subaccount.getStatus()) || subaccount.getEncryptedApiKey() == null) {
+            throw new AsaasErrorException("Account is not linked to an Asaas subaccount");
         }
 
         log.debug("Resolved Asaas Subaccount for accountId={}, subaccountId={}",

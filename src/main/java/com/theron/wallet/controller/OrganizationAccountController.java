@@ -35,7 +35,7 @@ public class OrganizationAccountController {
     private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
-    @Operation(summary = "Create account", description = "Creates an account and a zero-balance wallet. Does not provision Asaas.")
+    @Operation(summary = "Create account", description = "Creates an account, a zero-balance wallet, and provisions an Asaas subaccount when the caller is the account owner.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Account created"),
             @ApiResponse(responseCode = "400", description = "Validation error"),
@@ -47,7 +47,7 @@ public class OrganizationAccountController {
             @Valid @RequestBody CreateAccountRequest request) {
         UUID actor = actorResolver.requireProductUserId();
         resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.ORGANIZATION_UPDATE);
-        AccountResponse created = accountService.create(organizationId, request);
+        AccountResponse created = accountService.create(organizationId, request, actor);
         resourceAuthorization.requirePathOrganization(organizationId, created.getOrganizationId());
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
@@ -61,6 +61,12 @@ public class OrganizationAccountController {
     public ResponseEntity<List<AccountResponse>> list(@PathVariable UUID organizationId) {
         UUID actor = actorResolver.requireProductUserId();
         resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.WALLET_READ);
-        return ResponseEntity.ok(accountService.listByOrganization(organizationId));
+        List<AccountResponse> accounts = accountService.listByOrganization(organizationId);
+        if (!resourceAuthorization.isOrgWideViewer(actor, organizationId)) {
+            accounts = accounts.stream()
+                    .filter(account -> actor.equals(account.getOwnerUserId()))
+                    .toList();
+        }
+        return ResponseEntity.ok(accounts);
     }
 }

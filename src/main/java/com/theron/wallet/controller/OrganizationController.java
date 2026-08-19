@@ -6,6 +6,7 @@ import com.theron.wallet.dto.request.UpdateOrganizationStatusRequest;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.OrganizationStatusResponse;
 import com.theron.wallet.enums.OrganizationStatus;
+import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
@@ -22,7 +23,6 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -56,8 +56,7 @@ public class OrganizationController {
     })
     public ResponseEntity<OrganizationResponse> create(@Valid @RequestBody CreateOrganizationRequest request) {
         actorResolver.requireProductUserId();
-        OrganizationResponse response = organizationService.create(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        throw new ForbiddenException("Organizations can only be created by the platform administrator");
     }
 
     @GetMapping("/{id}")

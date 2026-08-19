@@ -1,0 +1,317 @@
+package com.theron.wallet.service.impl;
+
+import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasSubaccountRequest;
+import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
+import com.theron.wallet.dto.asaas.AsaasWebhookConfigRequest;
+import com.theron.wallet.dto.response.AsaasBindResponse;
+import com.theron.wallet.entity.Account;
+import com.theron.wallet.entity.Organization;
+import com.theron.wallet.entity.Subaccount;
+import com.theron.wallet.entity.SubaccountApiKeyAudit;
+import com.theron.wallet.enums.ApiKeyAuditAction;
+import com.theron.wallet.enums.AsaasBindStatus;
+import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.SubaccountStatus;
+import com.theron.wallet.exception.ApiErrorResponse;
+import com.theron.wallet.exception.AsaasApiException;
+import com.theron.wallet.exception.FieldValidationException;
+import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasSubaccountClient;
+import com.theron.wallet.mapper.SubaccountMapper;
+import com.theron.wallet.repository.AccountRepository;
+import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
+import com.theron.wallet.repository.SubaccountRepository;
+import com.theron.wallet.security.ApiKeyEncryptionService;
+import com.theron.wallet.security.WebhookTokenGenerator;
+import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AuditLogService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisioningService {
+
+    private static final List<String> WEBHOOK_EVENTS = List.of(
+            "PAYMENT_CONFIRMED",
+            "PAYMENT_RECEIVED",
+            "PAYMENT_OVERDUE",
+            "PAYMENT_DELETED",
+            "PAYMENT_REFUNDED",
+            "PAYMENT_UPDATED",
+            "TRANSFER_CREATED",
+            "TRANSFER_PENDING",
+            "TRANSFER_DONE",
+            "TRANSFER_FAILED",
+            "TRANSFER_CANCELLED"
+    );
+
+    private final AccountRepository accountRepository;
+    private final SubaccountRepository subaccountRepository;
+    private final SubaccountApiKeyAuditRepository auditRepository;
+    private final AsaasSubaccountClient asaasSubaccountClient;
+    private final ApiKeyEncryptionService encryptionService;
+    private final WebhookTokenGenerator webhookTokenGenerator;
+    private final AsaasProperties asaasProperties;
+    private final AuditLogService auditLogService;
+
+    @Override
+    @Transactional
+    public AsaasBindResponse provisionByAccountId(UUID accountId, String documentOverride) {
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        return provision(account, documentOverride);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AsaasBindResponse currentBind(UUID accountId) {
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        return subaccountRepository.findByAccount_Id(accountId)
+                .map(sub -> toBind(account, sub))
+                .orElseGet(() -> AsaasBindResponse.builder()
+                        .accountId(account.getId())
+                        .organizationId(account.getOrganization().getId())
+                        .status(AsaasBindStatus.FAILED)
+                        .message("Account is not linked to an Asaas subaccount")
+                        .build());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasActiveBind(UUID accountId) {
+        return subaccountRepository.findByAccount_Id(accountId)
+                .map(this::isUsable)
+                .orElse(false);
+    }
+
+    @Override
+    @Transactional
+    public AsaasBindResponse provision(Account account, String documentOverride) {
+        Organization organization = account.getOrganization();
+        String document = normalizeDocument(documentOverride != null ? documentOverride : organization.getDocument());
+        DocumentType documentType = inferDocumentType(document, organization.getDocumentType());
+        validateDocument(document, documentType);
+
+        Subaccount existing = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
+        if (existing != null && isUsable(existing)) {
+            return toBind(account, existing);
+        }
+
+        if (existing == null) {
+            var occupied = subaccountRepository.findFirstByCpfCnpjAndStatusNot(document, SubaccountStatus.FAILED);
+            if (occupied.isPresent()
+                    && (occupied.get().getAccount() == null
+                    || !occupied.get().getAccount().getId().equals(account.getId()))) {
+                Subaccount failed = newFailedRow(account, organization, document, documentType,
+                        "CPF/CNPJ already linked to another Asaas subaccount");
+                failed = subaccountRepository.save(failed);
+                return toBind(account, failed);
+            }
+            existing = newProvisioningRow(account, organization, document, documentType);
+            existing = subaccountRepository.save(existing);
+        } else {
+            applyKyc(existing, account, organization, document, documentType);
+            existing.setAsaasAccountId(null);
+            existing.setAsaasWalletId(null);
+            existing.setEncryptedApiKey(null);
+            existing.transitionTo(SubaccountStatus.PROVISIONING, "Retrying Asaas subaccount provisioning");
+            existing = subaccountRepository.save(existing);
+        }
+
+        try {
+            List<AsaasWebhookConfigRequest> webhooks = buildWebhookConfig(existing.getWebhookToken());
+            AsaasSubaccountRequest asaasRequest = SubaccountMapper.toAsaasRequest(existing, webhooks);
+            AsaasSubaccountResponse asaasResponse = asaasSubaccountClient.createSubaccount(asaasRequest);
+
+            existing.setAsaasAccountId(asaasResponse.getId());
+            existing.setAsaasWalletId(asaasResponse.getWalletId());
+            if (asaasResponse.getApiKey() != null) {
+                existing.setEncryptedApiKey(encryptionService.encrypt(asaasResponse.getApiKey()));
+                auditRepository.save(SubaccountApiKeyAudit.builder()
+                        .subaccount(existing)
+                        .action(ApiKeyAuditAction.CREATED)
+                        .performedBy("system:account-provisioning")
+                        .details("API key encrypted during Account Asaas provisioning")
+                        .build());
+            }
+            existing.transitionTo(SubaccountStatus.PENDING_EVALUATION,
+                    "Subaccount created in Asaas — awaiting regulatory evaluation");
+            existing = subaccountRepository.save(existing);
+            auditLogService.record(
+                    AuditAction.SUBACCOUNT_PROVISIONED,
+                    organization.getId(),
+                    account.getOwnerUser() != null ? account.getOwnerUser().getId() : null,
+                    "Subaccount",
+                    existing.getId(),
+                    Map.of("accountId", account.getId().toString(), "status", existing.getStatus().name()));
+        } catch (Exception ex) {
+            String reason = ex instanceof AsaasApiException asaasEx
+                    ? "Asaas API call failed: " + truncate(asaasEx.getMessage(), 400)
+                    : "Asaas API call failed: " + truncate(ex.getMessage(), 400);
+            log.error("Asaas provisioning failed: accountId={}, error={}", account.getId(), ex.getMessage());
+            existing.transitionTo(SubaccountStatus.FAILED, reason);
+            existing = subaccountRepository.save(existing);
+        }
+        return toBind(account, existing);
+    }
+
+    private Subaccount newProvisioningRow(
+            Account account, Organization organization, String document, DocumentType documentType) {
+        Subaccount subaccount = Subaccount.builder()
+                .account(account)
+                .webhookToken(webhookTokenGenerator.generate())
+                .status(SubaccountStatus.PROVISIONING)
+                .build();
+        applyKyc(subaccount, account, organization, document, documentType);
+        return subaccount;
+    }
+
+    private Subaccount newFailedRow(
+            Account account, Organization organization, String document, DocumentType documentType, String reason) {
+        Subaccount subaccount = Subaccount.builder()
+                .account(account)
+                .webhookToken(webhookTokenGenerator.generate())
+                .status(SubaccountStatus.FAILED)
+                .statusReason(reason)
+                .build();
+        applyKyc(subaccount, account, organization, document, documentType);
+        return subaccount;
+    }
+
+    private void applyKyc(
+            Subaccount subaccount,
+            Account account,
+            Organization organization,
+            String document,
+            DocumentType documentType) {
+        AsaasProperties.SubaccountDefaults defaults = asaasProperties.getSubaccountDefaults();
+        String email = account.getId() + "@asaas.theron.internal";
+        subaccount.setName(account.getName());
+        subaccount.setEmail(email);
+        subaccount.setLoginEmail(email);
+        subaccount.setCpfCnpj(document);
+        subaccount.setMobilePhone(defaults.getMobile());
+        subaccount.setAddress(defaults.getAddress());
+        subaccount.setAddressNumber(defaults.getAddressNumber());
+        subaccount.setProvince(defaults.getProvince());
+        subaccount.setPostalCode(defaults.getPostalCode());
+        subaccount.setIncomeValue(new BigDecimal(defaults.getIncomeValue()));
+        if (documentType == DocumentType.CPF) {
+            subaccount.setBirthDate(defaults.getBirthDate());
+            subaccount.setCompanyType(null);
+        } else {
+            subaccount.setBirthDate(null);
+            subaccount.setCompanyType(defaults.getCompanyType());
+        }
+    }
+
+    private boolean isUsable(Subaccount subaccount) {
+        return subaccount.getEncryptedApiKey() != null
+                && subaccount.getAsaasAccountId() != null
+                && subaccount.getStatus().allowsOutboundOperations();
+    }
+
+    private AsaasBindResponse toBind(Account account, Subaccount subaccount) {
+        return AsaasBindResponse.builder()
+                .accountId(account.getId())
+                .organizationId(account.getOrganization().getId())
+                .asaasAccountId(subaccount.getAsaasAccountId())
+                .asaasWalletId(subaccount.getAsaasWalletId())
+                .status(toPublicStatus(subaccount))
+                .message(subaccount.getStatus() == SubaccountStatus.FAILED ? subaccount.getStatusReason() : null)
+                .build();
+    }
+
+    private AsaasBindStatus toPublicStatus(Subaccount subaccount) {
+        if (isUsable(subaccount)) {
+            return AsaasBindStatus.ACTIVE;
+        }
+        if (subaccount.getStatus() == SubaccountStatus.FAILED) {
+            return AsaasBindStatus.FAILED;
+        }
+        return AsaasBindStatus.PENDING;
+    }
+
+    private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
+        String webhookUrl = asaasProperties.getWebhookUrl();
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            return null;
+        }
+        return List.of(AsaasWebhookConfigRequest.builder()
+                .name("Theron Wallet")
+                .url(webhookUrl)
+                .email("webhooks@theron.internal")
+                .enabled(true)
+                .interrupted(false)
+                .apiVersion("3")
+                .authToken(webhookToken)
+                .sendType("SEQUENTIALLY")
+                .events(WEBHOOK_EVENTS)
+                .build());
+    }
+
+    private static String normalizeDocument(String document) {
+        if (document == null) {
+            return null;
+        }
+        return document.replaceAll("\\D", "");
+    }
+
+    private static DocumentType inferDocumentType(String document, DocumentType fallback) {
+        if (document != null && document.length() == 11) {
+            return DocumentType.CPF;
+        }
+        if (document != null && document.length() == 14) {
+            return DocumentType.CNPJ;
+        }
+        return fallback;
+    }
+
+    private static void validateDocument(String document, DocumentType documentType) {
+        if (document == null || document.isBlank()) {
+            throw new FieldValidationException(
+                    "Organization document is required before Asaas provisioning",
+                    List.of(ApiErrorResponse.FieldError.builder()
+                            .field("document")
+                            .message("document is required")
+                            .build()));
+        }
+        if (documentType == DocumentType.CPF && document.length() != 11) {
+            throw new FieldValidationException(
+                    "Invalid CPF",
+                    List.of(ApiErrorResponse.FieldError.builder()
+                            .field("document")
+                            .message("CPF must contain exactly 11 digits")
+                            .rejectedValue(document)
+                            .build()));
+        }
+        if (documentType == DocumentType.CNPJ && document.length() != 14) {
+            throw new FieldValidationException(
+                    "Invalid CNPJ",
+                    List.of(ApiErrorResponse.FieldError.builder()
+                            .field("document")
+                            .message("CNPJ must contain exactly 14 digits")
+                            .rejectedValue(document)
+                            .build()));
+        }
+    }
+
+    private static String truncate(String value, int max) {
+        if (value == null) {
+            return "unknown error";
+        }
+        return value.length() <= max ? value : value.substring(0, max);
+    }
+}

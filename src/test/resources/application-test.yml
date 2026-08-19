@@ -17,6 +17,7 @@ asaas:
     key: test-key
     webhook-token: test-webhook-token
     webhook-url: https://test.therongroup.com/api/v1/webhooks/asaas
+    master-wallet-id: master-wallet-test
     retry:
       max-attempts: 3
 

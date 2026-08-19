@@ -2,6 +2,7 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.UpdateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
+import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.LedgerBalanceResponse;
 import com.theron.wallet.dto.response.PageResponse;
 import com.theron.wallet.dto.response.TransactionResponse;
@@ -11,6 +12,7 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.StatementService;
@@ -28,6 +30,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,6 +47,7 @@ import java.util.UUID;
 public class AccountController {
 
     private final AccountService accountService;
+    private final AccountAsaasProvisioningService accountAsaasProvisioningService;
     private final LedgerService ledgerService;
     private final StatementService statementService;
     private final ActorResolver actorResolver;
@@ -84,6 +88,14 @@ public class AccountController {
     public ResponseEntity<WalletResponse> findWallet(@PathVariable UUID id) {
         resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findWallet(id));
+    }
+
+    @PostMapping("/{accountId}/asaas-subaccount")
+    @Operation(summary = "Provision or retry Asaas subaccount bind for the account")
+    public ResponseEntity<AsaasBindResponse> provisionAsaas(@PathVariable UUID accountId) {
+        UUID actor = actorResolver.requireProductUserId();
+        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.ORGANIZATION_UPDATE);
+        return ResponseEntity.ok(accountAsaasProvisioningService.provisionByAccountId(accountId, null));
     }
 
     @GetMapping("/{id}/ledger-balance")

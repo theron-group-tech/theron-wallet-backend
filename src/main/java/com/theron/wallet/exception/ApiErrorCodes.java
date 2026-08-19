@@ -37,8 +37,11 @@ public final class ApiErrorCodes {
         if (exception instanceof SubaccountOperationBlockedException) {
             return FORBIDDEN;
         }
-        if (exception instanceof AsaasApiException) {
+        if (exception instanceof AsaasApiException || exception instanceof AsaasErrorException) {
             return ASAAS_ERROR;
+        }
+        if (exception instanceof FieldValidationException) {
+            return VALIDATION_ERROR;
         }
         if (exception instanceof RateLimitException) {
             return RATE_LIMITED;

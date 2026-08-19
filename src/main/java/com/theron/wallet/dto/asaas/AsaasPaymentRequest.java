@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Getter
 @Setter
@@ -23,4 +24,5 @@ public class AsaasPaymentRequest {
     private String dueDate;
     private String description;
     private String externalReference;
+    private List<AsaasSplitItem> split;
 }

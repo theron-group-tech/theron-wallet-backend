@@ -198,6 +198,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         void missingAsaasConfig() throws Exception {
             AccountResponse orphan = accountService.create(orgA.getId(), CreateAccountRequest.builder()
                     .name("Sem Asaas").type(AccountType.RESERVE).build());
+            unlinkAsaas(orphan.getId());
 
             mockMvc.perform(post("/api/v1/pix/keys")
                             .header("Authorization", bearer(tokenOwnerA))
@@ -735,16 +736,33 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                 .build();
     }
 
+    private void unlinkAsaas(UUID accountId) {
+        subaccountRepository.findByAccount_Id(accountId).ifPresent(sub -> {
+            sub.setEncryptedApiKey(null);
+            sub.setAsaasAccountId(null);
+            sub.setAsaasWalletId(null);
+            sub.transitionTo(SubaccountStatus.FAILED, "unlinked for test");
+            subaccountRepository.saveAndFlush(sub);
+        });
+    }
+
     private Subaccount linkAsaasSubaccount(UUID accountId, String cpf, boolean withApiKey) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (sub == null) {
+            sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            sub = subaccountRepository.saveAndFlush(sub);
+            jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+            sub = subaccountRepository.findById(sub.getId()).orElseThrow();
+        }
+        sub.setCpfCnpj(cpf);
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
-        if (withApiKey) {
-            sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        sub.setEncryptedApiKey(withApiKey ? new byte[]{1, 2, 3, 4, 5, 6, 7, 8} : null);
+        if (!withApiKey) {
+            sub.transitionTo(SubaccountStatus.FAILED, "no api key");
         }
-        sub = subaccountRepository.saveAndFlush(sub);
-        jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
-        return subaccountRepository.findById(sub.getId()).orElseThrow();
+        return subaccountRepository.saveAndFlush(sub);
     }
 
     private void configureLimits(UUID accountId, String maxOp, String daily) {

@@ -2,6 +2,7 @@ package com.theron.wallet.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.AuditActorType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -23,6 +24,8 @@ public class AuditLogResponse {
     private UUID id;
     private UUID organizationId;
     private UUID userId;
+    private UUID adminId;
+    private AuditActorType actorType;
     private AuditAction action;
     private String resourceType;
     private String resourceId;

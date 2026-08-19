@@ -134,6 +134,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             principal = UserPrincipal.builder()
                     .principalType(UserPrincipal.PRINCIPAL_ADMIN)
+                    .adminId(admin.getId())
                     .email(admin.getEmail())
                     .role(admin.getRole())
                     .build();
@@ -193,16 +194,31 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     public void writeUnauthorized(HttpServletRequest request, HttpServletResponse response, String message)
             throws IOException {
+        writeError(request, response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized", message);
+    }
+
+    public void writeForbidden(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        writeError(request, response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN", "Forbidden", message);
+    }
+
+    private void writeError(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            int status,
+            String code,
+            String error,
+            String message) throws IOException {
         if (response.isCommitted()) {
             return;
         }
         ApiErrorResponse body = ApiErrorResponse.of(
-                HttpServletResponse.SC_UNAUTHORIZED,
-                "UNAUTHORIZED",
-                "Unauthorized",
+                status,
+                code,
+                error,
                 message,
                 request.getRequestURI());
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getOutputStream(), body);
     }

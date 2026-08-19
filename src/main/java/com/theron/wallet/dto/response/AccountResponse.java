@@ -22,6 +22,7 @@ public class AccountResponse {
 
     private UUID id;
     private UUID organizationId;
+    private UUID ownerUserId;
     private String name;
     private AccountType type;
     private AccountStatus status;

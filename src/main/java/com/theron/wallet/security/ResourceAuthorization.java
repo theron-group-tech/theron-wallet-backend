@@ -24,6 +24,7 @@ public class ResourceAuthorization {
 
     private final AuthorizationService authorizationService;
     private final TenantAccessGuard tenantAccessGuard;
+    private final OrganizationContextResolver organizationContextResolver;
     private final OrganizationRepository organizationRepository;
     private final AccountRepository accountRepository;
     private final WalletRepository walletRepository;
@@ -45,6 +46,11 @@ public class ResourceAuthorization {
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
         UUID orgId = account.getOrganization().getId();
         authorizationService.requirePermission(orgId, actorUserId, permission);
+        if (!organizationContextResolver.isOrgWideViewer(orgId, actorUserId)
+                && account.getOwnerUser() != null
+                && !account.getOwnerUser().getId().equals(actorUserId)) {
+            throw new ForbiddenException("Access denied");
+        }
         return orgId;
     }
 
@@ -79,6 +85,10 @@ public class ResourceAuthorization {
 
     public void requirePathOrganization(UUID pathOrganizationId, UUID resourceOrganizationId) {
         tenantAccessGuard.requireSameOrganization(pathOrganizationId, resourceOrganizationId);
+    }
+
+    public boolean isOrgWideViewer(UUID actorUserId, UUID organizationId) {
+        return organizationContextResolver.isOrgWideViewer(organizationId, actorUserId);
     }
 
     private UUID requireWalletEntity(UUID actorUserId, Wallet wallet, String permission) {

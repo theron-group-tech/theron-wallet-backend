@@ -25,6 +25,7 @@ import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.DepositService;
 import com.theron.wallet.service.IdempotencyService;
+import com.theron.wallet.service.PlatformSplitService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,6 +58,7 @@ public class DepositServiceImpl implements DepositService {
     private final AsaasApiKeyResolver asaasApiKeyResolver;
     private final IdempotencyService idempotencyService;
     private final TransactionLifecycleService transactionLifecycleService;
+    private final PlatformSplitService platformSplitService;
     private final PlatformTransactionManager transactionManager;
 
     @Override
@@ -156,6 +158,7 @@ public class DepositServiceImpl implements DepositService {
                 .description(request.getDescription() != null ? request.getDescription() : "Depósito na carteira")
                 .externalReference(locked.getId().toString())
                 .build();
+        platformSplitService.applyToPayment(paymentRequest);
 
         AsaasPaymentResponse paymentResponse = asaasPaymentClient.createPayment(apiKey, paymentRequest);
         locked.setAsaasPaymentId(paymentResponse.getId());

@@ -1,12 +1,15 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.response.AuditLogResponse;
+import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.entity.AuditLog;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.AuditActorType;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.AuditLogMapper;
+import com.theron.wallet.repository.AdminUserRepository;
 import com.theron.wallet.repository.AuditLogRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.UserRepository;
@@ -39,6 +42,7 @@ public class AuditLogServiceImpl implements AuditLogService {
     private final AuditLogRepository auditLogRepository;
     private final OrganizationRepository organizationRepository;
     private final UserRepository userRepository;
+    private final AdminUserRepository adminUserRepository;
 
     @Override
     @Transactional
@@ -81,6 +85,7 @@ public class AuditLogServiceImpl implements AuditLogService {
         AuditLog entry = AuditLog.builder()
                 .organization(organization)
                 .user(user)
+                .actorType(AuditActorType.USER)
                 .action(action)
                 .resourceType(resourceType)
                 .resourceId(resourceId == null ? null : resourceId.toString())
@@ -91,6 +96,40 @@ public class AuditLogServiceImpl implements AuditLogService {
                 .build();
         auditLogRepository.save(entry);
         log.debug("Audit recorded: action={}, org={}, user={}", action, organizationId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void recordAdmin(
+            AuditAction action,
+            UUID organizationId,
+            UUID adminId,
+            String resourceType,
+            UUID resourceId,
+            Map<String, Object> metadata) {
+        HttpServletRequest request = currentRequest();
+        Organization organization = null;
+        if (organizationId != null) {
+            organization = organizationRepository.getReferenceById(organizationId);
+        }
+        AdminUser admin = null;
+        if (adminId != null) {
+            admin = adminUserRepository.getReferenceById(adminId);
+        }
+        AuditLog entry = AuditLog.builder()
+                .organization(organization)
+                .admin(admin)
+                .actorType(AuditActorType.ADMIN)
+                .action(action)
+                .resourceType(resourceType)
+                .resourceId(resourceId == null ? null : resourceId.toString())
+                .ip(request == null ? null : ClientRequestMetadata.clientIp(request))
+                .userAgent(request == null ? null : ClientRequestMetadata.userAgent(request))
+                .deviceId(truncate(header(request, "X-Device-Id"), 128))
+                .metadata(sanitize(metadata))
+                .build();
+        auditLogRepository.save(entry);
+        log.debug("Admin audit recorded: action={}, adminId={}", action, adminId);
     }
 
     @Override

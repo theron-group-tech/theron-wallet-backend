@@ -19,6 +19,8 @@ public interface SubaccountRepository extends JpaRepository<Subaccount, UUID> {
     /** Primary lookup — by CPF/CNPJ (unique identifier for standalone subaccounts). */
     Optional<Subaccount> findByCpfCnpj(String cpfCnpj);
 
+    Optional<Subaccount> findFirstByCpfCnpjAndStatusNot(String cpfCnpj, SubaccountStatus status);
+
     Optional<Subaccount> findByAsaasAccountId(String asaasAccountId);
 
     Optional<Subaccount> findByWebhookToken(String webhookToken);

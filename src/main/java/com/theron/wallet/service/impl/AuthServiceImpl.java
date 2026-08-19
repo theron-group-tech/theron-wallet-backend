@@ -241,6 +241,9 @@ public class AuthServiceImpl implements AuthService {
 
         String token = jwtTokenProvider.generateToken(admin.getEmail(), admin.getRole());
         log.info("Admin login successful: adminId={}", admin.getId());
+        auditLogService.recordAdmin(
+                AuditAction.ADMIN_LOGIN, null, admin.getId(), "AdminUser", admin.getId(),
+                Map.of("email", admin.getEmail()));
 
         return LoginResponse.builder()
                 .token(token)

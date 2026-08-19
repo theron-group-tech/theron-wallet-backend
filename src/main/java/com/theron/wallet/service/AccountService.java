@@ -12,6 +12,10 @@ public interface AccountService {
 
     AccountResponse create(UUID organizationId, CreateAccountRequest request);
 
+    AccountResponse create(UUID organizationId, CreateAccountRequest request, UUID ownerUserId);
+
+    AccountResponse create(UUID organizationId, CreateAccountRequest request, UUID ownerUserId, String asaasDocument);
+
     List<AccountResponse> listByOrganization(UUID organizationId);
 
     AccountResponse findById(UUID id);

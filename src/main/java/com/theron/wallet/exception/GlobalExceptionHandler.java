@@ -19,6 +19,19 @@ import java.util.List;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleFieldValidation(
+            FieldValidationException ex, HttpServletRequest request) {
+        log.warn("Field validation: {} — path={}", ex.getMessage(), request.getRequestURI());
+        return ResponseEntity.badRequest().body(ApiErrorResponse.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ApiErrorCodes.VALIDATION_ERROR,
+                "Bad Request",
+                ex.getMessage(),
+                request.getRequestURI(),
+                ex.getFieldErrors()));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiErrorResponse> handleBusinessException(BusinessException ex, HttpServletRequest request) {
         log.warn("Business exception: {} — path={}", ex.getMessage(), request.getRequestURI());
