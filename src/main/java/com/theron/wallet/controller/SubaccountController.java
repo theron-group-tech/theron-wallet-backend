@@ -20,6 +20,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.theron.wallet.security.UserPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -60,21 +61,36 @@ public class SubaccountController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    @GetMapping
-    @Operation(
-            summary = "Listar subcontas (paginado)",
-            description = "Retorna todas as subcontas com suporte a paginação e filtro opcional por status. "
-                    + "Exemplo: `GET /api/v1/subaccounts?status=ACTIVE&page=0&size=20&sort=createdAt,desc`"
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
-    })
-    public ResponseEntity<Page<SubaccountResponse>> findAll(
-            @RequestParam(required = false) SubaccountStatus status,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        actorResolver.requireProductUserId();
-        throw new ForbiddenException("Listing all subaccounts is not allowed");
-    }
+        @GetMapping
+        @Operation(
+                summary = "Listar subcontas (paginado)",
+                description = "Retorna todas as subcontas para administradores da plataforma."
+        )
+        @ApiResponses({
+                @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso"),
+                @ApiResponse(responseCode = "401", description = "Não autenticado"),
+                @ApiResponse(responseCode = "403", description = "Acesso negado")
+        })
+        public ResponseEntity<Page<SubaccountResponse>> findAll(
+                @RequestParam(required = false) SubaccountStatus status,
+                @PageableDefault(
+                        size = 20,
+                        sort = "createdAt",
+                        direction = Sort.Direction.DESC
+                ) Pageable pageable) {
+
+        UserPrincipal principal = actorResolver.requirePrincipal();
+
+        if (!principal.isAdmin()) {
+                throw new ForbiddenException(
+                        "Only platform administrators can list all subaccounts"
+                );
+        }
+
+        return ResponseEntity.ok(
+                subaccountService.findAll(status, pageable)
+        );
+        }
 
     @GetMapping("/{subaccountId}")
     @Operation(
