@@ -1,40 +1,78 @@
 services:
+
   postgres:
     image: postgres:16-alpine
     container_name: theron-wallet-db
+
     environment:
       POSTGRES_DB: theron_wallet
       POSTGRES_USER: theron
       POSTGRES_PASSWORD: theron
+
     ports:
       - "5432:5432"
+
     volumes:
       - pgdata:/var/lib/postgresql/data
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U theron -d theron_wallet"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+    restart: unless-stopped
+
+
   app:
     build: .
     container_name: theron-wallet-app
+
     ports:
       - "8080:8080"
+
     environment:
+
+      # =========================
+      # DATABASE
+      # =========================
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: theron_wallet
       DB_USERNAME: theron
       DB_PASSWORD: theron
+
+      # =========================
+      # SECURITY / JWT
+      # =========================
+      JWT_SECRET: ${JWT_SECRET}
+
+      # =========================
+      # ADMIN
+      # =========================
+      APP_ADMIN_EMAIL: ${APP_ADMIN_EMAIL}
+      APP_ADMIN_PASSWORD: ${APP_ADMIN_PASSWORD}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD}
+
+      # =========================
+      # ASAAS
+      # =========================
       ASAAS_API_BASE_URL: https://api-sandbox.asaas.com/v3
       ASAAS_API_KEY: ${ASAAS_API_KEY:-}
       ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
       ASAAS_WEBHOOK_URL: ${ASAAS_WEBHOOK_URL:-}
-      ENCRYPTION_AES_KEY: ${ENCRYPTION_AES_KEY:-}
+
+      # =========================
+      # ENCRYPTION
+      # =========================
+      ENCRYPTION_AES_KEY: ${ENCRYPTION_AES_KEY}
+
     depends_on:
       postgres:
         condition: service_healthy
+
+    restart: unless-stopped
+
 
 volumes:
   pgdata:
