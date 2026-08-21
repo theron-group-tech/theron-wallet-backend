@@ -7,7 +7,6 @@ import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
-import com.theron.wallet.dto.request.CreateApprovalPolicyRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
@@ -34,7 +33,6 @@ import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.AccountLimitRepository;
 import com.theron.wallet.repository.AccountRepository;
-import com.theron.wallet.repository.ApprovalRequestRepository;
 import com.theron.wallet.repository.NotificationRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -77,11 +75,11 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
     @Autowired private WalletService walletService;
     @Autowired private WebhookService webhookService;
     @Autowired private InternalTransferService internalTransferService;
+    @Autowired private NotificationService notificationService;
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private AccountRepository accountRepository;
     @Autowired private AccountLimitRepository accountLimitRepository;
-    @Autowired private ApprovalRequestRepository approvalRequestRepository;
     @Autowired private SubaccountRepository subaccountRepository;
     @Autowired private WalletRepository walletRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
@@ -118,15 +116,13 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         tokenOwnerB = productAccessToken(ownerB.getEmail());
 
         account = accountService.create(org.getId(), CreateAccountRequest.builder()
-                .name("Notif Account").type(AccountType.MAIN).build());
+                .name("Notif Account").type(AccountType.MAIN).build(), owner.getId(), "77889900101");
         accountDest = accountService.create(org.getId(), CreateAccountRequest.builder()
-                .name("Notif Dest").type(AccountType.RESERVE).build());
+                .name("Notif Dest").type(AccountType.RESERVE).build(), finance.getId(), "77889900102");
         linkAsaas(account.getId(), "77889900101");
         linkAsaas(accountDest.getId(), "77889900102");
         configureLimits(account.getId(), "5000.00", "10000.00");
         fundWallet(account.getId(), "5000.00");
-        createPolicy("0.00", "99.99", 0);
-        createPolicy("100.00", "499.99", 1);
 
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("encrypted-resolved-key");
         stubAsaasTransfer("asaas_notif_default");
@@ -139,12 +135,8 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         changePassword(owner.getId());
         confirmDeposit("pay_notif_in");
         completePix("50.00", "notif-pix-sent", "asaas_pix_sent");
-        UUID holdApprove = createHeldPix("150.00", "notif-hold-ok");
-        stubAsaasTransfer("asaas_pix_approved");
-        approve(holdApprove);
-        completeExistingPix(holdApprove, "asaas_pix_approved");
-        UUID holdReject = createHeldPix("150.00", "notif-hold-no");
-        reject(holdReject);
+        // Legacy approval notification types (personal PIX no longer holds for ApprovalPolicy)
+        seedLegacyApprovalNotifications();
         internalTransfer("notif-internal-1");
 
         for (NotificationType type : NotificationType.values()) {
@@ -316,21 +308,14 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
         return pix;
     }
 
-    private void completeExistingPix(UUID approvalRequestId, String asaasId) {
-        UUID txId = approvalRequestRepository.findByIdWithDetails(approvalRequestId).orElseThrow()
-                .getTransaction().getId();
-        Transaction tx = transactionRepository.findById(txId).orElseThrow();
-        String providerId = tx.getAsaasPaymentId() != null ? tx.getAsaasPaymentId() : asaasId;
-        if (tx.getAsaasPaymentId() == null) {
-            tx.setAsaasPaymentId(asaasId);
-            transactionRepository.saveAndFlush(tx);
-        }
-        webhookService.processTransferWebhook(transferDone(providerId));
-    }
-
-    private UUID createHeldPix(String amount, String idempotencyKey) throws Exception {
-        PixTransferResponse pix = postPix(amount, idempotencyKey);
-        return approvalRequestRepository.findByTransaction_Id(pix.getTransactionId()).orElseThrow().getId();
+    private void seedLegacyApprovalNotifications() {
+        UUID resourceId = UUID.randomUUID();
+        notificationService.notify(
+                owner.getId(), org.getId(), NotificationType.TRANSFER_APPROVAL_REQUIRED, resourceId, null);
+        notificationService.notify(
+                owner.getId(), org.getId(), NotificationType.TRANSFER_APPROVED, resourceId, null);
+        notificationService.notify(
+                owner.getId(), org.getId(), NotificationType.TRANSFER_REJECTED, resourceId, null);
     }
 
     private PixTransferResponse postPix(String amount, String idempotencyKey) throws Exception {
@@ -348,22 +333,6 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readValue(result.getResponse().getContentAsString(), PixTransferResponse.class);
-    }
-
-    private void approve(UUID requestId) throws Exception {
-        mockMvc.perform(post("/api/v1/approvals/{id}/approve", requestId)
-                        .header("Authorization", bearer(tokenFinance))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isOk());
-    }
-
-    private void reject(UUID requestId) throws Exception {
-        mockMvc.perform(post("/api/v1/approvals/{id}/reject", requestId)
-                        .header("Authorization", bearer(tokenFinance))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isOk());
     }
 
     private void internalTransfer(String idempotencyKey) {
@@ -410,30 +379,20 @@ class NotificationIntegrationTest extends BaseIntegrationTest {
                 AsaasTransferResponse.builder().id(id).status("PENDING").build());
     }
 
-    private void createPolicy(String min, String max, int required) {
-        try {
-            mockMvc.perform(post("/api/v1/approvals/policies")
-                            .header("Authorization", bearer(tokenOwner))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(objectMapper.writeValueAsString(CreateApprovalPolicyRequest.builder()
-                                    .accountId(account.getId())
-                                    .amountMin(new BigDecimal(min))
-                                    .amountMax(max == null ? null : new BigDecimal(max))
-                                    .requiredApprovals(required)
-                                    .build())))
-                    .andExpect(status().isCreated());
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private void linkAsaas(UUID accountId, String cpf) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (sub == null) {
+            sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            sub = subaccountRepository.saveAndFlush(sub);
+            jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+            sub = subaccountRepository.findById(sub.getId()).orElseThrow();
+        }
+        sub.setCpfCnpj(cpf);
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
-        sub = subaccountRepository.saveAndFlush(sub);
-        jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        subaccountRepository.saveAndFlush(sub);
     }
 
     private void configureLimits(UUID accountId, String maxOp, String daily) {

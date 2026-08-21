@@ -28,6 +28,7 @@ public class RbacCatalogController {
     @Operation(summary = "List system roles")
     public ResponseEntity<List<RoleResponse>> listRoles() {
         List<RoleResponse> roles = roleRepository.findAll().stream()
+                .filter(r -> Boolean.TRUE.equals(r.getAssignable()))
                 .sorted(Comparator.comparing(r -> r.getCode()))
                 .map(r -> RoleResponse.builder()
                         .id(r.getId())

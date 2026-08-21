@@ -46,10 +46,12 @@ public class RoleAssignmentServiceImpl implements RoleAssignmentService {
         authorizationService.requirePermission(organizationId, actorUserId, PermissionCodes.MEMBERS_MANAGE);
 
         List<String> normalized = normalizeRoleCodes(roleCodes);
-        if (normalized.contains(RoleCode.OWNER.name())) {
-            List<String> actorRoles = authorizationService.listRoles(organizationId, actorUserId);
-            if (!actorRoles.contains(RoleCode.OWNER.name())) {
-                throw new ForbiddenException("Only OWNER can grant OWNER role");
+        for (String code : normalized) {
+            if (RoleCode.ADMIN.name().equals(code) || RoleCode.AUDITOR.name().equals(code)) {
+                throw new InvalidRequestException("Role " + code + " is not assignable");
+            }
+            if (RoleCode.OWNER.name().equals(code)) {
+                throw new ForbiddenException("OWNER role can only be assigned by the platform");
             }
         }
 

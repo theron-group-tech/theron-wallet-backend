@@ -1,6 +1,7 @@
 package com.theron.wallet.dto.request;
 
 import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.RoleCode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -41,4 +42,9 @@ public class CreateOrganizationEmployeeRequest {
     @NotNull
     @Builder.Default
     private DocumentType documentType = DocumentType.CPF;
+
+    @NotNull
+    @Schema(description = "Product role: FINANCE or EMPLOYEE", example = "EMPLOYEE")
+    @Builder.Default
+    private RoleCode role = RoleCode.EMPLOYEE;
 }

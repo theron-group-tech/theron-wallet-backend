@@ -32,4 +32,8 @@ public class Role {
 
     @Column(nullable = false, length = 255)
     private String description;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean assignable = true;
 }

@@ -130,6 +130,7 @@ public abstract class BaseIntegrationTest {
     @BeforeEach
     void cleanDatabase() {
         jdbcTemplate.execute("TRUNCATE TABLE audit_log");
+        jdbcTemplate.execute("DELETE FROM payment_order");
         baseNotificationRepository.deleteAll();
         jdbcTemplate.execute("DELETE FROM asaas_webhook_event");
         jdbcTemplate.execute("DELETE FROM asaas_reconciliation");

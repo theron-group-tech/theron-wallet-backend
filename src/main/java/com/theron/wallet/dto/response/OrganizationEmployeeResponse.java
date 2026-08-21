@@ -23,6 +23,7 @@ public class OrganizationEmployeeResponse {
     private String email;
     private UUID organizationId;
     private MembershipStatus membershipStatus;
+    private String role;
     private AccountResponse account;
     private AsaasBindResponse asaasBind;
 }

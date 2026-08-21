@@ -32,7 +32,6 @@ import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.repository.AccountLimitRepository;
-import com.theron.wallet.repository.ApprovalRequestRepository;
 import com.theron.wallet.repository.AuditLogRepository;
 import com.theron.wallet.repository.LedgerEntryRepository;
 import com.theron.wallet.repository.LedgerTransactionRepository;
@@ -81,7 +80,6 @@ class FinalBankingIntegrationTest extends BaseIntegrationTest {
     @Autowired private LedgerService ledgerService;
     @Autowired private SubaccountRepository subaccountRepository;
     @Autowired private AccountLimitRepository accountLimitRepository;
-    @Autowired private ApprovalRequestRepository approvalRequestRepository;
     @Autowired private WalletRepository walletRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private LedgerTransactionRepository ledgerTransactionRepository;
@@ -126,9 +124,9 @@ class FinalBankingIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(orgB.getId(), maria.getId(), List.of(RoleCode.OWNER.name()));
 
         accountA = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                .name("Account A").type(AccountType.MAIN).build());
+                .name("Account A").type(AccountType.MAIN).build(), joao.getId(), "55112233001");
         accountB = accountService.create(orgB.getId(), CreateAccountRequest.builder()
-                .name("Account B").type(AccountType.MAIN).build());
+                .name("Account B").type(AccountType.MAIN).build(), maria.getId(), "55112233002");
 
         linkAsaas(accountA.getId(), "55112233001");
         linkAsaas(accountB.getId(), "55112233002");
@@ -140,6 +138,7 @@ class FinalBankingIntegrationTest extends BaseIntegrationTest {
         tokenCarlos = productAccessToken(carlos.getEmail());
         tokenAna = productAccessToken(ana.getEmail());
 
+        // ApprovalPolicy seed unused for personal PIX (always PROCESSING)
         createPolicy("0.00", "99.99", 0);
         createPolicy("100.00", "499.99", 1);
         createPolicy("500.00", null, 0);
@@ -295,49 +294,31 @@ class FinalBankingIntegrationTest extends BaseIntegrationTest {
                                 .build())))
                 .andExpect(status().isUnprocessableEntity());
 
-        MvcResult heldResult = mockMvc.perform(post("/api/v1/pix/transfers")
+        stubAsaasTransfer("tr_final_direct");
+        MvcResult directResult = mockMvc.perform(post("/api/v1/pix/transfers")
                         .header("Authorization", bearer(tokenJoao))
-                        .header(IDEMPOTENCY, "final-pix-hold")
+                        .header(IDEMPOTENCY, "final-pix-direct")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(CreatePixTransferRequest.builder()
                                 .accountId(accountA.getId())
                                 .amount(new BigDecimal("150.00"))
                                 .beneficiaryId(beneficiary.getId())
-                                .description("PIX com aprovação")
+                                .description("PIX imediato 150")
                                 .build())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
                 .andReturn();
-        PixTransferResponse held = objectMapper.readValue(
-                heldResult.getResponse().getContentAsString(), PixTransferResponse.class);
-        verify(asaasTransferClient, times(1)).createTransfer(any(), any());
-        UUID approvalId = approvalRequestRepository.findByTransaction_Id(held.getTransactionId())
-                .orElseThrow()
-                .getId();
-
-        mockMvc.perform(post("/api/v1/approvals/{id}/approve", approvalId)
-                        .header("Authorization", bearer(tokenJoao))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isForbidden());
-
-        stubAsaasTransfer("tr_final_hold");
-        mockMvc.perform(post("/api/v1/approvals/{id}/approve", approvalId)
-                        .header("Authorization", bearer(tokenAna))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("APPROVED"))
-                .andExpect(jsonPath("$.transactionStatus").value("PROCESSING"));
+        PixTransferResponse direct = objectMapper.readValue(
+                directResult.getResponse().getContentAsString(), PixTransferResponse.class);
         verify(asaasTransferClient, times(2)).createTransfer(any(), any());
 
         mockMvc.perform(post("/api/v1/webhooks/asaas")
                         .header("asaas-access-token", WEBHOOK_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(transferWebhook("TRANSFER_DONE", "tr_final_hold"))))
+                        .content(objectMapper.writeValueAsString(transferWebhook("TRANSFER_DONE", "tr_final_direct"))))
                 .andExpect(status().isOk());
 
-        assertThat(transactionRepository.findById(held.getTransactionId()).orElseThrow().getStatus())
+        assertThat(transactionRepository.findById(direct.getTransactionId()).orElseThrow().getStatus())
                 .isEqualTo(TransactionStatus.COMPLETED);
 
         Wallet wallet = walletRepository.findByAccount_Id(accountA.getId()).orElseThrow();
@@ -395,12 +376,19 @@ class FinalBankingIntegrationTest extends BaseIntegrationTest {
     }
 
     private void linkAsaas(UUID accountId, String cpf) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (sub == null) {
+            sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            sub = subaccountRepository.saveAndFlush(sub);
+            jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+            sub = subaccountRepository.findById(sub.getId()).orElseThrow();
+        }
+        sub.setCpfCnpj(cpf);
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
-        sub = subaccountRepository.saveAndFlush(sub);
-        jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        subaccountRepository.saveAndFlush(sub);
     }
 
     private void configureLimits(UUID accountId, String maxOp, String daily) {

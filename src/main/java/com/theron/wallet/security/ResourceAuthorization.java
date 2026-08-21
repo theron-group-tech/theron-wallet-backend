@@ -46,11 +46,7 @@ public class ResourceAuthorization {
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
         UUID orgId = account.getOrganization().getId();
         authorizationService.requirePermission(orgId, actorUserId, permission);
-        if (!organizationContextResolver.isOrgWideViewer(orgId, actorUserId)
-                && account.getOwnerUser() != null
-                && !account.getOwnerUser().getId().equals(actorUserId)) {
-            throw new ForbiddenException("Access denied");
-        }
+        requireOwnAccount(actorUserId, account);
         return orgId;
     }
 
@@ -67,6 +63,11 @@ public class ResourceAuthorization {
                 .orElseThrow(() -> new ResourceNotFoundException("Subaccount", "id", subaccountId));
         UUID orgId = orgIdOf(subaccount);
         authorizationService.requirePermission(orgId, actorUserId, permission);
+        if (subaccount.getAccount() != null) {
+            Account account = accountRepository.findByIdWithOrganization(subaccount.getAccount().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", "id", subaccount.getAccount().getId()));
+            requireOwnAccount(actorUserId, account);
+        }
         return orgId;
     }
 
@@ -87,13 +88,25 @@ public class ResourceAuthorization {
         tenantAccessGuard.requireSameOrganization(pathOrganizationId, resourceOrganizationId);
     }
 
+    /** @deprecated Financial resources are always own-account-only. */
     public boolean isOrgWideViewer(UUID actorUserId, UUID organizationId) {
         return organizationContextResolver.isOrgWideViewer(organizationId, actorUserId);
+    }
+
+    private void requireOwnAccount(UUID actorUserId, Account account) {
+        if (account.getOwnerUser() == null || !account.getOwnerUser().getId().equals(actorUserId)) {
+            throw new ForbiddenException("Access denied");
+        }
     }
 
     private UUID requireWalletEntity(UUID actorUserId, Wallet wallet, String permission) {
         UUID orgId = orgIdOf(wallet);
         authorizationService.requirePermission(orgId, actorUserId, permission);
+        if (wallet.getAccount() != null) {
+            Account account = accountRepository.findByIdWithOrganization(wallet.getAccount().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", "id", wallet.getAccount().getId()));
+            requireOwnAccount(actorUserId, account);
+        }
         return orgId;
     }
 

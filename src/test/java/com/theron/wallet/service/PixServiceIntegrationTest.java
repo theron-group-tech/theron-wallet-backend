@@ -131,9 +131,9 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         roleAssignmentService.assignRolesInternal(orgB.getId(), ownerB.getId(), List.of(RoleCode.OWNER.name()));
 
         accountA = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                .name("Conta A").type(AccountType.MAIN).build());
+                .name("Conta A").type(AccountType.MAIN).build(), ownerA.getId(), "22345678901");
         accountB = accountService.create(orgB.getId(), CreateAccountRequest.builder()
-                .name("Conta B").type(AccountType.MAIN).build());
+                .name("Conta B").type(AccountType.MAIN).build(), ownerB.getId(), "22345678902");
 
         asaasA = linkAsaasSubaccount(accountA.getId(), "22345678901", true);
         linkAsaasSubaccount(accountB.getId(), "22345678902", true);
@@ -196,12 +196,18 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("2,6 Account without Subaccount or without API key → 422")
         void missingAsaasConfig() throws Exception {
+            UserResponse orphanOwner = createUser("pix-orphan@theron.test");
+            membershipService.addMember(orgA.getId(), member(orphanOwner.getId()));
+            roleAssignmentService.assignRolesInternal(
+                    orgA.getId(), orphanOwner.getId(), List.of(RoleCode.EMPLOYEE.name()));
+            String tokenOrphan = productAccessToken(orphanOwner.getEmail());
+
             AccountResponse orphan = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                    .name("Sem Asaas").type(AccountType.RESERVE).build());
+                    .name("Sem Asaas").type(AccountType.RESERVE).build(), orphanOwner.getId(), "22345678911");
             unlinkAsaas(orphan.getId());
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header("Authorization", bearer(tokenOwnerA))
+                            .header("Authorization", bearer(tokenOrphan))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(orphan.getId())
@@ -209,12 +215,18 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                                     .build())))
                     .andExpect(status().isUnprocessableEntity());
 
+            UserResponse noKeyOwner = createUser("pix-nokey@theron.test");
+            membershipService.addMember(orgA.getId(), member(noKeyOwner.getId()));
+            roleAssignmentService.assignRolesInternal(
+                    orgA.getId(), noKeyOwner.getId(), List.of(RoleCode.EMPLOYEE.name()));
+            String tokenNoKey = productAccessToken(noKeyOwner.getEmail());
+
             AccountResponse noKey = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                    .name("Sem key").type(AccountType.EMPLOYEE).build());
+                    .name("Sem key").type(AccountType.EMPLOYEE).build(), noKeyOwner.getId(), "22345678903");
             linkAsaasSubaccount(noKey.getId(), "22345678903", false);
 
             mockMvc.perform(post("/api/v1/pix/keys")
-                            .header("Authorization", bearer(tokenOwnerA))
+                            .header("Authorization", bearer(tokenNoKey))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(noKey.getId())
@@ -402,13 +414,19 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("26 Account sem limite configurado")
         void noLimitConfigured() throws Exception {
+            UserResponse noLimitOwner = createUser("pix-nolimit@theron.test");
+            membershipService.addMember(orgA.getId(), member(noLimitOwner.getId()));
+            roleAssignmentService.assignRolesInternal(
+                    orgA.getId(), noLimitOwner.getId(), List.of(RoleCode.OWNER.name()));
+            String tokenNoLimit = productAccessToken(noLimitOwner.getEmail());
+
             AccountResponse noLimit = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                    .name("No limit").type(AccountType.RESERVE).build());
+                    .name("No limit").type(AccountType.RESERVE).build(), noLimitOwner.getId(), "22345678904");
             linkAsaasSubaccount(noLimit.getId(), "22345678904", true);
             fundWallet(noLimit.getId(), "100.00");
 
             mockMvc.perform(post("/api/v1/pix/transfers")
-                            .header("Authorization", bearer(tokenOwnerA))
+                            .header("Authorization", bearer(tokenNoLimit))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(noLimit.getId(), "10.00"))))
@@ -544,14 +562,34 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("Permission denied EMPLOYEE transfer")
-        void employeeCannotTransfer() throws Exception {
+        @DisplayName("EMPLOYEE cannot transfer from OWNER account (own-account only)")
+        void employeeCannotTransferFromOwnerAccount() throws Exception {
             mockMvc.perform(post("/api/v1/pix/transfers")
                             .header("Authorization", bearer(tokenEmployeeA))
                             .header(IDEMPOTENCY, UUID.randomUUID().toString())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(transferBody(accountA.getId(), "10.00"))))
                     .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("EMPLOYEE can transfer on own account → PROCESSING")
+        void employeeCanTransferOwnAccount() throws Exception {
+            AccountResponse empAccount = accountService.create(orgA.getId(), CreateAccountRequest.builder()
+                    .name("Emp Wallet").type(AccountType.EMPLOYEE).build(), employeeA.getId(), "22345678905");
+            linkAsaasSubaccount(empAccount.getId(), "22345678905", true);
+            configureLimits(empAccount.getId(), "500.00", "1000.00");
+            seedZeroApprovalPolicy(empAccount.getId());
+            fundWallet(empAccount.getId(), "200.00");
+            stubTransfer("tr_emp_own");
+
+            mockMvc.perform(post("/api/v1/pix/transfers")
+                            .header("Authorization", bearer(tokenEmployeeA))
+                            .header(IDEMPOTENCY, UUID.randomUUID().toString())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(transferBody(empAccount.getId(), "10.00"))))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.status").value("PROCESSING"));
         }
     }
 

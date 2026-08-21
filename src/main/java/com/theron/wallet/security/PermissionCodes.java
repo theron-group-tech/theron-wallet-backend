@@ -1,7 +1,7 @@
 package com.theron.wallet.security;
 
 /**
- * Canonical permission codes (must match Flyway seed in V14).
+ * Canonical permission codes (must match Flyway seeds V14+V28).
  */
 public final class PermissionCodes {
 
@@ -15,6 +15,12 @@ public final class PermissionCodes {
 
     public static final String MEMBERS_READ = "members.read";
     public static final String MEMBERS_MANAGE = "members.manage";
+    public static final String MEMBERS_CREATE = "members.create";
+    public static final String MEMBERS_UPDATE = "members.update";
+    public static final String MEMBERS_SUSPEND = "members.suspend";
+    public static final String MEMBERS_ACTIVATE = "members.activate";
+    public static final String MEMBERS_REMOVE = "members.remove";
+    public static final String MEMBERS_ROLE_UPDATE = "members.role.update";
 
     public static final String WALLET_READ = "wallet.read";
     public static final String WALLET_TRANSFER = "wallet.transfer";
@@ -36,10 +42,23 @@ public final class PermissionCodes {
     public static final String LIMITS_READ = "limits.read";
     public static final String LIMITS_MANAGE = "limits.manage";
 
+    /** @deprecated PIX personal path no longer uses ApprovalPolicy; kept for legacy tables. */
     public static final String APPROVAL_READ = "approval.read";
+    /** @deprecated */
     public static final String APPROVAL_CREATE = "approval.create";
+    /** @deprecated */
     public static final String APPROVAL_APPROVE = "approval.approve";
+    /** @deprecated */
     public static final String APPROVAL_REJECT = "approval.reject";
+
+    public static final String PAYMENT_ORDERS_CREATE = "payment_orders.create";
+    public static final String PAYMENT_ORDERS_READ = "payment_orders.read";
+    public static final String PAYMENT_ORDERS_CANCEL = "payment_orders.cancel";
+    public static final String PAYMENT_ORDERS_APPROVE = "payment_orders.approve";
+    public static final String PAYMENT_ORDERS_REJECT = "payment_orders.reject";
+
+    public static final String PROFILE_READ = "profile.read";
+    public static final String PROFILE_UPDATE = "profile.update";
 
     private PermissionCodes() {
     }

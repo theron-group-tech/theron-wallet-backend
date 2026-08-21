@@ -91,7 +91,7 @@ platform:
   split:
     percent: ${PLATFORM_SPLIT_PERCENT:0}
     fixed-amount: ${PLATFORM_SPLIT_FIXED_AMOUNT:0}
-    enabled: ${PLATFORM_SPLIT_ENABLED:false}
+    enabled: ${PLATFORM_SPLIT_ENABLED:true}
 
 # Logging
 logging:

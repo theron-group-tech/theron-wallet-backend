@@ -37,7 +37,7 @@ public class PlatformSplitServiceImpl implements PlatformSplitService {
     @Value("${platform.split.fixed-amount:0}")
     private BigDecimal envFixedAmount;
 
-    @Value("${platform.split.enabled:false}")
+    @Value("${platform.split.enabled:true}")
     private boolean envEnabled;
 
     @Override

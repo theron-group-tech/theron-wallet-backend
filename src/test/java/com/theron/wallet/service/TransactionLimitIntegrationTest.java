@@ -120,9 +120,9 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
         financeRoleId = roleRepository.findByCode(RoleCode.FINANCE.name()).orElseThrow().getId();
 
         accountA = accountService.create(org.getId(), CreateAccountRequest.builder()
-                .name("Conta A").type(AccountType.MAIN).build());
+                .name("Conta A").type(AccountType.MAIN).build(), owner.getId(), "55667788901");
         accountB = accountService.create(org.getId(), CreateAccountRequest.builder()
-                .name("Conta B").type(AccountType.EMPLOYEE).build());
+                .name("Conta B").type(AccountType.EMPLOYEE).build(), finance.getId(), "55667788902");
 
         linkAsaas(accountA.getId(), "55667788901");
         linkAsaas(accountB.getId(), "55667788902");
@@ -194,7 +194,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("5. Por user — A limitado 422; B (OWNER) na mesma account passa")
+    @DisplayName("5. Por user — finance limitado 422; OWNER na própria account passa")
     void perUserLimitAppliesOnlyToThatUser() throws Exception {
         createLimit(CreateTransactionLimitRequest.builder()
                 .organizationId(org.getId())
@@ -205,9 +205,9 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .build());
         stubTransfer("tr_lim_user");
 
-        pix(tokenFinance, accountA.getId(), "80.00")
+        pix(tokenFinance, accountB.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
-        assertBalance(accountA.getId(), "1000.00");
+        assertBalance(accountB.getId(), "1000.00");
 
         pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
@@ -226,9 +226,9 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .build());
         stubTransfer("tr_lim_role");
 
-        pix(tokenFinance, accountA.getId(), "80.00")
+        pix(tokenFinance, accountB.getId(), "80.00")
                 .andExpect(status().isUnprocessableEntity());
-        assertBalance(accountA.getId(), "1000.00");
+        assertBalance(accountB.getId(), "1000.00");
 
         pix(tokenOwner, accountA.getId(), "80.00")
                 .andExpect(status().isCreated());
@@ -251,7 +251,7 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isUnprocessableEntity());
         assertBalance(accountA.getId(), "1000.00");
 
-        pix(tokenOwner, accountB.getId(), "80.00")
+        pix(tokenFinance, accountB.getId(), "80.00")
                 .andExpect(status().isCreated());
         assertBalance(accountB.getId(), "920.00");
     }
@@ -407,12 +407,22 @@ class TransactionLimitIntegrationTest extends BaseIntegrationTest {
     }
 
     private void linkAsaas(UUID accountId, String cpf) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (sub == null) {
+            sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            sub.setAsaasAccountId("asaas_acc_" + cpf);
+            sub.setAsaasWalletId("asaas_wal_" + cpf);
+            sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+            sub = subaccountRepository.saveAndFlush(sub);
+            jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+            return;
+        }
+        sub.setCpfCnpj(cpf);
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
-        sub = subaccountRepository.saveAndFlush(sub);
-        jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        subaccountRepository.saveAndFlush(sub);
     }
 
     private void configureAccountLimits(UUID accountId, String maxOp, String daily) {

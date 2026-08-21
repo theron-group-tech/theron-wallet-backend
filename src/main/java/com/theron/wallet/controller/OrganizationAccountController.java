@@ -62,11 +62,9 @@ public class OrganizationAccountController {
         UUID actor = actorResolver.requireProductUserId();
         resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.WALLET_READ);
         List<AccountResponse> accounts = accountService.listByOrganization(organizationId);
-        if (!resourceAuthorization.isOrgWideViewer(actor, organizationId)) {
-            accounts = accounts.stream()
-                    .filter(account -> actor.equals(account.getOwnerUserId()))
-                    .toList();
-        }
+        accounts = accounts.stream()
+                .filter(account -> actor.equals(account.getOwnerUserId()))
+                .toList();
         return ResponseEntity.ok(accounts);
     }
 }

@@ -9,6 +9,7 @@ import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.TenantAccessGuard;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,26 +33,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
 
-    @Autowired
-    private UserService userService;
-
-    @Autowired
-    private OrganizationService organizationService;
-
-    @Autowired
-    private OrganizationMembershipService membershipService;
-
-    @Autowired
-    private RoleAssignmentService roleAssignmentService;
-
-    @Autowired
-    private AuthorizationService authorizationService;
-
-    @Autowired
-    private TenantAccessGuard tenantAccessGuard;
-
-    @Autowired
-    private MockMvc mockMvc;
+    @Autowired private UserService userService;
+    @Autowired private OrganizationService organizationService;
+    @Autowired private OrganizationMembershipService membershipService;
+    @Autowired private RoleAssignmentService roleAssignmentService;
+    @Autowired private AuthorizationService authorizationService;
+    @Autowired private TenantAccessGuard tenantAccessGuard;
+    @Autowired private MockMvc mockMvc;
 
     private OrganizationResponse orgA;
     private OrganizationResponse orgB;
@@ -82,12 +70,11 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
         membershipService.addMember(orgA.getId(), member(auditorA.getId()));
         membershipService.addMember(orgB.getId(), member(employeeB.getId()));
 
-        // Default EMPLOYEE from addMember — elevate as needed via internal assign
         roleAssignmentService.assignRolesInternal(orgA.getId(), ownerA.getId(), List.of(RoleCode.OWNER.name()));
         roleAssignmentService.assignRolesInternal(orgA.getId(), financeA.getId(), List.of(RoleCode.FINANCE.name()));
+        // Legacy catalog roles — empty permissions after V28
         roleAssignmentService.assignRolesInternal(orgA.getId(), adminA.getId(), List.of(RoleCode.ADMIN.name()));
         roleAssignmentService.assignRolesInternal(orgA.getId(), auditorA.getId(), List.of(RoleCode.AUDITOR.name()));
-        // employeeA keeps EMPLOYEE; employeeB keeps EMPLOYEE in orgB
         tokenOwnerA = productAccessToken(ownerA.getEmail());
     }
 
@@ -96,14 +83,17 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
     class MatrixTests {
 
         @Test
-        @DisplayName("EMPLOYEE can wallet.read but not wallet.transfer")
-        void employeeWalletPermissions() {
+        @DisplayName("EMPLOYEE has wallet.read, wallet.transfer and pix.transfer")
+        void employeeWalletAndPixPermissions() {
             assertThatCode(() -> authorizationService.requirePermission(
                     orgA.getId(), employeeA.getId(), PermissionCodes.WALLET_READ))
                     .doesNotThrowAnyException();
-            assertThatThrownBy(() -> authorizationService.requirePermission(
+            assertThatCode(() -> authorizationService.requirePermission(
                     orgA.getId(), employeeA.getId(), PermissionCodes.WALLET_TRANSFER))
-                    .isInstanceOf(ForbiddenException.class);
+                    .doesNotThrowAnyException();
+            assertThatCode(() -> authorizationService.requirePermission(
+                    orgA.getId(), employeeA.getId(), PermissionCodes.PIX_TRANSFER))
+                    .doesNotThrowAnyException();
         }
 
         @Test
@@ -115,24 +105,33 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("ADMIN can manage users/members")
-        void adminCanManageUsers() {
+        @DisplayName("OWNER can manage users/members; ADMIN cannot")
+        void ownerCanManageUsersAdminCannot() {
             assertThatCode(() -> authorizationService.requirePermission(
+                    orgA.getId(), ownerA.getId(), PermissionCodes.USERS_CREATE))
+                    .doesNotThrowAnyException();
+            assertThatCode(() -> authorizationService.requirePermission(
+                    orgA.getId(), ownerA.getId(), PermissionCodes.MEMBERS_MANAGE))
+                    .doesNotThrowAnyException();
+            assertThatThrownBy(() -> authorizationService.requirePermission(
                     orgA.getId(), adminA.getId(), PermissionCodes.USERS_CREATE))
-                    .doesNotThrowAnyException();
-            assertThatCode(() -> authorizationService.requirePermission(
+                    .isInstanceOf(ForbiddenException.class);
+            assertThatThrownBy(() -> authorizationService.requirePermission(
                     orgA.getId(), adminA.getId(), PermissionCodes.MEMBERS_MANAGE))
-                    .doesNotThrowAnyException();
+                    .isInstanceOf(ForbiddenException.class);
         }
 
         @Test
-        @DisplayName("AUDITOR can transactions.read but not wallet.transfer")
-        void auditorReadOnly() {
-            assertThatCode(() -> authorizationService.requirePermission(
+        @DisplayName("AUDITOR has no product permissions after V28")
+        void auditorHasNoPermissions() {
+            assertThatThrownBy(() -> authorizationService.requirePermission(
                     orgA.getId(), auditorA.getId(), PermissionCodes.TRANSACTIONS_READ))
-                    .doesNotThrowAnyException();
+                    .isInstanceOf(ForbiddenException.class);
             assertThatThrownBy(() -> authorizationService.requirePermission(
                     orgA.getId(), auditorA.getId(), PermissionCodes.WALLET_TRANSFER))
+                    .isInstanceOf(ForbiddenException.class);
+            assertThatThrownBy(() -> authorizationService.requirePermission(
+                    orgA.getId(), auditorA.getId(), PermissionCodes.AUDIT_READ))
                     .isInstanceOf(ForbiddenException.class);
         }
     }
@@ -168,15 +167,38 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("ADMIN cannot grant OWNER")
-        void adminCannotGrantOwner() {
+        @DisplayName("replaceRoles rejecting ADMIN → not assignable")
+        void replaceRolesRejectsAdmin() {
             assertThatThrownBy(() -> roleAssignmentService.replaceRoles(
-                    adminA.getId(),
+                    ownerA.getId(),
+                    orgA.getId(),
+                    employeeA.getId(),
+                    List.of(RoleCode.ADMIN.name())))
+                    .isInstanceOf(InvalidRequestException.class)
+                    .hasMessageContaining("not assignable");
+        }
+
+        @Test
+        @DisplayName("replaceRoles rejecting OWNER → platform")
+        void replaceRolesRejectsOwner() {
+            assertThatThrownBy(() -> roleAssignmentService.replaceRoles(
+                    ownerA.getId(),
                     orgA.getId(),
                     employeeA.getId(),
                     List.of(RoleCode.OWNER.name())))
                     .isInstanceOf(ForbiddenException.class)
-                    .hasMessageContaining("Only OWNER");
+                    .hasMessageContaining("platform");
+        }
+
+        @Test
+        @DisplayName("FINANCE cannot grant OWNER")
+        void financeCannotGrantOwner() {
+            assertThatThrownBy(() -> roleAssignmentService.replaceRoles(
+                    financeA.getId(),
+                    orgA.getId(),
+                    employeeA.getId(),
+                    List.of(RoleCode.OWNER.name())))
+                    .isInstanceOf(ForbiddenException.class);
         }
 
         @Test
@@ -213,7 +235,7 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
                             orgB.getId(), employeeB.getId())
                             .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"roleCodes\":[\"ADMIN\"],\"organizationId\":\"" + orgA.getId() + "\"}"))
+                            .content("{\"roleCodes\":[\"FINANCE\"],\"organizationId\":\"" + orgA.getId() + "\"}"))
                     .andExpect(status().isForbidden());
         }
 
@@ -224,7 +246,7 @@ class RbacAuthorizationIntegrationTest extends BaseIntegrationTest {
                     employeeB.getId(),
                     orgA.getId(),
                     employeeA.getId(),
-                    List.of(RoleCode.ADMIN.name())))
+                    List.of(RoleCode.FINANCE.name())))
                     .isInstanceOf(ForbiddenException.class);
         }
 

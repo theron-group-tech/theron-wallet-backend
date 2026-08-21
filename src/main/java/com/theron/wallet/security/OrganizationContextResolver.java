@@ -1,10 +1,10 @@
 package com.theron.wallet.security;
 
-import com.theron.wallet.entity.OrganizationMembership;
-import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.entity.OrganizationMembership;
+import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.repository.OrganizationMembershipRepository;
 import com.theron.wallet.service.AuthorizationService;
 import lombok.RequiredArgsConstructor;
@@ -12,19 +12,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
 public class OrganizationContextResolver {
-
-    private static final Set<String> ORG_WIDE_ROLES = Set.of(
-            RoleCode.OWNER.name(),
-            RoleCode.ADMIN.name(),
-            RoleCode.FINANCE.name(),
-            RoleCode.AUDITOR.name()
-    );
 
     private final OrganizationMembershipRepository membershipRepository;
     private final AuthorizationService authorizationService;
@@ -51,9 +43,12 @@ public class OrganizationContextResolver {
         }
     }
 
+    /**
+     * Financial isolation: nobody sees another user's wallet/PIX/statement.
+     * Always false — OWNER admin scope is members/PaymentOrders only.
+     */
     @Transactional(readOnly = true)
     public boolean isOrgWideViewer(UUID organizationId, UUID userId) {
-        return authorizationService.listRoles(organizationId, userId).stream()
-                .anyMatch(ORG_WIDE_ROLES::contains);
+        return false;
     }
 }

@@ -2,6 +2,8 @@
 
 Cole este documento inteiro em um agente de código num **repositório frontend separado**. Não altere o backend. Não invente rotas, campos nem comportamentos que não estejam aqui.
 
+**Fonte canônica de domínio:** `docs/BUSINESS_RULES.md` no backend. Roles de produto: **somente** `OWNER` | `FINANCE` | `EMPLOYEE` (sem `ADMIN`/`AUDITOR`). PIX pessoal **sem** ApprovalPolicy. Folha/pagamento administrativo = **PaymentOrder**.
+
 Você é um engenheiro frontend sênior. Sua tarefa é **criar do zero** o app web/mobile-responsive **Theron Wallet**, consumindo a API já existente do backend Java (`theron-wallet-backend`, Spring Boot, porta `8080`, prefixo `/api/v1`).
 
 ---
@@ -15,6 +17,7 @@ Você é um engenheiro frontend sênior. Sua tarefa é **criar do zero** o app w
 - O backend **não tem CORS**. O browser não pode chamar `localhost:8080` direto. Use **rewrite/proxy** do Next.
 - Não implemente webhooks Asaas. Não chame `GET /api/v1/subaccounts` (sempre 403).
 - Não invente endpoint de “creditar conta”, bind Asaas ou “tornar OWNER ao criar org”.
+- `POST /api/v1/organizations` com JWT de produto → **403**. Org só via plataforma.
 
 ---
 
@@ -70,11 +73,11 @@ app/
   (app)/pix/page.tsx
   (app)/transferencias/page.tsx
   (app)/extrato/page.tsx
-  (app)/aprovacoes/page.tsx
+  (app)/ordens-pagamento/page.tsx   # PaymentOrders (FINANCE/OWNER) — NÃO ApprovalPolicy de PIX
   (app)/beneficiarios/page.tsx
   (app)/equipe/page.tsx
   (app)/limites/page.tsx
-  (app)/relatorios/page.tsx
+  (app)/perfil/page.tsx
   (app)/configuracoes/page.tsx
 lib/
   api.ts                    # fetch wrapper
@@ -123,17 +126,16 @@ Esconda botões com essa lista. Recarregue ao trocar de org.
 | Tela | Fonte de dados | Notas |
 |---|---|---|
 | Login / Signup | `POST /auth/login`, `POST /users` | Signup público; senha mín. 8 |
-| Dashboard | `GET /me/dashboard?accountId=` | Saldo, entradas/saídas hoje, bloqueado, pendentes, recentes |
-| Contas | `GET /organizations/{id}/accounts` + `GET /accounts/{id}/wallet` | MAIN / EMPLOYEE / RESERVE |
-| PIX | `GET/POST /pix/keys`, QR `POST /pix/qr-codes` | Precisa `pix.create` para criar |
-| Transferências | `POST /pix/transfers` | Preferir PIX de **Account**, não depósito de subconta |
-| Extrato | `GET /accounts/{id}/statement` ou `GET /me/transactions` | Filtros: from, to, type, status, min/max |
-| Aprovações | `GET /approvals?accountId=` | Aprovar/rejeitar; badge no menu = count PENDING |
-| Beneficiários | CRUD `/beneficiaries` | PIX ou dados bancários |
-| Equipe | members + `PUT .../roles` | `members.manage` |
+| Dashboard | `GET /me/dashboard?accountId=` | **Só Account própria** (owner_user_id = eu) |
+| Contas | Account própria + wallet | Sem visão de saldo alheio, mesmo OWNER |
+| PIX | `GET/POST /pix/keys`, QR, transfers | Pessoal; **sem** tela de aprovação |
+| Extrato | `GET /accounts/{id}/statement` | Só Account própria |
+| Ordens de pagamento | `/payment-orders` | FINANCE cria/cancela; OWNER aprova/rejeita |
+| Beneficiários | CRUD `/beneficiaries` | Escopo da própria Account |
+| Equipe | `/organization/members` | OWNER: cria FINANCE/EMPLOYEE + Account+Asaas |
 | Limites | `/limits` | `limits.read` / `limits.manage` |
-| Relatórios | **agregar** dashboard + extrato | Sem endpoint novo |
-| Configurações | `PATCH /users/{id}` (self) + `PATCH /organizations/{id}` se `organization.update` | |
+| Perfil | `PATCH` self com `profile.update` | Nome/email/telefone |
+| Configurações | `PATCH /organizations/{id}` se `organization.update` | |
 
 Quick actions do dashboard: Nova transação / Enviar PIX / Adicionar beneficiário — só se a permissão existir. “Cobrar” = criar QR PIX (`POST /pix/qr-codes`) se `pix.create`.
 
@@ -196,8 +198,8 @@ Exige Account com subconta Asaas **já vinculada no banco** (não há HTTP de bi
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
   Body: `{ "accountId", "amount", "beneficiaryId" }` **ou** `{ "destinationPixKey", "destinationPixKeyType" }`  
-  Perm `pix.transfer`. 201 com `status`: `PROCESSING` **ou** `PENDING_APPROVAL`.  
-  Mesma key + mesmo body → mesma operação. Mesma key + body diferente → 409.
+  Perm `pix.transfer`. 201 com `status` tipicamente `PROCESSING` (PIX pessoal **não** vai para ApprovalPolicy).  
+  Sem bind Asaas → **422** `ASAAS_ERROR`. Mesma key + mesmo body → mesma operação. Mesma key + body diferente → 409.
 
 ### Passo 7 — Beneficiários
 
@@ -205,31 +207,24 @@ Exige Account com subconta Asaas **já vinculada no banco** (não há HTTP de bi
 - `GET /api/v1/beneficiaries?organizationId=` (query obrigatória)
 - GET/PATCH/DELETE por id. DELETE = inativação (204).
 
-### Passo 8 — Aprovações
+### Passo 8 — Ordens de pagamento (PaymentOrder)
 
-Políticas (OWNER/FINANCE, `approval.create`):
+**Não** use `/approvals` para PIX pessoal. Use PaymentOrder para liberação administrativa:
 
-`POST /api/v1/approvals/policies` `{ "accountId", "amountMin", "amountMax?", "requiredApprovals" }`
+- `POST /api/v1/payment-orders` — FINANCE ou OWNER (`payment_orders.create`). Body: destino (account da mesma org), amount, description?. Status inicial `PENDING_APPROVAL`. **Não debita** na criação. Origem = Account do OWNER (backend resolve).
+- `GET /api/v1/payment-orders` — `payment_orders.read`
+- `POST .../{id}/cancel` — FINANCE criador / perm cancel; só `PENDING_APPROVAL`
+- `POST .../{id}/approve` — OWNER (`payment_orders.approve`); revalida saldo; débito OWNER → crédito destino. Saldo insuficiente → **409**. Criador não aprova a própria.
+- `POST .../{id}/reject` — OWNER (`payment_orders.reject`)
 
-Lista: `GET /api/v1/approvals?accountId=`
+### Passo 9 — Equipe (OWNER)
 
-- `POST /api/v1/approvals/{id}/approve` body `{}` ou `{ "comment" }` — **requester não pode se auto-aprovar** (403).
-- `POST .../reject` `{ "comment?" }`
-- `POST .../cancel` (requester)
+- Preferir `POST /api/v1/organization/members` com body completo: `{ "name", "email", "password?", "phone?", "role": "FINANCE"|"EMPLOYEE", "document", "documentType", ... }` — cria User + membership + Account + Wallet + Asaas.
+- `GET /api/v1/organization/members` / `PATCH` suspend/activate / `DELETE` soft-remove.
+- Troca de role: `FINANCE` ↔ `EMPLOYEE` (não promover a OWNER pelo produto).
+- Catálogo: `GET /api/v1/roles`, `GET /api/v1/permissions` (só OWNER/FINANCE/EMPLOYEE atribuíveis).
 
-Após approve completo, a tx vai a `PROCESSING` (Asaas). O frontend não confirma dinheiro; o webhook é servidor. Faça poll em `GET /pix/transfers/{id}` ou no extrato até `COMPLETED` / `FAILED`.
-
-### Passo 9 — Equipe
-
-- `GET /api/v1/organizations/{organizationId}/members`
-- `POST .../members` `{ "userId" }` — entra como **EMPLOYEE**. O usuário precisa já existir (`POST /users` é público).
-- `PUT .../members/{userId}/roles` `{ "roleCodes": ["FINANCE"] }` — só OWNER concede OWNER.
-- `GET .../members/{userId}/roles` e `/permissions`
-- `PATCH .../members/{userId}` `{ "status" }`; `DELETE` = REMOVED.
-
-Catálogo: `GET /api/v1/roles`, `GET /api/v1/permissions`.
-
-**Criar organização:** `POST /api/v1/organizations` `{ "legalName", "document", "documentType": "CNPJ"|"CPF", "tradeName?" }` **não** adiciona membership nem OWNER. Não prometa “você é dono” após o 201. Equipe/OWNER só existe se o backend já tiver membership (seed/ops). A UI deve tratar org sem membership: 403 e copy honesta.
+**Criar organização:** produto **não** cria org (`POST /organizations` → 403). OWNER vem atribuído pela plataforma.
 
 ### Passo 10 — Limites
 
@@ -388,12 +383,12 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 - `PixKeyType`: `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`
 - `AccountType`: `MAIN`, `EMPLOYEE`, `RESERVE`
 - `AccountStatus`: `ACTIVE`, `SUSPENDED`, `CLOSED`
-- `RoleCode`: `OWNER`, `ADMIN`, `FINANCE`, `EMPLOYEE`, `AUDITOR`
+- `RoleCode`: `OWNER`, `FINANCE`, `EMPLOYEE` (ADMIN/AUDITOR descontinuados)
 - `DocumentType`: `CPF`, `CNPJ`
 - `OrganizationStatus`: `ACTIVE`, `SUSPENDED`, `BLOCKED`
 - `UserStatus`: `ACTIVE`, `SUSPENDED`
 - `MembershipStatus`: `ACTIVE`, `INVITED`, `SUSPENDED`, `REMOVED`
-- `ApprovalRequestStatus`: `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXPIRED`
+- `PaymentOrderStatus`: `PENDING_APPROVAL`, `APPROVED`, `PROCESSING`, `COMPLETED`, `FAILED`, `REJECTED`, `CANCELLED`
 - `LimitPeriod`: `PER_TRANSACTION`, `DAILY`, `MONTHLY`
 - `LimitTransactionType`: `PIX`, `TRANSFER`, `WITHDRAWAL`, `PAYMENT`
 - `BankAccountType`: `CHECKING`, `SAVINGS`
@@ -404,36 +399,27 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 `GET /me` **não** traz papéis. Use `GET /organizations/{orgId}/members/{userId}/permissions`.
 
-| Permissão | OWNER | ADMIN | FINANCE | EMPLOYEE | AUDITOR |
-|---|---|---|---|---|---|
-| organization.read | sim | sim | sim | sim | sim |
-| organization.update | sim | sim | | | |
-| members.read | sim | sim | | | sim |
-| members.manage | sim | sim | | | |
-| wallet.read | sim | sim | sim | sim | sim |
-| wallet.transfer | sim | | sim | | |
-| transactions.read | sim | sim | sim | sim | sim |
-| transactions.create | sim | | sim | | |
-| pix.read | sim | sim | sim | sim | sim |
-| pix.create | sim | | sim | | |
-| pix.transfer | sim | | sim | | |
-| beneficiaries.read | sim | sim | sim | sim | sim |
-| beneficiaries.create/update/delete | sim | sim | sim | | |
-| audit.read | sim | sim | | | sim |
-| limits.read | sim | sim | sim | | sim |
-| limits.manage | sim | sim | | | |
-| approval.read | sim | sim | sim | | sim |
-| approval.create | sim | | sim | | |
-| approval.approve / reject | sim | | sim | | |
+| Permissão | OWNER | FINANCE | EMPLOYEE |
+|---|---|---|---|
+| organization.read / update | sim / sim | sim / | sim / |
+| members.* | sim | | |
+| wallet.read / transfer | sim / sim | sim / sim | sim / sim |
+| transactions.read / create | sim / sim | sim / sim | sim / sim |
+| pix.read / create / transfer | sim | sim | sim |
+| beneficiaries.* | sim | sim | sim (read+create/update próprios) |
+| payment_orders.create / read / cancel | sim | sim | |
+| payment_orders.approve / reject | sim | | |
+| profile.read / update | sim | sim | sim |
+| limits.read / manage | sim | read | |
+| audit.read | sim | | |
 
 **Telas:**
 
-- Todos autenticados com `wallet.read`: dashboard, contas (leitura), extrato, PIX (leitura), beneficiários (leitura), inbox.
-- OWNER: tudo. Único que concede OWNER.
-- ADMIN: org, contas, equipe, limites CRUD, auditoria, beneficiários. **Sem** enviar PIX, depositar, sacar, transferir, criar política, aprovar.
-- FINANCE: PIX (criar/enviar), transferir, beneficiários CRUD, políticas, **aprovar/rejeitar**. Sem equipe, sem `limits.manage`, sem auditoria, sem editar org.
-- EMPLOYEE: só leitura operacional.
-- AUDITOR: todos os `*.read`. Sem mutação.
+- Todos com Account própria: dashboard, PIX (enviar), extrato, beneficiários, perfil.
+- OWNER: equipe + PaymentOrders (aprovar) + limites + org.
+- FINANCE: PaymentOrders (criar/cancelar); **sem** approve.
+- EMPLOYEE: só operações pessoais; sem equipe e sem PaymentOrders.
+- Ninguém vê saldo de outro usuário (nem OWNER).
 
 ---
 
@@ -458,7 +444,7 @@ Envelope:
 
 Códigos: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, `INVALID_REQUEST`, `RATE_LIMITED`, `ASAAS_ERROR`, `INTERNAL_ERROR`.
 
-Mostre `message` + `code`. Em 403, não revele se o recurso existe em outro tenant.
+Mostre `message` + `code`. Em 403, não revele se o recurso existe em outro tenant. PaymentOrder/saldo insuficiente → **409**.
 
 ### Paginação
 
@@ -470,24 +456,24 @@ Mostre `message` + `code`. Em 403, não revele se o recurso existe em outro tena
 ## 10. O que o frontend NÃO deve assumir
 
 1. `POST /deposits` **não** credita a wallet da Account do dashboard/PIX.
-2. **Não há** HTTP para vincular subconta Asaas à Account. PIX 422 até ops/seed ligar no banco — mostre o erro.
-3. `POST /organizations` **não** cria membership nem OWNER.
+2. **Não há** HTTP para vincular subconta Asaas à Account. PIX 422 até bind ACTIVE.
+3. `POST /organizations` com JWT de produto → **403**.
 4. `X-Actor-User-Id` é ignorado.
 5. Sem CORS: só same-origin via rewrite.
-6. Dois mundos: Account (`/pix`, `/accounts`, `/me`) vs subconta (`/deposits`, `/withdraws`, `/transfers/internal`). O app do mockup vive no mundo **Account**.
-7. Criar Account **não** provisiona Asaas.
-8. Relatórios: sem API nova — compose dashboard + extrato + (se `audit.read`) audit-logs.
+6. PIX pessoal **não** passa por ApprovalPolicy / tela de aprovações genéricas.
+7. Wallet/extrato/PIX: só Account `owner_user_id = eu`.
+8. Relatórios: compose dashboard + extrato + (se `audit.read`) audit-logs.
 
 ---
 
 ## 11. Critérios de pronto
 
 - Login/signup/refresh/logout funcionam contra o backend local via rewrite.
-- Dashboard mostra saldo real de `GET /me/dashboard`.
-- Enviar PIX usa `Idempotency-Key` e trata `PENDING_APPROVAL`.
+- Dashboard mostra saldo real de `GET /me/dashboard` da Account própria.
+- Enviar PIX usa `Idempotency-Key` e **não** espera `PENDING_APPROVAL` por policy.
 - Maria (outra org) não vê contas de João (403 tratado).
-- EMPLOYEE não vê botão Enviar PIX.
-- FINANCE vê Aprovar; requester não aprova a própria tx.
+- EMPLOYEE envia PIX da própria Account; não vê PaymentOrders.
+- FINANCE cria PaymentOrder; OWNER aprova; FINANCE não aprova.
 - Paleta ouro/prussian, sem roxo do mockup.
 - Nenhum `any` solto; tipos gerados a partir desta spec.
 - README do frontend: como subir Next (`npm run dev`) + backend na 8080.

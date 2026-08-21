@@ -7,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -92,4 +93,17 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
     List<UUID> findUserIdsByOrganizationAndPermission(
             @Param("organizationId") UUID organizationId,
             @Param("permissionCode") String permissionCode);
+
+    @Query(value = """
+            SELECT om.user_id
+            FROM membership_role mr
+            INNER JOIN organization_membership om ON om.id = mr.membership_id
+            INNER JOIN role r ON r.id = mr.role_id
+            WHERE om.organization_id = :organizationId
+              AND om.status = 'ACTIVE'
+              AND r.code = 'OWNER'
+            ORDER BY om.created_at ASC
+            LIMIT 1
+            """, nativeQuery = true)
+    Optional<UUID> findOwnerUserId(@Param("organizationId") UUID organizationId);
 }

@@ -112,7 +112,7 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
         tokenOwnerB = productAccessToken(ownerB.getEmail());
 
         account = accountService.create(org.getId(), CreateAccountRequest.builder()
-                .name("Audit Account").type(AccountType.MAIN).build());
+                .name("Audit Account").type(AccountType.MAIN).build(), owner.getId(), "66778899901");
         linkAsaas(account.getId(), "66778899901");
         when(asaasApiKeyResolver.resolveForSubaccount(any())).thenReturn("encrypted-resolved-key");
     }
@@ -288,7 +288,7 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("9. Consulta — OWNER/AUDITOR GET 200; EMPLOYEE 403")
+    @DisplayName("9. Consulta — OWNER GET 200; AUDITOR/EMPLOYEE 403")
     void queryRequiresAuditRead() throws Exception {
         mockMvc.perform(get("/api/v1/audit-logs")
                         .header("Authorization", bearer(tokenOwner))
@@ -301,8 +301,7 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
                         .header("Authorization", bearer(tokenAuditor))
                         .param("organizationId", org.getId().toString())
                         .param("action", "MEMBER_ADDED"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].organizationId").value(org.getId().toString()));
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(get("/api/v1/audit-logs")
                         .header("Authorization", bearer(tokenEmployee))
@@ -338,12 +337,22 @@ class AuditLogIntegrationTest extends BaseIntegrationTest {
     }
 
     private void linkAsaas(UUID accountId, String cpf) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (sub == null) {
+            sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            sub.setAsaasAccountId("asaas_acc_" + cpf);
+            sub.setAsaasWalletId("asaas_wal_" + cpf);
+            sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+            sub = subaccountRepository.saveAndFlush(sub);
+            jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+            return;
+        }
+        sub.setCpfCnpj(cpf);
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
-        sub = subaccountRepository.saveAndFlush(sub);
-        jdbcTemplate.update("UPDATE subaccount SET account_id = ? WHERE id = ?", accountId, sub.getId());
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        subaccountRepository.saveAndFlush(sub);
     }
 
     private OrganizationResponse createOrg(String document) {

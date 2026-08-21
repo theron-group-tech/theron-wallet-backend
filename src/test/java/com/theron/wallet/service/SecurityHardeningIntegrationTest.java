@@ -11,7 +11,6 @@ import com.theron.wallet.dto.request.CreateBeneficiaryRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
-import com.theron.wallet.dto.request.InternalTransferRequest;
 import com.theron.wallet.dto.request.LoginRequest;
 import com.theron.wallet.dto.request.ReplaceMemberRolesRequest;
 import com.theron.wallet.dto.request.UpdateUserRequest;
@@ -103,9 +102,9 @@ class SecurityHardeningIntegrationTest extends BaseIntegrationTest {
         addMember(orgA.getId(), auditorA.getId(), RoleCode.AUDITOR);
 
         accountA = accountService.create(orgA.getId(), CreateAccountRequest.builder()
-                .name("Sec A").type(AccountType.MAIN).build());
+                .name("Sec A").type(AccountType.MAIN).build(), ownerA.getId(), "44112233901");
         accountB = accountService.create(orgB.getId(), CreateAccountRequest.builder()
-                .name("Sec B").type(AccountType.MAIN).build());
+                .name("Sec B").type(AccountType.MAIN).build(), ownerB.getId(), "44112233902");
         subA = linkSubaccount(accountA.getId(), "44112233901");
         subB = linkSubaccount(accountB.getId(), "44112233902");
         walletAId = walletRepository.findByAccount_Id(accountA.getId()).orElseThrow().getId();
@@ -159,18 +158,8 @@ class SecurityHardeningIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("3 Auditor cannot transfer")
+    @DisplayName("3 Auditor cannot PIX from OWNER account (no perms / not own)")
     void auditorCannotTransfer() throws Exception {
-        mockMvc.perform(post("/api/v1/transfers/internal")
-                        .header("Authorization", bearer(tokenAuditor))
-                        .header("Idempotency-Key", UUID.randomUUID().toString())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(InternalTransferRequest.builder()
-                                .senderSubaccountId(subA.getId())
-                                .receiverSubaccountId(subB.getId())
-                                .amount(new BigDecimal("10.00"))
-                                .build())))
-                .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/pix/transfers")
                         .header("Authorization", bearer(tokenAuditor))
                         .header("Idempotency-Key", UUID.randomUUID().toString())
@@ -393,12 +382,20 @@ class SecurityHardeningIntegrationTest extends BaseIntegrationTest {
     }
 
     private Subaccount linkSubaccount(UUID accountId, String cpf) {
-        Subaccount sub = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
-        sub = subaccountRepository.saveAndFlush(sub);
-        Wallet wallet = walletRepository.findByAccount_Id(accountId).orElseThrow();
-        wallet.setSubaccount(sub);
-        walletRepository.saveAndFlush(wallet);
-        return subaccountRepository.findById(sub.getId()).orElseThrow();
+        Subaccount sub = subaccountRepository.findByAccount_Id(accountId).orElseGet(() -> {
+            Subaccount created = TestFixtures.aSubaccount(cpf, SubaccountStatus.ACTIVE);
+            created = subaccountRepository.saveAndFlush(created);
+            Wallet wallet = walletRepository.findByAccount_Id(accountId).orElseThrow();
+            wallet.setSubaccount(created);
+            walletRepository.saveAndFlush(wallet);
+            return subaccountRepository.findById(created.getId()).orElseThrow();
+        });
+        sub.setCpfCnpj(cpf);
+        sub.setAsaasAccountId("asaas_acc_" + cpf);
+        sub.setAsaasWalletId("asaas_wal_" + cpf);
+        sub.setEncryptedApiKey(new byte[]{1, 2, 3, 4, 5, 6, 7, 8});
+        sub.setStatus(SubaccountStatus.ACTIVE);
+        return subaccountRepository.saveAndFlush(sub);
     }
 
     private static AsaasWebhookPayload paymentWebhook(String paymentId) {

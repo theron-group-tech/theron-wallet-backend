@@ -84,19 +84,25 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                 .password(request.getPassword())
                 .build());
 
+        RoleCode role = request.getRole() == null ? RoleCode.EMPLOYEE : request.getRole();
+        if (!role.isProductAssignable()) {
+            throw new ForbiddenException("Only FINANCE or EMPLOYEE can be created by OWNER");
+        }
+
         membershipService.addMember(organizationId, AddOrganizationMemberRequest.builder()
                 .userId(user.getId())
                 .status(MembershipStatus.ACTIVE)
                 .build());
         roleAssignmentService.assignRolesInternal(
-                organizationId, user.getId(), List.of(RoleCode.EMPLOYEE.name()));
+                organizationId, user.getId(), List.of(role.name()));
 
         DocumentType documentType = request.getDocumentType() == null ? DocumentType.CPF : request.getDocumentType();
+        AccountType accountType = role == RoleCode.FINANCE ? AccountType.MAIN : AccountType.EMPLOYEE;
         AccountResponse account = accountService.create(
                 organizationId,
                 CreateAccountRequest.builder()
                         .name(request.getName())
-                        .type(AccountType.EMPLOYEE)
+                        .type(accountType)
                         .build(),
                 user.getId(),
                 request.getDocument());
@@ -111,6 +117,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                 Map.of(
                         "employeeUserId", user.getId().toString(),
                         "accountId", account.getId().toString(),
+                        "role", role.name(),
                         "documentType", documentType.name()));
 
         return OrganizationEmployeeResponse.builder()
@@ -119,6 +126,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                 .email(user.getEmail())
                 .organizationId(organizationId)
                 .membershipStatus(MembershipStatus.ACTIVE)
+                .role(role.name())
                 .account(account)
                 .asaasBind(bind)
                 .build();
@@ -129,11 +137,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     public List<AccountResponse> listAccounts(UUID actorUserId) {
         UUID organizationId = organizationContextResolver.requireSingleOrganizationId(actorUserId);
         resourceAuthorization.requireOrganization(actorUserId, organizationId, PermissionCodes.WALLET_READ);
-        List<AccountResponse> accounts = accountService.listByOrganization(organizationId);
-        if (organizationContextResolver.isOrgWideViewer(organizationId, actorUserId)) {
-            return accounts;
-        }
-        return accounts.stream()
+        return accountService.listByOrganization(organizationId).stream()
                 .filter(account -> actorUserId.equals(account.getOwnerUserId()))
                 .toList();
     }

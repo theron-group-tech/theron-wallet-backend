@@ -9,6 +9,7 @@ import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.dto.response.PlatformAccountResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
 import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.enums.AsaasBindStatus;
@@ -18,6 +19,7 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.UserPrincipal;
 import com.theron.wallet.service.AdminPlatformService;
+import com.theron.wallet.service.PlatformAccountService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -48,6 +50,7 @@ public class AdminPlatformController {
 
     private final ActorResolver actorResolver;
     private final AdminPlatformService adminPlatformService;
+    private final PlatformAccountService platformAccountService;
 
     @GetMapping("/me")
     @Operation(summary = "Platform admin identity")
@@ -162,5 +165,12 @@ public class AdminPlatformController {
     public ResponseEntity<SplitConfigResponse> updateSplit(@Valid @RequestBody UpdateSplitConfigRequest request) {
         UserPrincipal admin = actorResolver.requireAdmin();
         return ResponseEntity.ok(adminPlatformService.updateSplit(request, admin.getAdminId()));
+    }
+
+    @GetMapping("/platform-account")
+    @Operation(summary = "Platform Account linked to Asaas Master wallet")
+    public ResponseEntity<PlatformAccountResponse> getPlatformAccount() {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformAccountService.get());
     }
 }
