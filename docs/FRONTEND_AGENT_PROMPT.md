@@ -15,9 +15,8 @@ Você é um engenheiro frontend sênior. Sua tarefa é **criar do zero** o app w
 - Autenticação: JWT de **usuário de produto** (`userId`) ou **APP_ADMIN** (`adminId`). Login único em `/login` — se a resposta tiver `adminId`, gravar sessão admin e ir para `/admin`; senão, sessão produto e `/dashboard`. Sessões: `theron-session` vs `theron-admin-session`.
 - Ator: somente o Bearer. **Não envie** `X-Actor-User-Id`.
 - O backend **não tem CORS**. O browser não pode chamar `localhost:8080` direto. Use **rewrite/proxy** do Next.
-- Não implemente webhooks Asaas. Não chame `GET /api/v1/subaccounts` (sempre 403).
-- Não invente endpoint de “creditar conta” ou bind Asaas ad-hoc no produto.
-- Não invente endpoint de “creditar conta”, bind Asaas ou “tornar OWNER ao criar org”.
+- Não implemente webhooks Asaas. Não chame `GET /api/v1/subaccounts` (listagem é admin-only / 403 no produto).
+- Bind Asaas do produto: `POST /api/v1/accounts/{accountId}/asaas-subaccount` (própria Account). Não invente outras rotas de creditar conta.
 - `POST /api/v1/organizations` com JWT de produto → **403**. Org só via plataforma.
 
 ---
@@ -193,7 +192,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 
 ### Passo 6 — PIX (Account)
 
-Exige Account com subconta Asaas **já vinculada no banco** (não há HTTP de bind). 422 = mostrar `message`, não fingir sucesso.
+Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`). Sem bind ACTIVE, mostre o Modal de criação e chame `POST /api/v1/accounts/{accountId}/asaas-subaccount` (dono da Account). 422 = mostrar `message`, não fingir sucesso.
 
 - `GET /api/v1/pix/keys?accountId=` (`pix.read`)
 - `POST /api/v1/pix/keys` `{ "accountId", "type": "CPF"|"CNPJ"|"EMAIL"|"PHONE"|"EVP" }` (`pix.create`) → 201; chave gerada no Asaas.
@@ -370,7 +369,9 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **DashboardResponse:** ver passo 4.
 
-**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, timestamps.
+**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, `ownerUserId?`, `asaasStatus` (`PENDING`|`ACTIVE`|`FAILED`), `asaasAccountId?`, `asaasWalletId?`, `asaasMessage?`, timestamps.
+
+**Asaas bind (produto):** `POST /api/v1/accounts/{accountId}/asaas-subaccount` — provisiona/repara a subconta do **próprio** dono da Account (`wallet.read`). Resposta `AsaasBindResponse`. Após login, se `asaasStatus !== ACTIVE`, abrir Modal pedindo criação.
 
 **WalletResponse:** `id`, `subaccountId?`, `accountId?`, `balance`, `currency`, `active`.
 
@@ -487,7 +488,7 @@ Logo: `public/brand/theron-mark.png` no `LogoMark`. Timestamps do extrato admin:
 ## 10. O que o frontend NÃO deve assumir
 
 1. `POST /deposits` **não** credita a wallet da Account do dashboard/PIX.
-2. **Não há** HTTP para vincular subconta Asaas à Account. PIX 422 até bind ACTIVE.
+2. Use `POST /accounts/{accountId}/asaas-subaccount` para criar/reparar o bind Asaas da própria Account. PIX 422 até `asaasStatus === ACTIVE`.
 3. `POST /organizations` com JWT de produto → **403**.
 4. `X-Actor-User-Id` é ignorado.
 5. Sem CORS: só same-origin via rewrite.

@@ -91,10 +91,11 @@ public class AccountController {
     }
 
     @PostMapping("/{accountId}/asaas-subaccount")
-    @Operation(summary = "Provision or retry Asaas subaccount bind for the account")
+    @Operation(summary = "Provision or retry Asaas subaccount bind for the caller's own account")
     public ResponseEntity<AsaasBindResponse> provisionAsaas(@PathVariable UUID accountId) {
         UUID actor = actorResolver.requireProductUserId();
-        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.ORGANIZATION_UPDATE);
+        // Own-account isolation: any product role may provision/repair their own Account bind.
+        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountAsaasProvisioningService.provisionByAccountId(accountId, null));
     }
 

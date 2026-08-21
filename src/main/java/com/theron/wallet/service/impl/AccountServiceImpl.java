@@ -3,6 +3,7 @@ package com.theron.wallet.service.impl;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.UpdateAccountRequest;
 import com.theron.wallet.dto.response.AccountResponse;
+import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
@@ -98,7 +99,7 @@ public class AccountServiceImpl implements AccountService {
 
         log.info("Account created: accountId={}, organizationId={}, ownerUserId={}",
                 account.getId(), organizationId, ownerUserId);
-        return AccountMapper.toResponse(account);
+        return toEnrichedResponse(account);
     }
 
     @Override
@@ -108,14 +109,14 @@ public class AccountServiceImpl implements AccountService {
             throw new ResourceNotFoundException("Organization", "id", organizationId);
         }
         return accountRepository.findByOrganization_IdOrderByCreatedAtDesc(organizationId).stream()
-                .map(AccountMapper::toResponse)
+                .map(this::toEnrichedResponse)
                 .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public AccountResponse findById(UUID id) {
-        return AccountMapper.toResponse(getAccountOrThrow(id));
+        return toEnrichedResponse(getAccountOrThrow(id));
     }
 
     @Override
@@ -136,7 +137,7 @@ public class AccountServiceImpl implements AccountService {
 
         account = accountRepository.save(account);
         log.info("Account updated: accountId={}", account.getId());
-        return AccountMapper.toResponse(account);
+        return toEnrichedResponse(account);
     }
 
     @Override
@@ -146,6 +147,11 @@ public class AccountServiceImpl implements AccountService {
         Wallet wallet = walletRepository.findByAccount_Id(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
         return WalletMapper.toResponse(wallet);
+    }
+
+    private AccountResponse toEnrichedResponse(Account account) {
+        AsaasBindResponse bind = accountAsaasProvisioningService.currentBind(account.getId());
+        return AccountMapper.toResponse(account, bind);
     }
 
     private Account getAccountOrThrow(UUID id) {

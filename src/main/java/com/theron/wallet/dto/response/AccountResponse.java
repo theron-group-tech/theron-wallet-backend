@@ -3,6 +3,7 @@ package com.theron.wallet.dto.response;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.AsaasBindStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -27,6 +28,10 @@ public class AccountResponse {
     private AccountType type;
     private AccountStatus status;
     private String currency;
+    private AsaasBindStatus asaasStatus;
+    private String asaasAccountId;
+    private String asaasWalletId;
+    private String asaasMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

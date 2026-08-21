@@ -11,6 +11,8 @@ import com.theron.wallet.entity.User;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.dto.response.AsaasBindResponse;
+import com.theron.wallet.entity.Account;
 import com.theron.wallet.mapper.AccountMapper;
 import com.theron.wallet.mapper.TransactionMapper;
 import com.theron.wallet.mapper.WalletMapper;
@@ -18,6 +20,7 @@ import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.MeService;
 import com.theron.wallet.service.MobileScopeService;
 import com.theron.wallet.service.NotificationService;
@@ -62,6 +65,7 @@ public class MeServiceImpl implements MeService {
     private final TransactionRepository transactionRepository;
     private final StatementService statementService;
     private final NotificationService notificationService;
+    private final AccountAsaasProvisioningService accountAsaasProvisioningService;
 
     @Override
     @Transactional(readOnly = true)
@@ -140,7 +144,12 @@ public class MeServiceImpl implements MeService {
             return PageResponse.from(Page.empty(clamped));
         }
         return PageResponse.from(accountRepository.findByOrganization_IdIn(orgIds, clamped)
-                .map(AccountMapper::toResponse));
+                .map(this::toEnrichedAccountResponse));
+    }
+
+    private AccountResponse toEnrichedAccountResponse(Account account) {
+        AsaasBindResponse bind = accountAsaasProvisioningService.currentBind(account.getId());
+        return AccountMapper.toResponse(account, bind);
     }
 
     @Override
