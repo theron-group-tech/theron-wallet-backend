@@ -1,17 +1,19 @@
 package com.theron.wallet.controller.admin;
 
 import com.theron.wallet.dto.request.AssignOrganizationAdminRequest;
+import com.theron.wallet.dto.request.CreateAdminOwnerRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateSplitConfigRequest;
 import com.theron.wallet.dto.response.AdminMeResponse;
 import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
+import com.theron.wallet.dto.response.AdminOwnerResponse;
+import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.PlatformAccountResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
-import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.enums.AsaasBindStatus;
 import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.TransactionStatus;
@@ -112,6 +114,16 @@ public class AdminPlatformController {
                 .body(adminPlatformService.assignOrganizationAdmin(id, request, admin.getAdminId()));
     }
 
+    @PostMapping("/organizations/{id}/owners")
+    @Operation(summary = "Create organization OWNER (user + membership + account + Asaas provision)")
+    public ResponseEntity<AdminOwnerResponse> createOwner(
+            @PathVariable UUID id,
+            @Valid @RequestBody CreateAdminOwnerRequest request) {
+        UserPrincipal admin = actorResolver.requireAdmin();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminPlatformService.createOrganizationOwner(id, request, admin.getAdminId()));
+    }
+
     @GetMapping("/accounts")
     public ResponseEntity<Page<AdminOrganizationDetailResponse.AdminAccountSummary>> listAccounts(
             @RequestParam(required = false) UUID organizationId,
@@ -136,7 +148,7 @@ public class AdminPlatformController {
     }
 
     @GetMapping("/transactions")
-    public ResponseEntity<Page<TransactionResponse>> listTransactions(
+    public ResponseEntity<Page<AdminTransactionResponse>> listTransactions(
             @RequestParam(required = false) UUID organizationId,
             @RequestParam(required = false) UUID accountId,
             @RequestParam(required = false) LocalDateTime from,
@@ -150,7 +162,7 @@ public class AdminPlatformController {
     }
 
     @GetMapping("/transactions/{id}")
-    public ResponseEntity<TransactionResponse> getTransaction(@PathVariable UUID id) {
+    public ResponseEntity<AdminTransactionResponse> getTransaction(@PathVariable UUID id) {
         actorResolver.requireAdmin();
         return ResponseEntity.ok(adminPlatformService.getTransaction(id));
     }

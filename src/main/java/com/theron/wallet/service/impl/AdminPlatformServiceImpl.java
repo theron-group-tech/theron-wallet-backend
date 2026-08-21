@@ -2,20 +2,28 @@ package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.AssignOrganizationAdminRequest;
+import com.theron.wallet.dto.request.CreateAccountRequest;
+import com.theron.wallet.dto.request.CreateAdminOwnerRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateSplitConfigRequest;
+import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
+import com.theron.wallet.dto.response.AdminOwnerResponse;
+import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
-import com.theron.wallet.dto.response.TransactionResponse;
+import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.Account;
+import com.theron.wallet.entity.Beneficiary;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.AsaasBindStatus;
 import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.MembershipStatus;
@@ -24,21 +32,23 @@ import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.OrganizationMapper;
-import com.theron.wallet.mapper.TransactionMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.AdminPlatformService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.OrganizationMembershipService;
 import com.theron.wallet.service.OrganizationService;
 import com.theron.wallet.service.PlatformSplitService;
 import com.theron.wallet.service.RoleAssignmentService;
+import com.theron.wallet.service.UserService;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +73,8 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationMembershipService membershipService;
     private final RoleAssignmentService roleAssignmentService;
+    private final UserService userService;
+    private final AccountService accountService;
     private final AccountRepository accountRepository;
     private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;
@@ -167,6 +179,62 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     }
 
     @Override
+    @Transactional
+    public AdminOwnerResponse createOrganizationOwner(
+            UUID organizationId, CreateAdminOwnerRequest request, UUID adminId) {
+        Organization organization = organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Organization", "id", organizationId));
+        if (organization.getStatus() != OrganizationStatus.ACTIVE) {
+            throw new InvalidRequestException("Organization must be ACTIVE to create an OWNER");
+        }
+
+        UserResponse user = userService.create(CreateUserRequest.builder()
+                .name(request.getName())
+                .email(request.getEmail())
+                .phone(request.getPhone())
+                .password(request.getPassword())
+                .build());
+
+        membershipService.addMember(organizationId, AddOrganizationMemberRequest.builder()
+                .userId(user.getId())
+                .status(MembershipStatus.ACTIVE)
+                .build());
+        roleAssignmentService.assignRolesInternal(
+                organizationId, user.getId(), List.of(RoleCode.OWNER.name()));
+
+        AccountResponse account = accountService.create(
+                organizationId,
+                CreateAccountRequest.builder()
+                        .name(request.getName())
+                        .type(AccountType.MAIN)
+                        .build(),
+                user.getId(),
+                request.getDocument());
+
+        AsaasBindResponse bind = provisioningService.currentBind(account.getId());
+        auditLogService.recordAdmin(
+                AuditAction.ORGANIZATION_ADMIN_ASSIGNED,
+                organizationId,
+                adminId,
+                "User",
+                user.getId(),
+                Map.of(
+                        "action", "OWNER_CREATED",
+                        "userId", user.getId().toString(),
+                        "accountId", account.getId().toString()));
+
+        return AdminOwnerResponse.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .organizationId(organizationId)
+                .membershipStatus(MembershipStatus.ACTIVE)
+                .accountId(account.getId())
+                .asaasBind(bind)
+                .build();
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Page<OrganizationMembershipResponse> listMembers(UUID organizationId, Pageable pageable) {
         return membershipService.listMembers(organizationId, null, pageable);
@@ -221,7 +289,7 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
 
     @Override
     @Transactional(readOnly = true)
-    public Page<TransactionResponse> listTransactions(
+    public Page<AdminTransactionResponse> listTransactions(
             UUID organizationId,
             UUID accountId,
             LocalDateTime from,
@@ -253,15 +321,15 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
-        return transactionRepository.findAll(spec, pageable).map(TransactionMapper::toResponse);
+        return transactionRepository.findAll(spec, pageable).map(this::toAdminTransaction);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public TransactionResponse getTransaction(UUID transactionId) {
+    public AdminTransactionResponse getTransaction(UUID transactionId) {
         Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
-        return TransactionMapper.toResponse(transaction);
+        return toAdminTransaction(transaction);
     }
 
     @Override
@@ -272,6 +340,54 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     @Override
     public SplitConfigResponse updateSplit(UpdateSplitConfigRequest request, UUID adminId) {
         return platformSplitService.update(request, adminId);
+    }
+
+    private AdminTransactionResponse toAdminTransaction(Transaction transaction) {
+        Organization organization = transaction.getOrganization();
+        Account account = transaction.getAccount();
+        String ownerName = null;
+        if (account != null && account.getOwnerUser() != null) {
+            ownerName = account.getOwnerUser().getName();
+        }
+        return AdminTransactionResponse.builder()
+                .id(transaction.getId())
+                .organizationId(organization == null ? null : organization.getId())
+                .organizationName(organization == null ? null : organization.getLegalName())
+                .accountId(account == null ? null : account.getId())
+                .accountName(account == null ? null : account.getName())
+                .ownerName(ownerName)
+                .walletId(transaction.getWallet() == null ? null : transaction.getWallet().getId())
+                .type(transaction.getType())
+                .status(transaction.getStatus())
+                .amount(transaction.getAmount())
+                .currency(transaction.getCurrency())
+                .reference(transaction.getReference())
+                .description(transaction.getDescription())
+                .counterpartHint(resolveCounterpartHint(transaction))
+                .asaasPaymentId(transaction.getAsaasPaymentId())
+                .createdAt(transaction.getCreatedAt())
+                .updatedAt(transaction.getUpdatedAt())
+                .completedAt(transaction.getCompletedAt())
+                .build();
+    }
+
+    private static String resolveCounterpartHint(Transaction transaction) {
+        Beneficiary beneficiary = transaction.getBeneficiary();
+        if (beneficiary != null) {
+            if (beneficiary.getName() != null && !beneficiary.getName().isBlank()) {
+                return beneficiary.getName();
+            }
+            if (beneficiary.getPixKey() != null && !beneficiary.getPixKey().isBlank()) {
+                return beneficiary.getPixKey();
+            }
+        }
+        if (transaction.getExternalReference() != null && !transaction.getExternalReference().isBlank()) {
+            return transaction.getExternalReference();
+        }
+        if (transaction.getReference() != null && !transaction.getReference().isBlank()) {
+            return transaction.getReference();
+        }
+        return null;
     }
 
     private AdminOrganizationDetailResponse.AdminAccountSummary toAccountSummary(Account account) {

@@ -1,14 +1,14 @@
 package com.theron.wallet.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.theron.wallet.enums.MembershipStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -16,11 +16,13 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class PlatformAccountResponse {
+public class AdminOwnerResponse {
 
-    private String label;
-    private String asaasMasterWalletId;
-    private BigDecimal balance;
-    private String currency;
-    private LocalDateTime updatedAt;
+    private UUID userId;
+    private String name;
+    private String email;
+    private UUID organizationId;
+    private MembershipStatus membershipStatus;
+    private UUID accountId;
+    private AsaasBindResponse asaasBind;
 }

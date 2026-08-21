@@ -31,7 +31,8 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 
 ## 2. Platform Owner
 
-- Cria/edita/ativa/suspende Organizations; define OWNER inicial.
+- Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
+- Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`).
 - Configura split; administra Platform Account (Master Asaas).
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.

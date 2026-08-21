@@ -1,15 +1,17 @@
 package com.theron.wallet.service;
 
 import com.theron.wallet.dto.request.AssignOrganizationAdminRequest;
+import com.theron.wallet.dto.request.CreateAdminOwnerRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationRequest;
 import com.theron.wallet.dto.request.UpdateSplitConfigRequest;
 import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
+import com.theron.wallet.dto.response.AdminOwnerResponse;
+import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
-import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.enums.AsaasBindStatus;
 import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.TransactionStatus;
@@ -33,6 +35,9 @@ public interface AdminPlatformService {
     OrganizationMembershipResponse assignOrganizationAdmin(
             UUID organizationId, AssignOrganizationAdminRequest request, UUID adminId);
 
+    AdminOwnerResponse createOrganizationOwner(
+            UUID organizationId, CreateAdminOwnerRequest request, UUID adminId);
+
     Page<OrganizationMembershipResponse> listMembers(UUID organizationId, Pageable pageable);
 
     Page<AdminOrganizationDetailResponse.AdminAccountSummary> listAccounts(
@@ -42,7 +47,7 @@ public interface AdminPlatformService {
 
     AsaasBindResponse provisionSubaccount(UUID accountId, UUID adminId);
 
-    Page<TransactionResponse> listTransactions(
+    Page<AdminTransactionResponse> listTransactions(
             UUID organizationId,
             UUID accountId,
             LocalDateTime from,
@@ -51,7 +56,7 @@ public interface AdminPlatformService {
             TransactionStatus status,
             Pageable pageable);
 
-    TransactionResponse getTransaction(UUID transactionId);
+    AdminTransactionResponse getTransaction(UUID transactionId);
 
     SplitConfigResponse getSplit();
 

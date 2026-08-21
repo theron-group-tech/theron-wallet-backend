@@ -12,10 +12,11 @@ Você é um engenheiro frontend sênior. Sua tarefa é **criar do zero** o app w
 
 - Stack **obrigatória:** Next.js (App Router) + TypeScript + Tailwind CSS.
 - Idioma da UI: **português (Brasil)**. Códigos e `message` da API vêm em **inglês** — mostre `message` ao usuário; não traduza `code`.
-- Autenticação: JWT de **usuário de produto**. Nunca use o fluxo admin (`adminId` / `role` no login).
+- Autenticação: JWT de **usuário de produto** (`userId`) ou **APP_ADMIN** (`adminId`). Login único em `/login` — se a resposta tiver `adminId`, gravar sessão admin e ir para `/admin`; senão, sessão produto e `/dashboard`. Sessões: `theron-session` vs `theron-admin-session`.
 - Ator: somente o Bearer. **Não envie** `X-Actor-User-Id`.
 - O backend **não tem CORS**. O browser não pode chamar `localhost:8080` direto. Use **rewrite/proxy** do Next.
 - Não implemente webhooks Asaas. Não chame `GET /api/v1/subaccounts` (sempre 403).
+- Não invente endpoint de “creditar conta” ou bind Asaas ad-hoc no produto.
 - Não invente endpoint de “creditar conta”, bind Asaas ou “tornar OWNER ao criar org”.
 - `POST /api/v1/organizations` com JWT de produto → **403**. Org só via plataforma.
 
@@ -160,8 +161,10 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 2. `POST /api/v1/auth/login`  
    Body: `{ "email", "password", "deviceId", "deviceName", "platform": "web" }`.  
    `deviceId` estável (UUID no browser).  
-   200: use **`accessToken`** (alias `token` é o mesmo JWT). Guarde `refreshToken`, `userId`, `name`, `email`, `expiresIn` (ms, access ~15 min).  
-   Se a resposta tiver `adminId`, **não** entre no app de produto.  
+   200: use **`accessToken`** (alias `token` é o mesmo JWT). Guarde `refreshToken`, `expiresIn` (ms, access ~15 min).  
+   - Se `adminId` presente → sessão **admin** → `/admin` (não misturar com sessão produto).  
+   - Senão → sessão **produto** (`userId`, `name`, `email`) → `/dashboard`.  
+   `/admin/login` apenas redireciona para `/login`.  
    401: `"Invalid email or password"` (não enumere e-mail). 429: rate limit.
 
 ### Passo 3 — Sessão
@@ -361,7 +364,7 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 ## 7. DTOs essenciais (campos)
 
-**LoginResponse:** `token`, `accessToken`, `refreshToken`, `tokenType`, `expiresIn`, `userId`, `name`, `email` (produto). Admin: `adminId`, `role` — ignore.
+**LoginResponse:** `token`, `accessToken`, `refreshToken`, `tokenType`, `expiresIn`, `userId`, `name`, `email` (produto). Admin: `adminId`, `role` — rota única `/login` diferencia pelo campo `adminId`.
 
 **MeResponse:** `id`, `name`, `email`, `phone`, `status`, `lastLoginAt`, `organizations[]` (`organizationId`, `legalName`, `tradeName`, `organizationStatus`, `membershipStatus`).
 
@@ -372,6 +375,14 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 **WalletResponse:** `id`, `subaccountId?`, `accountId?`, `balance`, `currency`, `active`.
 
 **TransactionResponse:** `id`, `walletId`, `organizationId`, `accountId`, `type`, `status`, `amount`, `currency`, `reference`, `description`, `asaasPaymentId`, `createdAt`, `updatedAt`, `completedAt`.
+
+**AdminTransactionResponse** (extrato global admin): além dos campos de transação — `organizationName`, `accountName`, `ownerName`, `counterpartHint`. Timestamps em ISO; FE formata com `timeZone: "America/Sao_Paulo"`.
+
+**PlatformAccountResponse:** `label`, `asaasMasterWalletId`, `balance`, `currency`, `updatedAt` (saldo Master Asaas).
+
+**AdminOrganizationDetailResponse:** `{ organization, accounts[] }`.
+
+**AdminOwnerResponse:** `userId`, `name`, `email`, `organizationId`, `membershipStatus`, `accountId`, `asaasBind`.
 
 **PixTransferResponse:** `id`, `transactionId`, `accountId`, `amount`, `status`, `destinationPixKey`, `destinationPixKeyType`, `providerReference`, `description`, timestamps.
 
@@ -451,6 +462,25 @@ Mostre `message` + `code`. Em 403, não revele se o recurso existe em outro tena
 
 - **PageResponse** (Me, statement): campo `page` (0-based).
 - **Spring Page** (orgs, members, deposits, pix transfers, notifications, audit, `GET /transactions`): campo **`number`** (0-based), não `page`. Ambos têm `content`, `totalElements`, `totalPages`, `size`, `first`, `last`.
+
+---
+
+## 9b. Painel Admin (plataforma Theron)
+
+Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/carteira`, `/admin/extrato`. Entrada só por `/login` (APP_ADMIN).
+
+| Método | Path | Uso |
+|--------|------|-----|
+| GET | `/api/v1/admin/me` | Perfil admin |
+| GET/POST | `/api/v1/admin/organizations` | Listar / criar org |
+| GET | `/api/v1/admin/organizations/{id}` | `{ organization, accounts[] }` — unwrap no FE |
+| POST | `/api/v1/admin/organizations/{id}/owners` | Criar OWNER completo: user + membership OWNER + Account + Asaas. Body: `name`, `email`, `password`, `phone?`, `document`, `documentType` |
+| POST | `/api/v1/admin/organizations/{id}/admin` | Legado: assign OWNER a `userId` já existente |
+| GET | `/api/v1/admin/platform-account` | Carteira Master: `label`, `asaasMasterWalletId`, `balance`, `currency` |
+| GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
+| GET/PATCH | `/api/v1/admin/splits` | Config de split |
+
+Logo: `public/brand/theron-mark.png` no `LogoMark`. Timestamps do extrato admin: `Intl` com `timeZone: "America/Sao_Paulo"`.
 
 ---
 
