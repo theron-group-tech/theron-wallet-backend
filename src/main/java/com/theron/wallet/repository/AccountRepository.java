@@ -18,6 +18,14 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     List<Account> findByOrganization_IdOrderByCreatedAtDesc(UUID organizationId);
 
+    @Query("""
+            SELECT a FROM Account a
+            LEFT JOIN FETCH a.ownerUser
+            WHERE a.organization.id = :organizationId
+            ORDER BY a.createdAt DESC
+            """)
+    List<Account> findByOrganizationIdWithOwner(@Param("organizationId") UUID organizationId);
+
     List<Account> findByOrganization_IdInOrderByCreatedAtDesc(Collection<UUID> organizationIds);
 
     Page<Account> findByOrganization_IdIn(Collection<UUID> organizationIds, Pageable pageable);

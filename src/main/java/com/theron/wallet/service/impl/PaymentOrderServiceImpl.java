@@ -2,6 +2,7 @@ package com.theron.wallet.service.impl;
 
 import com.theron.wallet.dto.request.CreatePaymentOrderRequest;
 import com.theron.wallet.dto.request.DecidePaymentOrderRequest;
+import com.theron.wallet.dto.response.PaymentOrderDestinationResponse;
 import com.theron.wallet.dto.response.PaymentOrderResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
@@ -40,6 +41,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -259,6 +261,23 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 Map.of());
 
         return PaymentOrderMapper.toResponse(order);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PaymentOrderDestinationResponse> listDestinations(UUID actorUserId, UUID organizationId) {
+        resourceAuthorization.requireOrganization(
+                actorUserId, organizationId, PermissionCodes.PAYMENT_ORDERS_CREATE);
+
+        return accountRepository.findByOrganizationIdWithOwner(organizationId).stream()
+                .filter(account -> account.getOwnerUser() != null)
+                .map(account -> PaymentOrderDestinationResponse.builder()
+                        .accountId(account.getId())
+                        .accountName(account.getName())
+                        .ownerUserId(account.getOwnerUser().getId())
+                        .ownerName(account.getOwnerUser().getName())
+                        .build())
+                .toList();
     }
 
     private void executeTransfer(PaymentOrder order, User actor) {

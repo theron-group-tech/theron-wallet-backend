@@ -4,6 +4,8 @@ Spring Boot API on port `8080` with prefix `/api/v1`.
 
 **Regras de negócio oficiais:** [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md)
 
+Frontend (sibling): `../theron-wallet-frontend` — `https://github.com/theron-group-tech/theron-wallet-frontend.git`
+
 ## Run locally
 
 1. Start Postgres (`docker compose up postgres` or the full stack).

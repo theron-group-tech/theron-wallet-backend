@@ -211,8 +211,9 @@ Exige Account com subconta Asaas **já vinculada no banco** (não há HTTP de bi
 
 **Não** use `/approvals` para PIX pessoal. Use PaymentOrder para liberação administrativa:
 
-- `POST /api/v1/payment-orders` — FINANCE ou OWNER (`payment_orders.create`). Body: destino (account da mesma org), amount, description?. Status inicial `PENDING_APPROVAL`. **Não debita** na criação. Origem = Account do OWNER (backend resolve).
-- `GET /api/v1/payment-orders` — `payment_orders.read`
+- `POST /api/v1/payment-orders` — FINANCE ou OWNER (`payment_orders.create`). Body: `{ organizationId, destinationAccountId, amount, description? }`. Status inicial `PENDING_APPROVAL`. **Não debita** na criação. Origem = Account do OWNER (backend resolve).
+- `GET /api/v1/payment-orders?organizationId=` — `payment_orders.read`
+- `GET /api/v1/payment-orders/destinations?organizationId=` — contas destino **sem saldo** (`payment_orders.create`)
 - `POST .../{id}/cancel` — FINANCE criador / perm cancel; só `PENDING_APPROVAL`
 - `POST .../{id}/approve` — OWNER (`payment_orders.approve`); revalida saldo; débito OWNER → crédito destino. Saldo insuficiente → **409**. Criador não aprova a própria.
 - `POST .../{id}/reject` — OWNER (`payment_orders.reject`)

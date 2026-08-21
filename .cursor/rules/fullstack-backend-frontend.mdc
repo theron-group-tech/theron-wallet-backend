@@ -1,0 +1,36 @@
+---
+description: Full-stack sync — Backend API changes must update Frontend
+alwaysApply: true
+---
+
+# Full-stack Backend + Frontend
+
+Toda alteração neste Backend que afete APIs, endpoints, payloads, respostas, autenticação, permissões, campos, regras de negócio ou validações **obriga** análise de impacto no Frontend e, se necessário, atualização do Frontend.
+
+## Frontend sibling
+
+- Repo: `https://github.com/theron-group-tech/theron-wallet-frontend.git`
+- Path local esperado: sibling `theron-wallet-frontend` ao lado deste backend (mesma pasta pai).
+
+## Contratos canônicos
+
+- `docs/BUSINESS_RULES.md`
+- `docs/FRONTEND_AGENT_PROMPT.md`
+
+## Antes de finalizar qualquer tarefa
+
+1. Verificar Backend e Frontend.
+2. Atualizar services, hooks, types/interfaces e componentes afetados no Frontend.
+3. Corrigir erros de integração.
+4. Garantir que ambos continuem funcionando e compilando.
+5. **Não** considerar a tarefa concluída se o Frontend estiver incompatível com o Backend.
+
+## Resposta final obrigatória
+
+Informar resumidamente o que mudou no Backend e no Frontend.
+
+Se não houver impacto no Frontend, informar exatamente:
+
+`Frontend analisado e nenhuma alteração foi necessária.`
+
+Tratar toda alteração como mudança no **sistema completo**, não só em uma camada.

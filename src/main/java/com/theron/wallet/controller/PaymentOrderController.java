@@ -2,6 +2,7 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.CreatePaymentOrderRequest;
 import com.theron.wallet.dto.request.DecidePaymentOrderRequest;
+import com.theron.wallet.dto.response.PaymentOrderDestinationResponse;
 import com.theron.wallet.dto.response.PaymentOrderResponse;
 import com.theron.wallet.enums.PaymentOrderStatus;
 import com.theron.wallet.security.ActorResolver;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -49,6 +51,14 @@ public class PaymentOrderController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(paymentOrderService.list(
                 actorResolver.requireProductUserId(), organizationId, status, pageable));
+    }
+
+    @GetMapping("/destinations")
+    @Operation(summary = "List destination accounts for payment orders (no balances)")
+    public ResponseEntity<List<PaymentOrderDestinationResponse>> destinations(
+            @RequestParam UUID organizationId) {
+        return ResponseEntity.ok(paymentOrderService.listDestinations(
+                actorResolver.requireProductUserId(), organizationId));
     }
 
     @GetMapping("/{id}")
