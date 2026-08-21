@@ -1,5 +1,6 @@
 package com.theron.wallet.exception;
 
+import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSecretRedactor;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -45,7 +46,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AsaasApiException.class)
     public ResponseEntity<ApiErrorResponse> handleAsaasApiException(AsaasApiException ex, HttpServletRequest request) {
-        String asaasDescription = extractFirstAsaasErrorDescription(ex.getAsaasErrorBody());
+        String asaasDescription = AsaasErrorBodies.extractFirstDescription(ex.getAsaasErrorBody());
         String message = asaasDescription != null
                 ? "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription)
                 : "Payment provider error. Please try again later.";
@@ -60,24 +61,6 @@ public class GlobalExceptionHandler {
                 ex.getStatus().getReasonPhrase(),
                 message,
                 request.getRequestURI()));
-    }
-
-    /**
-     * Extracts the first error description from an Asaas error body JSON.
-     * Format: {"errors":[{"code":"...","description":"..."}]}
-     */
-    private String extractFirstAsaasErrorDescription(String errorBody) {
-        if (errorBody == null || errorBody.isBlank()) return null;
-        try {
-            int start = errorBody.indexOf("\"description\":\"");
-            if (start < 0) return null;
-            start += 15;
-            int end = errorBody.indexOf("\"", start);
-            if (end < 0) return null;
-            return errorBody.substring(start, end);
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

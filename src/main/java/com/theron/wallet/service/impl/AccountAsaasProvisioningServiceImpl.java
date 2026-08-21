@@ -18,6 +18,7 @@ import com.theron.wallet.exception.ApiErrorResponse;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.FieldValidationException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.mapper.SubaccountMapper;
 import com.theron.wallet.repository.AccountRepository;
@@ -100,11 +101,21 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     @Transactional
     public AsaasBindResponse provision(Account account, String documentOverride) {
         Organization organization = account.getOrganization();
-        String document = normalizeDocument(documentOverride != null ? documentOverride : organization.getDocument());
+        Subaccount existing = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
+
+        String documentSource = documentOverride;
+        if (documentSource == null && existing != null
+                && existing.getCpfCnpj() != null && !existing.getCpfCnpj().isBlank()) {
+            documentSource = existing.getCpfCnpj();
+        }
+        if (documentSource == null) {
+            documentSource = organization.getDocument();
+        }
+
+        String document = normalizeDocument(documentSource);
         DocumentType documentType = inferDocumentType(document, organization.getDocumentType());
         validateDocument(document, documentType);
 
-        Subaccount existing = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
         if (existing != null && isUsable(existing)) {
             return toBind(account, existing);
         }
@@ -157,10 +168,18 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                     existing.getId(),
                     Map.of("accountId", account.getId().toString(), "status", existing.getStatus().name()));
         } catch (Exception ex) {
-            String reason = ex instanceof AsaasApiException asaasEx
-                    ? "Asaas API call failed: " + truncate(asaasEx.getMessage(), 400)
-                    : "Asaas API call failed: " + truncate(ex.getMessage(), 400);
-            log.error("Asaas provisioning failed: accountId={}, error={}", account.getId(), ex.getMessage());
+            String reason;
+            if (ex instanceof AsaasApiException asaasEx) {
+                log.error("Asaas provisioning failed: accountId={}, httpStatus={}, asaasBody={}",
+                        account.getId(), asaasEx.getAsaasStatusCode(), asaasEx.getAsaasErrorBody());
+                reason = truncate(AsaasErrorBodies.formatFailureReason(
+                        asaasEx.getAsaasStatusCode(),
+                        asaasEx.getAsaasErrorBody(),
+                        asaasEx.getMessage()), 400);
+            } else {
+                log.error("Asaas provisioning failed: accountId={}, error={}", account.getId(), ex.getMessage());
+                reason = truncate("Asaas API call failed: " + ex.getMessage(), 400);
+            }
             existing.transitionTo(SubaccountStatus.FAILED, reason);
             existing = subaccountRepository.save(existing);
         }
@@ -197,12 +216,23 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             String document,
             DocumentType documentType) {
         AsaasProperties.SubaccountDefaults defaults = asaasProperties.getSubaccountDefaults();
-        String email = account.getId() + "@asaas.theron.internal";
+        String ownerEmail = account.getOwnerUser() != null ? account.getOwnerUser().getEmail() : null;
+        String email = ownerEmail != null && !ownerEmail.isBlank()
+                ? ownerEmail.trim()
+                : account.getId() + "@asaas.theron.internal";
+        String ownerPhone = account.getOwnerUser() != null ? account.getOwnerUser().getPhone() : null;
+        String mobile = ownerPhone != null && !ownerPhone.isBlank()
+                ? ownerPhone.replaceAll("\\D", "")
+                : defaults.getMobile();
+        if (mobile == null || mobile.isBlank()) {
+            mobile = defaults.getMobile();
+        }
+
         subaccount.setName(account.getName());
         subaccount.setEmail(email);
         subaccount.setLoginEmail(email);
         subaccount.setCpfCnpj(document);
-        subaccount.setMobilePhone(defaults.getMobile());
+        subaccount.setMobilePhone(mobile);
         subaccount.setAddress(defaults.getAddress());
         subaccount.setAddressNumber(defaults.getAddressNumber());
         subaccount.setProvince(defaults.getProvince());

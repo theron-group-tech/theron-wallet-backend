@@ -12,6 +12,7 @@ import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.mapper.SubaccountMapper;
 import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
@@ -128,16 +129,21 @@ public class SubaccountServiceImpl implements SubaccountService {
                     subaccount.getId(), asaasResponse.getId(), asaasResponse.getWalletId());
 
         } catch (Exception ex) {
+            String reason;
             if (ex instanceof AsaasApiException asaasEx) {
                 log.error("Failed to create subaccount in Asaas: subaccountId={}, httpStatus={}, asaasBody={}",
                         subaccount.getId(), asaasEx.getAsaasStatusCode(), asaasEx.getAsaasErrorBody());
+                reason = truncate(AsaasErrorBodies.formatFailureReason(
+                        asaasEx.getAsaasStatusCode(),
+                        asaasEx.getAsaasErrorBody(),
+                        asaasEx.getMessage()), 400);
             } else {
                 log.error("Failed to create subaccount in Asaas: subaccountId={}, error={}",
                         subaccount.getId(), ex.getMessage());
+                reason = truncate("Asaas API call failed: " + ex.getMessage(), 400);
             }
 
-            subaccount.transitionTo(SubaccountStatus.FAILED,
-                    "Asaas API call failed: " + truncate(ex.getMessage(), 400));
+            subaccount.transitionTo(SubaccountStatus.FAILED, reason);
             subaccount = subaccountRepository.save(subaccount);
         }
 
