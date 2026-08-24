@@ -26,7 +26,6 @@ public final class SubaccountMapper {
                 .mobilePhone(request.getMobilePhone())
                 .phone(request.getPhone())
                 .site(request.getSite())
-                .birthDate(request.getBirthDate())
                 .companyType(request.getCompanyType() != null ? request.getCompanyType().name() : null)
                 .incomeValue(request.getIncomeValue())
                 .address(request.getAddress())
@@ -81,7 +80,7 @@ public final class SubaccountMapper {
         subaccount.setMobilePhone(request.getMobilePhone());
         subaccount.setPhone(request.getPhone());
         subaccount.setSite(request.getSite());
-        subaccount.setBirthDate(request.getBirthDate());
+        subaccount.setBirthDate(null);
         subaccount.setCompanyType(request.getCompanyType() != null ? request.getCompanyType().name() : null);
         subaccount.setIncomeValue(request.getIncomeValue());
         subaccount.setAddress(request.getAddress());
