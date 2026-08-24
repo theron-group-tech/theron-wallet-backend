@@ -39,17 +39,28 @@ public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
 
         if (account.getStatus() != AccountStatus.ACTIVE) {
+            log.warn("Asaas gate failed: accountId={}, reason=ACCOUNT_NOT_ACTIVE", accountId);
             throw new InvalidRequestException("Account is not ACTIVE");
         }
         if (account.getOrganization().getStatus() != OrganizationStatus.ACTIVE) {
+            log.warn("Asaas gate failed: accountId={}, reason=ORGANIZATION_NOT_ACTIVE", accountId);
             throw new InvalidRequestException("Organization is not ACTIVE");
         }
 
-        Subaccount subaccount = subaccountRepository.findByAccount_Id(accountId)
-                .orElseThrow(() -> new AsaasErrorException(
-                        "Account is not linked to an Asaas subaccount"));
+        Subaccount subaccount = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (subaccount == null) {
+            log.warn("Asaas gate failed: accountId={}, reason=NO_SUBACCOUNT — Asaas HTTP will not be called",
+                    accountId);
+            throw new AsaasErrorException("Account is not linked to an Asaas subaccount");
+        }
 
         if (!ALLOWED_STATUSES.contains(subaccount.getStatus()) || subaccount.getEncryptedApiKey() == null) {
+            log.warn(
+                    "Asaas gate failed: accountId={}, subaccountId={}, status={}, hasApiKey={} — Asaas HTTP will not be called",
+                    accountId,
+                    subaccount.getId(),
+                    subaccount.getStatus(),
+                    subaccount.getEncryptedApiKey() != null);
             throw new AsaasErrorException("Account is not linked to an Asaas subaccount");
         }
 

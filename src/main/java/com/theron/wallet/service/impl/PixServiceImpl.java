@@ -106,6 +106,12 @@ public class PixServiceImpl implements PixService {
         resourceAuthorization.requireAccount(actorUserId, account.getId(), PermissionCodes.PIX_CREATE);
         request.getType().requireCreatableViaProvider();
 
+        log.info("Creating PIX key in Asaas: accountId={}, subaccountId={}, asaasAccountId={}, type={}",
+                account.getId(),
+                subaccount.getId(),
+                subaccount.getAsaasAccountId(),
+                request.getType());
+
         String apiKey = accountAsaasGateway.resolveApiKey(request.getAccountId());
         AsaasPixKeyResponse asaasResponse = asaasPixClient.createPixKey(apiKey,
                 AsaasPixKeyRequest.builder().type(request.getType().name()).build());

@@ -195,7 +195,8 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`). Sem bind ACTIVE, mostre o Modal de criação e chame `POST /api/v1/accounts/{accountId}/asaas-subaccount` (dono da Account). 422 = mostrar `message`, não fingir sucesso.
 
 - `GET /api/v1/pix/keys?accountId=` (`pix.read`)
-- `POST /api/v1/pix/keys` `{ "accountId", "type": "EVP" }` (`pix.create`) → 201; chave aleatória gerada no Asaas. CPF/CNPJ/EMAIL/PHONE na criação → **422** (a API Asaas só cria EVP). Destino de transferência continua aceitando os 5 tipos.
+- `POST /api/v1/pix/keys` `{ "accountId", "type": "EVP" }` (`pix.create`) → 201; chave aleatória gerada no Asaas. **Somente EVP** na UI de criação (CPF/CNPJ/EMAIL/PHONE → **422**). Destino de transferência continua aceitando os 5 tipos.
+- A chamada Asaas é `POST /v3/pix/addressKeys` com a **API key da subconta** da Account — **não** com a Master (`ASAAS_API_KEY`). No console Asaas, abra a **subconta** (não a conta raiz Theron) para ver a chave.
 - `DELETE /api/v1/pix/keys/{id}` → 204
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
