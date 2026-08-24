@@ -120,6 +120,18 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             return toBind(account, existing);
         }
 
+        if (existing != null
+                && existing.getAsaasAccountId() != null
+                && existing.getStatus() == SubaccountStatus.PENDING_EVALUATION) {
+            applyKyc(existing, account, organization, document, documentType);
+            trySandboxApprove(existing);
+            existing = subaccountRepository.save(existing);
+            if (isUsable(existing)) {
+                return toBind(account, existing);
+            }
+            return toBind(account, existing);
+        }
+
         if (existing == null) {
             var occupied = subaccountRepository.findFirstByCpfCnpjAndStatusNot(document, SubaccountStatus.FAILED);
             if (occupied.isPresent()
@@ -158,7 +170,9 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                         .build());
             }
             existing.transitionTo(SubaccountStatus.PENDING_EVALUATION,
-                    "Subaccount created in Asaas — awaiting regulatory evaluation");
+                    pendingEvaluationReason());
+            existing = subaccountRepository.save(existing);
+            trySandboxApprove(existing);
             existing = subaccountRepository.save(existing);
             auditLogService.record(
                     AuditAction.SUBACCOUNT_PROVISIONED,
@@ -233,6 +247,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         subaccount.setLoginEmail(email);
         subaccount.setCpfCnpj(document);
         subaccount.setMobilePhone(mobile);
+        subaccount.setPhone(mobile);
         subaccount.setAddress(defaults.getAddress());
         subaccount.setAddressNumber(defaults.getAddressNumber());
         subaccount.setProvince(defaults.getProvince());
@@ -250,7 +265,52 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     private boolean isUsable(Subaccount subaccount) {
         return subaccount.getEncryptedApiKey() != null
                 && subaccount.getAsaasAccountId() != null
-                && subaccount.getStatus().allowsOutboundOperations();
+                && subaccount.getStatus() == SubaccountStatus.ACTIVE;
+    }
+
+    private void trySandboxApprove(Subaccount subaccount) {
+        if (!asaasProperties.isAutoApproveSubaccounts()) {
+            if (subaccount.getStatus() == SubaccountStatus.PENDING_EVALUATION
+                    && (subaccount.getStatusReason() == null || subaccount.getStatusReason().isBlank())) {
+                subaccount.setStatusReason(awaitingActivationMessage());
+            }
+            return;
+        }
+        String asaasAccountId = subaccount.getAsaasAccountId();
+        if (asaasAccountId == null || asaasAccountId.isBlank()) {
+            return;
+        }
+        try {
+            asaasSubaccountClient.approveSandboxSubaccount(asaasAccountId);
+            subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved in Asaas sandbox");
+        } catch (Exception ex) {
+            String reason;
+            if (ex instanceof AsaasApiException asaasEx) {
+                log.warn("Asaas sandbox approve failed: subaccountId={}, asaasAccountId={}, httpStatus={}, asaasBody={}",
+                        subaccount.getId(), asaasAccountId, asaasEx.getAsaasStatusCode(), asaasEx.getAsaasErrorBody());
+                reason = truncate(AsaasErrorBodies.formatFailureReason(
+                        asaasEx.getAsaasStatusCode(),
+                        asaasEx.getAsaasErrorBody(),
+                        asaasEx.getMessage()), 400);
+            } else {
+                log.warn("Asaas sandbox approve failed: subaccountId={}, asaasAccountId={}, error={}",
+                        subaccount.getId(), asaasAccountId, ex.getMessage());
+                reason = truncate("Asaas sandbox approve failed: " + ex.getMessage(), 400);
+            }
+            if (subaccount.getStatus() != SubaccountStatus.PENDING_EVALUATION) {
+                subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION, reason);
+            } else {
+                subaccount.setStatusReason(reason);
+            }
+        }
+    }
+
+    private static String pendingEvaluationReason() {
+        return "Subaccount created in Asaas — awaiting activation/approval";
+    }
+
+    private static String awaitingActivationMessage() {
+        return "Subconta criada; aguardando ativação/aprovação Asaas (Sandbox: approve automático após reinício do BE).";
     }
 
     private AsaasBindResponse toBind(Account account, Subaccount subaccount) {
@@ -260,8 +320,21 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                 .asaasAccountId(subaccount.getAsaasAccountId())
                 .asaasWalletId(subaccount.getAsaasWalletId())
                 .status(toPublicStatus(subaccount))
-                .message(subaccount.getStatus() == SubaccountStatus.FAILED ? subaccount.getStatusReason() : null)
+                .message(resolveBindMessage(subaccount))
                 .build();
+    }
+
+    private String resolveBindMessage(Subaccount subaccount) {
+        if (subaccount.getStatus() == SubaccountStatus.FAILED) {
+            return subaccount.getStatusReason();
+        }
+        if (subaccount.getStatus() == SubaccountStatus.PENDING_EVALUATION) {
+            if (subaccount.getStatusReason() != null && !subaccount.getStatusReason().isBlank()) {
+                return subaccount.getStatusReason();
+            }
+            return awaitingActivationMessage();
+        }
+        return null;
     }
 
     private AsaasBindStatus toPublicStatus(Subaccount subaccount) {

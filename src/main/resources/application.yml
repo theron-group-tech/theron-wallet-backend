@@ -37,6 +37,7 @@ asaas:
     webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
     webhook-url: ${ASAAS_WEBHOOK_URL:}
     master-wallet-id: ${ASAAS_MASTER_WALLET_ID:}
+    auto-approve-subaccounts: ${ASAAS_AUTO_APPROVE_SUBACCOUNTS:true}
     subaccount-defaults:
       mobile: ${ASAAS_SUBACCOUNT_DEFAULT_MOBILE:11999999999}
       postal-code: ${ASAAS_SUBACCOUNT_DEFAULT_POSTAL_CODE:01310100}

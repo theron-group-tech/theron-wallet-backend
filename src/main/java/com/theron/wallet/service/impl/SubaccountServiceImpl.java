@@ -91,6 +91,8 @@ public class SubaccountServiceImpl implements SubaccountService {
 
         subaccount = subaccountRepository.save(subaccount);
 
+        ensurePhoneFields(subaccount);
+
         log.info("Subaccount provisioning started: subaccountId={}, cpfCnpj={}",
                 subaccount.getId(), maskCpfCnpj(request.getCpfCnpj()));
 
@@ -122,11 +124,13 @@ public class SubaccountServiceImpl implements SubaccountService {
 
             // Transition to PENDING_EVALUATION (Asaas regulatory evaluation period)
             subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION,
-                    "Subaccount created in Asaas — awaiting regulatory evaluation");
+                    "Subaccount created in Asaas — awaiting activation/approval");
+            subaccount = subaccountRepository.save(subaccount);
+            trySandboxApprove(subaccount);
             subaccount = subaccountRepository.save(subaccount);
 
-            log.info("Subaccount created successfully: subaccountId={}, asaasAccountId={}, walletId={}",
-                    subaccount.getId(), asaasResponse.getId(), asaasResponse.getWalletId());
+            log.info("Subaccount created successfully: subaccountId={}, asaasAccountId={}, walletId={}, status={}",
+                    subaccount.getId(), asaasResponse.getId(), asaasResponse.getWalletId(), subaccount.getStatus());
 
         } catch (Exception ex) {
             String reason;
@@ -208,5 +212,51 @@ public class SubaccountServiceImpl implements SubaccountService {
     private String truncate(String value, int maxLength) {
         if (value == null) return null;
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    private void ensurePhoneFields(Subaccount subaccount) {
+        String mobile = subaccount.getMobilePhone();
+        if (mobile != null && !mobile.isBlank()) {
+            if (subaccount.getPhone() == null || subaccount.getPhone().isBlank()) {
+                subaccount.setPhone(mobile);
+            }
+            return;
+        }
+        if (subaccount.getPhone() != null && !subaccount.getPhone().isBlank()) {
+            subaccount.setMobilePhone(subaccount.getPhone());
+        }
+    }
+
+    private void trySandboxApprove(Subaccount subaccount) {
+        if (!asaasProperties.isAutoApproveSubaccounts()) {
+            return;
+        }
+        String asaasAccountId = subaccount.getAsaasAccountId();
+        if (asaasAccountId == null || asaasAccountId.isBlank()) {
+            return;
+        }
+        try {
+            asaasSubaccountClient.approveSandboxSubaccount(asaasAccountId);
+            subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved in Asaas sandbox");
+        } catch (Exception ex) {
+            String reason;
+            if (ex instanceof AsaasApiException asaasEx) {
+                log.warn("Asaas sandbox approve failed: subaccountId={}, asaasAccountId={}, httpStatus={}, asaasBody={}",
+                        subaccount.getId(), asaasAccountId, asaasEx.getAsaasStatusCode(), asaasEx.getAsaasErrorBody());
+                reason = truncate(AsaasErrorBodies.formatFailureReason(
+                        asaasEx.getAsaasStatusCode(),
+                        asaasEx.getAsaasErrorBody(),
+                        asaasEx.getMessage()), 400);
+            } else {
+                log.warn("Asaas sandbox approve failed: subaccountId={}, asaasAccountId={}, error={}",
+                        subaccount.getId(), asaasAccountId, ex.getMessage());
+                reason = truncate("Asaas sandbox approve failed: " + ex.getMessage(), 400);
+            }
+            if (subaccount.getStatus() != SubaccountStatus.PENDING_EVALUATION) {
+                subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION, reason);
+            } else {
+                subaccount.setStatusReason(reason);
+            }
+        }
     }
 }

@@ -410,7 +410,7 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     private AsaasBindStatus toPublicStatus(Subaccount subaccount) {
         if (subaccount.getEncryptedApiKey() != null
                 && subaccount.getAsaasAccountId() != null
-                && subaccount.getStatus().allowsOutboundOperations()) {
+                && subaccount.getStatus() == SubaccountStatus.ACTIVE) {
             return AsaasBindStatus.ACTIVE;
         }
         if (subaccount.getStatus() == SubaccountStatus.FAILED) {

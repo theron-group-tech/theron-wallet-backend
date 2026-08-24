@@ -374,6 +374,8 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **Asaas bind (produto):** `POST /api/v1/accounts/{accountId}/asaas-subaccount` — provisiona/repara a subconta do **próprio** dono da Account (`wallet.read`). Resposta `AsaasBindResponse`. Após login, se `asaasStatus !== ACTIVE`, abrir Modal pedindo criação.
 
+**Sandbox Asaas:** subcontas criadas ficam “Aguardando ativação” até `POST /v3/accounts/{id}/approve` (Master key). O backend, em sandbox com `ASAAS_AUTO_APPROVE_SUBACCOUNTS=true` (default), chama approve automaticamente após o create e só então marca `asaasStatus=ACTIVE`. Enquanto `PENDING`, mostre copy de aguardando ativação e permita “Tentar novamente” (retry dispara approve em subcontas já criadas). PIX/chaves só após `ACTIVE`.
+
 **WalletResponse:** `id`, `subaccountId?`, `accountId?`, `balance`, `currency`, `active`.
 
 **TransactionResponse:** `id`, `walletId`, `organizationId`, `accountId`, `type`, `status`, `amount`, `currency`, `reference`, `description`, `asaasPaymentId`, `createdAt`, `updatedAt`, `completedAt`.
@@ -489,7 +491,7 @@ Logo: `public/brand/theron-mark.png` no `LogoMark`. Timestamps do extrato admin:
 ## 10. O que o frontend NÃO deve assumir
 
 1. `POST /deposits` **não** credita a wallet da Account do dashboard/PIX.
-2. Use `POST /accounts/{accountId}/asaas-subaccount` para criar/reparar o bind Asaas da própria Account. PIX 422 até `asaasStatus === ACTIVE`.
+2. Use `POST /accounts/{accountId}/asaas-subaccount` para criar/reparar o bind Asaas da própria Account. PIX 422 até `asaasStatus === ACTIVE`. No Sandbox, o BE aprova a subconta automaticamente após create (ou no retry se já existir `asaasAccountId`).
 3. `POST /organizations` com JWT de produto → **403**.
 4. `X-Actor-User-Id` é ignorado.
 5. Sem CORS: só same-origin via rewrite.

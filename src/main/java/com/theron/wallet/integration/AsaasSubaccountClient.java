@@ -31,6 +31,21 @@ public class AsaasSubaccountClient {
                 asaasProperties.getKey(), "/accounts/{id}", AsaasSubaccountResponse.class, asaasAccountId);
     }
 
+    /**
+     * Sandbox-only: approves a subaccount awaiting activation ({@code POST /accounts/{id}/approve}).
+     * Requires the platform Master API key.
+     */
+    public void approveSandboxSubaccount(String asaasAccountId) {
+        log.info("Approving Asaas subaccount in sandbox: id={}", asaasAccountId);
+        asaasHttpGateway.post(
+                asaasProperties.getKey(),
+                "/accounts/{id}/approve",
+                null,
+                Void.class,
+                asaasAccountId);
+        log.info("Asaas subaccount approved in sandbox: id={}", asaasAccountId);
+    }
+
     private String maskCpfCnpj(String cpfCnpj) {
         if (cpfCnpj == null || cpfCnpj.length() < 4) {
             return "****";
