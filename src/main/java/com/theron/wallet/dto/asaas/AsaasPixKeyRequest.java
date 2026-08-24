@@ -10,5 +10,5 @@ import lombok.*;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AsaasPixKeyRequest {
-    private String type; // CPF, CNPJ, EMAIL, PHONE, EVP
+    private String type; // Asaas create: EVP only. Response/list may include CPF, CNPJ, EMAIL, PHONE.
 }

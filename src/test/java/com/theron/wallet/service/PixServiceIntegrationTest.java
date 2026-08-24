@@ -263,13 +263,13 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         @Test
         @DisplayName("11-13 Create, list, delete")
         void crudKeys() throws Exception {
-            stubCreatePixKey("prov_1", "11122233344");
+            stubCreatePixKey("prov_1", "evp-key-crud");
             MvcResult created = mockMvc.perform(post("/api/v1/pix/keys")
                             .header("Authorization", bearer(tokenOwnerA))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
                                     .accountId(accountA.getId())
-                                    .type(PixKeyType.CPF)
+                                    .type(PixKeyType.EVP)
                                     .build())))
                     .andExpect(status().isCreated())
                     .andReturn();
@@ -329,6 +329,23 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                                     .type(PixKeyType.EVP)
                                     .build())))
                     .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("Create with CPF is rejected before Asaas")
+        void nonEvpTypeRejected() throws Exception {
+            reset(asaasPixClient);
+            mockMvc.perform(post("/api/v1/pix/keys")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .type(PixKeyType.CPF)
+                                    .build())))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(jsonPath("$.message").value(PixKeyType.PROVIDER_CREATE_UNSUPPORTED_MESSAGE));
+            verify(asaasPixClient, never()).createPixKey(anyString(), any());
         }
     }
 

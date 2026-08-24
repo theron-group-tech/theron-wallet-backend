@@ -195,7 +195,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`). Sem bind ACTIVE, mostre o Modal de criação e chame `POST /api/v1/accounts/{accountId}/asaas-subaccount` (dono da Account). 422 = mostrar `message`, não fingir sucesso.
 
 - `GET /api/v1/pix/keys?accountId=` (`pix.read`)
-- `POST /api/v1/pix/keys` `{ "accountId", "type": "CPF"|"CNPJ"|"EMAIL"|"PHONE"|"EVP" }` (`pix.create`) → 201; chave gerada no Asaas.
+- `POST /api/v1/pix/keys` `{ "accountId", "type": "EVP" }` (`pix.create`) → 201; chave aleatória gerada no Asaas. CPF/CNPJ/EMAIL/PHONE na criação → **422** (a API Asaas só cria EVP). Destino de transferência continua aceitando os 5 tipos.
 - `DELETE /api/v1/pix/keys/{id}` → 204
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
@@ -393,7 +393,7 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 - `TransactionStatus`: `PENDING`, `PENDING_APPROVAL`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`, `REVERSED`
 - `TransactionType`: `DEPOSIT`, `WITHDRAWAL`, `TRANSFER_IN`, `TRANSFER_OUT`, `TRANSFER`, `PIX`, `PAYMENT`, `REFUND`, `FEE`
-- `PixKeyType`: `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`
+- `PixKeyType`: `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP` (criação de chave na Account: somente `EVP`)
 - `AccountType`: `MAIN`, `EMPLOYEE`, `RESERVE`
 - `AccountStatus`: `ACTIVE`, `SUSPENDED`, `CLOSED`
 - `RoleCode`: `OWNER`, `FINANCE`, `EMPLOYEE` (ADMIN/AUDITOR descontinuados)

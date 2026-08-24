@@ -21,6 +21,8 @@ public class CreateAccountPixKeyRequest {
     private UUID accountId;
 
     @NotNull
-    @Schema(allowableValues = {"CPF", "CNPJ", "EMAIL", "PHONE", "EVP"})
+    @Schema(
+            description = "Asaas API only creates EVP (random) keys. Other PixKeyType values remain valid for transfers.",
+            allowableValues = {"EVP"})
     private PixKeyType type;
 }

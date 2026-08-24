@@ -38,6 +38,7 @@ public class PixKeyServiceImpl implements PixKeyService {
     @Transactional(readOnly = true)
     public PixKeyResponse createPixKey(UUID subaccountId, CreatePixKeyRequest request) {
         log.info("Creating PIX key: subaccountId={}, type={}", subaccountId, request.getType());
+        request.getType().requireCreatableViaProvider();
 
         String apiKey = resolveApiKey(subaccountId);
         AsaasPixKeyResponse response = asaasPixClient.createPixKey(apiKey,

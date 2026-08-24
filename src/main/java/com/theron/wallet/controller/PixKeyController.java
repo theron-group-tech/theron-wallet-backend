@@ -36,7 +36,7 @@ public class PixKeyController {
     @PostMapping("/keys")
     @Operation(
             summary = "Criar chave Pix",
-            description = "Registra uma nova chave Pix para a subconta. Tipos: CPF, CNPJ, EMAIL, PHONE, EVP."
+            description = "Registra uma nova chave Pix aleatória (EVP) para a subconta. A API Asaas não cria CPF, CNPJ, EMAIL ou PHONE."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Chave Pix criada com sucesso"),

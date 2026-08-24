@@ -79,6 +79,7 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 - Sem ApprovalPolicy. Sem `PENDING_APPROVAL`.
 - Requer bind Asaas utilizável, saldo, limites, Idempotency-Key em transfer.
 - Sem bind → **422** `ASAAS_ERROR`.
+- Criação de chave (`POST /api/v1/pix/keys`): somente `type=EVP` (chave aleatória). A API Asaas não cria CPF, CNPJ, e-mail ou telefone. Outros tipos → **422**. Destino de transferência / beneficiário continua com `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`.
 
 ## 9. Payment Order
 

@@ -41,7 +41,7 @@ public class PixController {
     private final ActorResolver actorResolver;
 
     @PostMapping("/keys")
-    @Operation(summary = "Create PIX key for an Account")
+    @Operation(summary = "Create PIX key for an Account", description = "Asaas API only creates EVP (random) keys.")
     public ResponseEntity<AccountPixKeyResponse> createKey(
             @Valid @RequestBody CreateAccountPixKeyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
