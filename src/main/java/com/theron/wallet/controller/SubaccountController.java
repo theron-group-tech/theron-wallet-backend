@@ -41,12 +41,12 @@ public class SubaccountController {
             description = """
                     Cria uma conta-filha no Asaas via POST /v3/accounts usando a chave raiz do Theron.
                     
-                    - Para Pessoa Física (CPF): `birthDate` é obrigatório. `companyType` é ignorado.
-                    - Para Pessoa Jurídica (CNPJ): `companyType` é obrigatório (MEI, LIMITED, INDIVIDUAL, ASSOCIATION). `birthDate` é ignorado.
-                    - O webhook é registrado **inline** na mesma chamada de criação (atômico).
+                    - **CNPJ only** (14 digits). CPF is rejected per Asaas BaaS rules.
+                    - `companyType` is required (MEI, LIMITED, INDIVIDUAL, ASSOCIATION).
+                    - Webhook inline only when `ASAAS_WEBHOOK_URL` is configured; optional in dev/sandbox.
                     - A API key retornada pelo Asaas é criptografada e armazenada — **nunca** retornada nas respostas.
-                    - O status inicial é `PROVISIONING`. Em caso de sucesso vira `PENDING_EVALUATION`; em falha, `FAILED`.
-                    - Se uma tentativa anterior ficou em `FAILED`, uma nova requisição com o mesmo CPF/CNPJ faz **retry** automático.
+                    - Em sandbox com auto-approve, sucesso pode resultar em status `ACTIVE`.
+                    - Se uma tentativa anterior ficou em `FAILED`, retry com o mesmo CNPJ reutiliza a linha.
                     """
     )
     @ApiResponses({

@@ -11,6 +11,7 @@ import com.theron.wallet.enums.ApiKeyAuditAction;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.DuplicateResourceException;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
@@ -20,6 +21,8 @@ import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.security.ApiKeyEncryptionService;
 import com.theron.wallet.security.WebhookTokenGenerator;
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.enums.CompanyType;
+import com.theron.wallet.util.AsaasDocumentRules;
 import com.theron.wallet.service.SubaccountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,6 +69,17 @@ public class SubaccountServiceImpl implements SubaccountService {
     @Transactional
     public SubaccountResponse create(CreateSubaccountRequest request) {
         log.info("Creating subaccount for cpfCnpj={}", maskCpfCnpj(request.getCpfCnpj()));
+
+        String cnpj = AsaasDocumentRules.normalize(request.getCpfCnpj());
+        try {
+            AsaasDocumentRules.requireCnpj(cnpj, "cpfCnpj");
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException(ex.getMessage());
+        }
+        request.setCpfCnpj(cnpj);
+        if (request.getCompanyType() == null) {
+            request.setCompanyType(CompanyType.LIMITED);
+        }
 
         // Phase 1: Resolve or create PROVISIONING row
         Subaccount subaccount = subaccountRepository.findByCpfCnpj(request.getCpfCnpj())
@@ -188,7 +202,7 @@ public class SubaccountServiceImpl implements SubaccountService {
     private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
         String webhookUrl = asaasProperties.getWebhookUrl();
         if (webhookUrl == null || webhookUrl.isBlank()) {
-            log.warn("Webhook URL not configured — subaccount will be created without inline webhook registration");
+            log.info("ASAAS_WEBHOOK_URL not set — subaccount created without inline webhook registration");
             return null;
         }
         return List.of(AsaasWebhookConfigRequest.builder()

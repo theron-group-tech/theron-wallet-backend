@@ -17,6 +17,7 @@ import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.AsaasErrorException;
 import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.security.OrganizationContextResolver;
 import com.theron.wallet.security.PermissionCodes;
@@ -29,6 +30,7 @@ import com.theron.wallet.service.OrganizationMembershipService;
 import com.theron.wallet.service.OrganizationService;
 import com.theron.wallet.service.RoleAssignmentService;
 import com.theron.wallet.service.UserService;
+import com.theron.wallet.util.AsaasDocumentRules;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -77,6 +79,12 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
         organizationContextResolver.requireOwner(organizationId, actorUserId);
         requireActiveAdminBind(organizationId, actorUserId);
 
+        OrganizationResponse organization = organizationService.findById(organizationId);
+        if (organization.getDocumentType() != DocumentType.CNPJ) {
+            throw new InvalidRequestException(
+                    "Organization must use CNPJ before creating employees with Asaas subaccounts");
+        }
+
         UserResponse user = userService.create(CreateUserRequest.builder()
                 .name(request.getName())
                 .email(request.getEmail())
@@ -96,7 +104,17 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
         roleAssignmentService.assignRolesInternal(
                 organizationId, user.getId(), List.of(role.name()));
 
-        DocumentType documentType = request.getDocumentType() == null ? DocumentType.CPF : request.getDocumentType();
+        DocumentType documentType = request.getDocumentType() == null ? DocumentType.CNPJ : request.getDocumentType();
+        if (documentType != DocumentType.CNPJ) {
+            throw new InvalidRequestException(AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE);
+        }
+        try {
+            AsaasDocumentRules.requireCnpj(request.getDocument(), "document");
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException(ex.getMessage());
+        }
+        String employeeCnpj = AsaasDocumentRules.normalize(request.getDocument());
+
         AccountType accountType = role == RoleCode.FINANCE ? AccountType.MAIN : AccountType.EMPLOYEE;
         AccountResponse account = accountService.create(
                 organizationId,
@@ -105,7 +123,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                         .type(accountType)
                         .build(),
                 user.getId(),
-                request.getDocument());
+                employeeCnpj);
 
         AsaasBindResponse bind = provisioningService.currentBind(account.getId());
         auditLogService.record(

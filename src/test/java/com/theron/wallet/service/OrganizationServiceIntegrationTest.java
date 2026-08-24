@@ -90,17 +90,17 @@ class OrganizationServiceIntegrationTest extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("should reject CPF with wrong digit length")
-        void shouldRejectInvalidCpfLength() {
+        @DisplayName("should reject CPF organization document type")
+        void shouldRejectCpfOrganization() {
             CreateOrganizationRequest request = CreateOrganizationRequest.builder()
                     .legalName("Pessoa Fisica")
-                    .document("1234567890")
+                    .document("52998224725")
                     .documentType(DocumentType.CPF)
                     .build();
 
             assertThatThrownBy(() -> organizationService.create(request))
                     .isInstanceOf(InvalidRequestException.class)
-                    .hasMessageContaining("CPF");
+                    .hasMessageContaining("CNPJ");
         }
 
         @Test

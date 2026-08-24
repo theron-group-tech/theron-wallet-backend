@@ -26,6 +26,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.AsaasBindStatus;
 import com.theron.wallet.enums.AuditAction;
+import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.RoleCode;
@@ -49,6 +50,7 @@ import com.theron.wallet.service.OrganizationService;
 import com.theron.wallet.service.PlatformSplitService;
 import com.theron.wallet.service.RoleAssignmentService;
 import com.theron.wallet.service.UserService;
+import com.theron.wallet.util.AsaasDocumentRules;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -188,6 +190,17 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
             throw new InvalidRequestException("Organization must be ACTIVE to create an OWNER");
         }
 
+        DocumentType documentType = request.getDocumentType() == null ? DocumentType.CNPJ : request.getDocumentType();
+        if (documentType != DocumentType.CNPJ) {
+            throw new InvalidRequestException(AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE);
+        }
+        try {
+            AsaasDocumentRules.requireCnpj(request.getDocument(), "document");
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException(ex.getMessage());
+        }
+        String ownerCnpj = AsaasDocumentRules.normalize(request.getDocument());
+
         UserResponse user = userService.create(CreateUserRequest.builder()
                 .name(request.getName())
                 .email(request.getEmail())
@@ -209,7 +222,7 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
                         .type(AccountType.MAIN)
                         .build(),
                 user.getId(),
-                request.getDocument());
+                ownerCnpj);
 
         AsaasBindResponse bind = provisioningService.currentBind(account.getId());
         auditLogService.recordAdmin(

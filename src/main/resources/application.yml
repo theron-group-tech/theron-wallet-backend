@@ -35,7 +35,7 @@ asaas:
     base-url: ${ASAAS_API_BASE_URL:https://api-sandbox.asaas.com/v3}
     key: ${ASAAS_API_KEY}
     webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
-    webhook-url: ${ASAAS_WEBHOOK_URL:}
+    webhook-url: ${ASAAS_WEBHOOK_URL:}  # optional; omit in dev — subaccounts created without inline webhooks
     master-wallet-id: ${ASAAS_MASTER_WALLET_ID:}
     auto-approve-subaccounts: ${ASAAS_AUTO_APPROVE_SUBACCOUNTS:true}
     subaccount-defaults:

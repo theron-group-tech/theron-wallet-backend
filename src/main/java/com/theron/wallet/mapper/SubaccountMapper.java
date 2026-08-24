@@ -46,8 +46,6 @@ public final class SubaccountMapper {
      */
     public static AsaasSubaccountRequest toAsaasRequest(Subaccount subaccount,
                                                         List<AsaasWebhookConfigRequest> webhooks) {
-        boolean isPessoaFisica = subaccount.getCpfCnpj() != null && subaccount.getCpfCnpj().length() == 11;
-
         return AsaasSubaccountRequest.builder()
                 .name(subaccount.getName())
                 .email(subaccount.getEmail())
@@ -56,10 +54,7 @@ public final class SubaccountMapper {
                 .mobilePhone(subaccount.getMobilePhone())
                 .phone(subaccount.getPhone())
                 .site(subaccount.getSite())
-                // birthDate: obrigatório para CPF (PF), ignorado para CNPJ (PJ)
-                .birthDate(isPessoaFisica ? subaccount.getBirthDate() : null)
-                // companyType: obrigatório para CNPJ (PJ), NUNCA enviado para CPF (PF)
-                .companyType(!isPessoaFisica ? subaccount.getCompanyType() : null)
+                .companyType(subaccount.getCompanyType())
                 .incomeValue(subaccount.getIncomeValue())
                 .address(subaccount.getAddress())
                 .addressNumber(subaccount.getAddressNumber())

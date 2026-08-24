@@ -376,6 +376,10 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **Sandbox Asaas:** subcontas criadas ficam “Aguardando ativação” até `POST /v3/accounts/{id}/approve` (Master key). O backend, em sandbox com `ASAAS_AUTO_APPROVE_SUBACCOUNTS=true` (default), chama approve automaticamente após o create e só então marca `asaasStatus=ACTIVE`. Enquanto `PENDING`, mostre copy de aguardando ativação e permita “Tentar novamente” (retry dispara approve em subcontas já criadas). PIX/chaves só após `ACTIVE`.
 
+**CNPJ-only (Asaas BaaS):** Organization e subconta Asaas exigem **CNPJ** (14 dígitos). CPF é rejeitado no provision (`422`). Ao criar FINANCE/EMPLOYEE, o formulário deve pedir **CNPJ próprio** do titular (MEI/filial), não CPF.
+
+**Webhooks:** `ASAAS_WEBHOOK_URL` é opcional em dev/sandbox. Sem URL, a subconta é criada sem webhooks inline; configure URL + painel Asaas quando for receber eventos de pagamento/transfer.
+
 **WalletResponse:** `id`, `subaccountId?`, `accountId?`, `balance`, `currency`, `active`.
 
 **TransactionResponse:** `id`, `walletId`, `organizationId`, `accountId`, `type`, `status`, `amount`, `currency`, `reference`, `description`, `asaasPaymentId`, `createdAt`, `updatedAt`, `completedAt`.
@@ -400,7 +404,7 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 - `AccountType`: `MAIN`, `EMPLOYEE`, `RESERVE`
 - `AccountStatus`: `ACTIVE`, `SUSPENDED`, `CLOSED`
 - `RoleCode`: `OWNER`, `FINANCE`, `EMPLOYEE` (ADMIN/AUDITOR descontinuados)
-- `DocumentType`: `CPF`, `CNPJ`
+- `DocumentType`: `CNPJ` (Organization e subconta Asaas; CPF rejeitado no provision)
 - `OrganizationStatus`: `ACTIVE`, `SUSPENDED`, `BLOCKED`
 - `UserStatus`: `ACTIVE`, `SUSPENDED`
 - `MembershipStatus`: `ACTIVE`, `INVITED`, `SUSPENDED`, `REMOVED`

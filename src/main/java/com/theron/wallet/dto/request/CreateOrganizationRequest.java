@@ -27,11 +27,11 @@ public class CreateOrganizationRequest {
     private String tradeName;
 
     @NotBlank
-    @Schema(description = "CPF (11 digits) or CNPJ (14 digits). Non-digits are stripped before persistence.",
+    @Schema(description = "CNPJ (14 digits). Non-digits are stripped before persistence.",
             example = "12345678000199")
     private String document;
 
     @NotNull
-    @Schema(description = "Document type", example = "CNPJ", allowableValues = {"CPF", "CNPJ"})
+    @Schema(description = "Document type — must be CNPJ for Asaas BaaS", example = "CNPJ", allowableValues = {"CNPJ"})
     private DocumentType documentType;
 }

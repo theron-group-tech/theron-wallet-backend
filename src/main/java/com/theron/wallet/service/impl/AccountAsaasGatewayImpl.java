@@ -26,7 +26,7 @@ import java.util.UUID;
 public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
 
     private static final Set<SubaccountStatus> ALLOWED_STATUSES =
-            Set.of(SubaccountStatus.PENDING_EVALUATION, SubaccountStatus.ACTIVE);
+            Set.of(SubaccountStatus.ACTIVE);
 
     private final AccountRepository accountRepository;
     private final SubaccountRepository subaccountRepository;

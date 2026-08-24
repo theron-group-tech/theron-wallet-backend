@@ -20,9 +20,7 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Request body to create an Asaas subaccount (POST /v3/accounts). "
-        + "For Pessoa Física (CPF): birthDate is required. "
-        + "For Pessoa Jurídica (CNPJ): companyType is required.")
+@Schema(description = "Request body to create an Asaas subaccount (POST /v3/accounts). CNPJ only (14 digits).")
 public class CreateSubaccountRequest {
 
     // ── Identity ────────────────────────────────────────────────────────────
@@ -41,8 +39,8 @@ public class CreateSubaccountRequest {
     private String loginEmail;
 
     @NotBlank
-    @Schema(description = "CPF (11 digits) or CNPJ (14 digits), numbers only",
-            example = "05211718577")
+    @Pattern(regexp = "\\d{14}", message = "cpfCnpj must be CNPJ with exactly 14 digits")
+    @Schema(description = "CNPJ (14 digits, numbers only)", example = "66625514000140")
     private String cpfCnpj;
 
     @NotBlank
@@ -58,13 +56,8 @@ public class CreateSubaccountRequest {
 
     // ── PF / PJ ─────────────────────────────────────────────────────────────
 
-    @Pattern(regexp = "\\d{4}-\\d{2}-\\d{2}", message = "birthDate must be in yyyy-MM-dd format")
-    @Schema(description = "Date of birth in yyyy-MM-dd — required for CPF (Pessoa Física)",
-            example = "1990-05-15")
-    private String birthDate;
-
-    @Schema(description = "Company type — required for CNPJ (Pessoa Jurídica). "
-            + "Allowed: MEI, LIMITED, INDIVIDUAL, ASSOCIATION",
+    @NotNull
+    @Schema(description = "Company type — required (MEI, LIMITED, INDIVIDUAL, ASSOCIATION)",
             example = "LIMITED")
     private CompanyType companyType;
 

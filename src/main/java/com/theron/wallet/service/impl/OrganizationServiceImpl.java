@@ -122,10 +122,14 @@ public class OrganizationServiceImpl implements OrganizationService {
         if (document == null || document.isBlank()) {
             throw new InvalidRequestException("document is required");
         }
-        if (documentType == DocumentType.CPF && document.length() != 11) {
-            throw new InvalidRequestException("CPF must contain exactly 11 digits");
+        if (documentType == DocumentType.CPF) {
+            throw new InvalidRequestException(
+                    "Organization document must be CNPJ (Asaas BaaS does not support CPF organizations)");
         }
-        if (documentType == DocumentType.CNPJ && document.length() != 14) {
+        if (documentType != DocumentType.CNPJ) {
+            throw new InvalidRequestException("documentType must be CNPJ");
+        }
+        if (document.length() != 14) {
             throw new InvalidRequestException("CNPJ must contain exactly 14 digits");
         }
     }

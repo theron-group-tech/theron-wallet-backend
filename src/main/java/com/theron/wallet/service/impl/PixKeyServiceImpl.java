@@ -28,7 +28,7 @@ import java.util.UUID;
 public class PixKeyServiceImpl implements PixKeyService {
 
     private static final Set<SubaccountStatus> ALLOWED_STATUSES =
-            Set.of(SubaccountStatus.PENDING_EVALUATION, SubaccountStatus.ACTIVE);
+            Set.of(SubaccountStatus.ACTIVE);
 
     private final SubaccountRepository subaccountRepository;
     private final AsaasApiKeyResolver asaasApiKeyResolver;

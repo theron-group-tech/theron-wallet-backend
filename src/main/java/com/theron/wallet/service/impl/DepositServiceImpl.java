@@ -48,7 +48,7 @@ public class DepositServiceImpl implements DepositService {
 
     private static final DateTimeFormatter ASAAS_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final Set<SubaccountStatus> ALLOWED_STATUSES =
-            Set.of(SubaccountStatus.PENDING_EVALUATION, SubaccountStatus.ACTIVE);
+            Set.of(SubaccountStatus.ACTIVE);
 
     private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;

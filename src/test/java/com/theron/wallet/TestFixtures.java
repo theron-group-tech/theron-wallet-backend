@@ -9,6 +9,7 @@ import com.theron.wallet.entity.Customer;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.CompanyType;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
@@ -125,13 +126,15 @@ public final class TestFixtures {
                 .build();
     }
 
+    private static final String DEFAULT_CNPJ = "12345678000199";
+
     public static CreateSubaccountRequest aCreateSubaccountRequest() {
         return CreateSubaccountRequest.builder()
                 .name("Test Subaccount Owner")
                 .email("subaccount@therongroup.com")
-                .cpfCnpj("12345678901")
+                .cpfCnpj(DEFAULT_CNPJ)
                 .mobilePhone("11999999999")
-                .birthDate("1990-05-15")
+                .companyType(CompanyType.LIMITED)
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")
                 .addressNumber("123")
@@ -141,14 +144,14 @@ public final class TestFixtures {
                 .build();
     }
 
-    /** Overload with distinct cpfCnpj to avoid unique constraint conflicts in tests. */
-    public static CreateSubaccountRequest aCreateSubaccountRequest(String cpfCnpj) {
+    /** Overload with distinct CNPJ to avoid unique constraint conflicts in tests. */
+    public static CreateSubaccountRequest aCreateSubaccountRequest(String cnpj) {
         return CreateSubaccountRequest.builder()
                 .name("Test Subaccount Owner")
-                .email(cpfCnpj + "@therongroup.com")
-                .cpfCnpj(cpfCnpj)
+                .email(cnpj + "@therongroup.com")
+                .cpfCnpj(cnpj)
                 .mobilePhone("11999999999")
-                .birthDate("1990-05-15")
+                .companyType(CompanyType.LIMITED)
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")
                 .addressNumber("123")
@@ -177,8 +180,9 @@ public final class TestFixtures {
         return Subaccount.builder()
                 .name("Test Subaccount Owner")
                 .email("subaccount@therongroup.com")
-                .cpfCnpj("12345678901")
+                .cpfCnpj(DEFAULT_CNPJ)
                 .mobilePhone("11999999999")
+                .companyType("LIMITED")
                 .status(status)
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")
@@ -189,13 +193,14 @@ public final class TestFixtures {
                 .build();
     }
 
-    /** Overload with distinct cpfCnpj to avoid unique constraint conflicts. */
-    public static Subaccount aSubaccount(String cpfCnpj, SubaccountStatus status) {
+    /** Overload with distinct CNPJ to avoid unique constraint conflicts. */
+    public static Subaccount aSubaccount(String cnpj, SubaccountStatus status) {
         return Subaccount.builder()
                 .name("Test Subaccount Owner")
-                .email(cpfCnpj + "@therongroup.com")
-                .cpfCnpj(cpfCnpj)
+                .email(cnpj + "@therongroup.com")
+                .cpfCnpj(cnpj)
                 .mobilePhone("11999999999")
+                .companyType("LIMITED")
                 .status(status)
                 .incomeValue(new BigDecimal("5000.00"))
                 .address("Rua Teste")

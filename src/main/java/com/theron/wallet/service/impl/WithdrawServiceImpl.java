@@ -56,7 +56,7 @@ import java.util.UUID;
 public class WithdrawServiceImpl implements WithdrawService {
 
     private static final Set<SubaccountStatus> ALLOWED_STATUSES =
-            Set.of(SubaccountStatus.PENDING_EVALUATION, SubaccountStatus.ACTIVE);
+            Set.of(SubaccountStatus.ACTIVE);
 
     private final SubaccountRepository subaccountRepository;
     private final WalletRepository walletRepository;

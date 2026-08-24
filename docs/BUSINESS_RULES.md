@@ -40,9 +40,18 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 ## 3. Organization
 
 - Tenant administrativo (isolamento, memberships, roles).
-- Documento único (CPF 11 / CNPJ 14). Status: `ACTIVE` | `SUSPENDED` | `INACTIVE`.
+- Documento **CNPJ** (14 dígitos). CPF não é suportado — regra Asaas BaaS para subcontas.
+- Status: `ACTIVE` | `SUSPENDED` | `INACTIVE`.
 - Operações normais exigem `ACTIVE`.
 - **Não** tem Wallet/saldo coletivo.
+
+## 3.1 Asaas subconta
+
+- Subcontas Asaas exigem **CNPJ** (titular PJ). CPF é rejeitado no provision (`422`).
+- **OWNER:** CNPJ da Organization (ou informado no admin).
+- **FINANCE/EMPLOYEE:** CNPJ **próprio** (MEI/filial), distinto por Account.
+- `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; sem URL, create não registra webhooks inline. Necessário em produção para eventos de pagamento/transfer.
+- Operações PIX/deposit/withdraw exigem subconta `ACTIVE` (não `PENDING_EVALUATION`).
 
 ## 4. Membership
 

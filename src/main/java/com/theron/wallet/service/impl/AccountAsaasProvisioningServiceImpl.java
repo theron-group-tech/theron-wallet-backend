@@ -28,6 +28,7 @@ import com.theron.wallet.security.ApiKeyEncryptionService;
 import com.theron.wallet.security.WebhookTokenGenerator;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AuditLogService;
+import com.theron.wallet.util.AsaasDocumentRules;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,11 +38,14 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisioningService {
+
+    private static final AtomicBoolean WEBHOOK_SKIP_LOGGED = new AtomicBoolean(false);
 
     private static final List<String> WEBHOOK_EVENTS = List.of(
             "PAYMENT_CONFIRMED",
@@ -113,8 +117,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         }
 
         String document = normalizeDocument(documentSource);
-        DocumentType documentType = inferDocumentType(document, organization.getDocumentType());
-        validateDocument(document, documentType);
+        validateCnpjForProvision(document, organization.getDocumentType());
 
         if (existing != null && isUsable(existing)) {
             return toBind(account, existing);
@@ -123,7 +126,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         if (existing != null
                 && existing.getAsaasAccountId() != null
                 && existing.getStatus() == SubaccountStatus.PENDING_EVALUATION) {
-            applyKyc(existing, account, organization, document, documentType);
+            applyKyc(existing, account, organization, document);
             trySandboxApprove(existing);
             existing = subaccountRepository.save(existing);
             if (isUsable(existing)) {
@@ -137,15 +140,15 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             if (occupied.isPresent()
                     && (occupied.get().getAccount() == null
                     || !occupied.get().getAccount().getId().equals(account.getId()))) {
-                Subaccount failed = newFailedRow(account, organization, document, documentType,
+                Subaccount failed = newFailedRow(account, organization, document,
                         "CPF/CNPJ already linked to another Asaas subaccount");
                 failed = subaccountRepository.save(failed);
                 return toBind(account, failed);
             }
-            existing = newProvisioningRow(account, organization, document, documentType);
+            existing = newProvisioningRow(account, organization, document);
             existing = subaccountRepository.save(existing);
         } else {
-            applyKyc(existing, account, organization, document, documentType);
+            applyKyc(existing, account, organization, document);
             existing.setAsaasAccountId(null);
             existing.setAsaasWalletId(null);
             existing.setEncryptedApiKey(null);
@@ -201,25 +204,25 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     }
 
     private Subaccount newProvisioningRow(
-            Account account, Organization organization, String document, DocumentType documentType) {
+            Account account, Organization organization, String document) {
         Subaccount subaccount = Subaccount.builder()
                 .account(account)
                 .webhookToken(webhookTokenGenerator.generate())
                 .status(SubaccountStatus.PROVISIONING)
                 .build();
-        applyKyc(subaccount, account, organization, document, documentType);
+        applyKyc(subaccount, account, organization, document);
         return subaccount;
     }
 
     private Subaccount newFailedRow(
-            Account account, Organization organization, String document, DocumentType documentType, String reason) {
+            Account account, Organization organization, String document, String reason) {
         Subaccount subaccount = Subaccount.builder()
                 .account(account)
                 .webhookToken(webhookTokenGenerator.generate())
                 .status(SubaccountStatus.FAILED)
                 .statusReason(reason)
                 .build();
-        applyKyc(subaccount, account, organization, document, documentType);
+        applyKyc(subaccount, account, organization, document);
         return subaccount;
     }
 
@@ -227,8 +230,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             Subaccount subaccount,
             Account account,
             Organization organization,
-            String document,
-            DocumentType documentType) {
+            String document) {
         AsaasProperties.SubaccountDefaults defaults = asaasProperties.getSubaccountDefaults();
         String ownerEmail = account.getOwnerUser() != null ? account.getOwnerUser().getEmail() : null;
         String email = ownerEmail != null && !ownerEmail.isBlank()
@@ -253,13 +255,8 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         subaccount.setProvince(defaults.getProvince());
         subaccount.setPostalCode(defaults.getPostalCode());
         subaccount.setIncomeValue(new BigDecimal(defaults.getIncomeValue()));
-        if (documentType == DocumentType.CPF) {
-            subaccount.setBirthDate(defaults.getBirthDate());
-            subaccount.setCompanyType(null);
-        } else {
-            subaccount.setBirthDate(null);
-            subaccount.setCompanyType(defaults.getCompanyType());
-        }
+        subaccount.setBirthDate(null);
+        subaccount.setCompanyType(defaults.getCompanyType());
     }
 
     private boolean isUsable(Subaccount subaccount) {
@@ -350,6 +347,9 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
         String webhookUrl = asaasProperties.getWebhookUrl();
         if (webhookUrl == null || webhookUrl.isBlank()) {
+            if (WEBHOOK_SKIP_LOGGED.compareAndSet(false, true)) {
+                log.info("ASAAS_WEBHOOK_URL not set — subaccounts are created without inline webhooks");
+            }
             return null;
         }
         return List.of(AsaasWebhookConfigRequest.builder()
@@ -366,41 +366,36 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     }
 
     private static String normalizeDocument(String document) {
-        if (document == null) {
-            return null;
-        }
-        return document.replaceAll("\\D", "");
+        return AsaasDocumentRules.normalize(document);
     }
 
-    private static DocumentType inferDocumentType(String document, DocumentType fallback) {
-        if (document != null && document.length() == 11) {
-            return DocumentType.CPF;
+    private static void validateCnpjForProvision(String document, DocumentType organizationDocumentType) {
+        if (organizationDocumentType == DocumentType.CPF) {
+            throw new FieldValidationException(
+                    AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE,
+                    List.of(ApiErrorResponse.FieldError.builder()
+                            .field("document")
+                            .message("Organization must use CNPJ for Asaas subaccount provisioning")
+                            .build()));
         }
-        if (document != null && document.length() == 14) {
-            return DocumentType.CNPJ;
-        }
-        return fallback;
-    }
-
-    private static void validateDocument(String document, DocumentType documentType) {
         if (document == null || document.isBlank()) {
             throw new FieldValidationException(
-                    "Organization document is required before Asaas provisioning",
+                    "CNPJ is required before Asaas provisioning",
                     List.of(ApiErrorResponse.FieldError.builder()
                             .field("document")
                             .message("document is required")
                             .build()));
         }
-        if (documentType == DocumentType.CPF && document.length() != 11) {
+        if (document.length() == 11) {
             throw new FieldValidationException(
-                    "Invalid CPF",
+                    AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE,
                     List.of(ApiErrorResponse.FieldError.builder()
                             .field("document")
-                            .message("CPF must contain exactly 11 digits")
+                            .message(AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE)
                             .rejectedValue(document)
                             .build()));
         }
-        if (documentType == DocumentType.CNPJ && document.length() != 14) {
+        if (document.length() != 14) {
             throw new FieldValidationException(
                     "Invalid CNPJ",
                     List.of(ApiErrorResponse.FieldError.builder()

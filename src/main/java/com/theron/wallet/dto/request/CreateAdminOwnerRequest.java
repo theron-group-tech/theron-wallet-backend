@@ -35,10 +35,10 @@ public class CreateAdminOwnerRequest {
     private String phone;
 
     @NotBlank
-    @Schema(description = "OWNER CPF/CNPJ digits for Asaas subaccount")
+    @Schema(description = "OWNER CNPJ (14 digits) for Asaas subaccount")
     private String document;
 
     @NotNull
     @Builder.Default
-    private DocumentType documentType = DocumentType.CPF;
+    private DocumentType documentType = DocumentType.CNPJ;
 }

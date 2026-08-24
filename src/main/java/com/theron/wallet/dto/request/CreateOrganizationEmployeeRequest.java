@@ -36,12 +36,12 @@ public class CreateOrganizationEmployeeRequest {
     private String password;
 
     @NotBlank
-    @Schema(description = "Employee CPF (digits). Required so Asaas can create a distinct subaccount.")
+    @Schema(description = "Employee CNPJ (14 digits, MEI/filial). Required for Asaas subaccount.")
     private String document;
 
     @NotNull
     @Builder.Default
-    private DocumentType documentType = DocumentType.CPF;
+    private DocumentType documentType = DocumentType.CNPJ;
 
     @NotNull
     @Schema(description = "Product role: FINANCE or EMPLOYEE", example = "EMPLOYEE")

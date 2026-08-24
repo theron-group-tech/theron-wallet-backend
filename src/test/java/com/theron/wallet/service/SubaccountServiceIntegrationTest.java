@@ -40,7 +40,7 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
     @DisplayName("Successful subaccount creation")
     class CreationSuccessTests {
         @Test
-        @DisplayName("should create subaccount, encrypt API key, and persist PENDING_EVALUATION")
+        @DisplayName("should create subaccount, encrypt API key, and persist ACTIVE after sandbox approve")
         void shouldCreateSubaccountSuccessfully() {
             AsaasSubaccountResponse asaasResponse = TestFixtures.anAsaasSubaccountResponse();
             when(asaasSubaccountClient.createSubaccount(any())).thenReturn(asaasResponse);
@@ -50,9 +50,9 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(response.getId()).isNotNull();
             assertThat(response.getAsaasAccountId()).isEqualTo(asaasResponse.getId());
             assertThat(response.getAsaasWalletId()).isEqualTo(asaasResponse.getWalletId());
-            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
-            assertThat(response.getCpfCnpj()).isEqualTo("12345678901");
-            assertThat(response.getPersonType()).isEqualTo("FISICA");
+            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
+            assertThat(response.getCpfCnpj()).isEqualTo("12345678000199");
+            assertThat(response.getPersonType()).isEqualTo("JURIDICA");
             assertThat(response.getIncomeValue()).isEqualByComparingTo(new BigDecimal("5000.00"));
             assertThat(response.getAddress()).isEqualTo("Rua Teste");
             assertThat(response.getProvince()).isEqualTo("São Paulo");
@@ -60,7 +60,7 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             Subaccount persisted = subaccountRepository.findById(response.getId()).orElseThrow();
             assertThat(persisted.getAsaasAccountId()).isEqualTo(asaasResponse.getId());
             assertThat(persisted.getAsaasWalletId()).isEqualTo(asaasResponse.getWalletId());
-            assertThat(persisted.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(persisted.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             assertThat(persisted.getWebhookToken()).isNotBlank();
             // Encrypted API key must be stored and decryptable
             assertThat(persisted.getEncryptedApiKey()).isNotNull();
@@ -78,7 +78,7 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             AsaasSubaccountResponse asaasResponse = TestFixtures.anAsaasSubaccountResponseWithoutApiKey();
             when(asaasSubaccountClient.createSubaccount(any())).thenReturn(asaasResponse);
             SubaccountResponse response = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
-            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             Subaccount persisted = subaccountRepository.findById(response.getId()).orElseThrow();
             assertThat(persisted.getEncryptedApiKey()).isNull();
             long auditCount = auditRepository.countBySubaccountIdAndAction(
@@ -102,9 +102,9 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
                     .isInstanceOf(DuplicateResourceException.class)
                     .hasMessageContaining("Subaccount already exists");
 
-            // The original PENDING_EVALUATION record must still be intact
-            Subaccount existing = subaccountRepository.findByCpfCnpj("12345678901").orElseThrow();
-            assertThat(existing.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            // The original ACTIVE record must still be intact
+            Subaccount existing = subaccountRepository.findByCpfCnpj("12345678000199").orElseThrow();
+            assertThat(existing.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
         }
 
         @Test
@@ -122,12 +122,12 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
 
             SubaccountResponse retryResponse = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
 
-            assertThat(retryResponse.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(retryResponse.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             // Must reuse the same DB record
             assertThat(retryResponse.getId()).isEqualTo(failedId);
 
             Subaccount retried = subaccountRepository.findById(failedId).orElseThrow();
-            assertThat(retried.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(retried.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             assertThat(retried.getEncryptedApiKey()).isNotNull();
         }
 
@@ -142,10 +142,18 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(response.getStatus()).isEqualTo(SubaccountStatus.FAILED);
             assertThat(response.getStatusReason()).contains("Asaas API call failed");
 
-            Subaccount failed = subaccountRepository.findByCpfCnpj("12345678901").orElseThrow();
+            Subaccount failed = subaccountRepository.findByCpfCnpj("12345678000199").orElseThrow();
             assertThat(failed.getStatus()).isEqualTo(SubaccountStatus.FAILED);
             assertThat(failed.getStatusReason()).contains("Asaas API call failed");
             assertThat(failed.getEncryptedApiKey()).isNull();
+        }
+        @Test
+        @DisplayName("should reject CPF subaccount document")
+        void shouldRejectCpfSubaccount() {
+            CreateSubaccountRequest request = TestFixtures.aCreateSubaccountRequest("12345678901");
+            assertThatThrownBy(() -> subaccountService.create(request))
+                    .isInstanceOf(com.theron.wallet.exception.InvalidRequestException.class)
+                    .hasMessageContaining("CNPJ");
         }
     }
     @Nested
@@ -166,9 +174,9 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasSubaccountClient.createSubaccount(any()))
                     .thenReturn(TestFixtures.anAsaasSubaccountResponse());
             SubaccountResponse response = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
-            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(response.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             Subaccount persisted = subaccountRepository.findById(response.getId()).orElseThrow();
-            assertThat(persisted.getStatus()).isEqualTo(SubaccountStatus.PENDING_EVALUATION);
+            assertThat(persisted.getStatus()).isEqualTo(SubaccountStatus.ACTIVE);
             assertThat(persisted.getEncryptedApiKey()).isNotNull();
         }
     }
@@ -210,7 +218,7 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             SubaccountResponse created = subaccountService.create(TestFixtures.aCreateSubaccountRequest());
             SubaccountResponse found = subaccountService.findById(created.getId());
             assertThat(found.getId()).isEqualTo(created.getId());
-            assertThat(found.getCpfCnpj()).isEqualTo("12345678901");
+            assertThat(found.getCpfCnpj()).isEqualTo("12345678000199");
         }
         @Test
         @DisplayName("findById should throw for non-existent subaccount")
@@ -225,8 +233,8 @@ class SubaccountServiceIntegrationTest extends BaseIntegrationTest {
             when(asaasSubaccountClient.createSubaccount(any()))
                     .thenReturn(TestFixtures.anAsaasSubaccountResponse());
             subaccountService.create(TestFixtures.aCreateSubaccountRequest());
-            SubaccountResponse found = subaccountService.findByCpfCnpj("12345678901");
-            assertThat(found.getCpfCnpj()).isEqualTo("12345678901");
+            SubaccountResponse found = subaccountService.findByCpfCnpj("12345678000199");
+            assertThat(found.getCpfCnpj()).isEqualTo("12345678000199");
         }
         @Test
         @DisplayName("findByCpfCnpj should throw when CPF/CNPJ not found")
