@@ -28,7 +28,11 @@ public final class AccountMapper {
             builder.asaasStatus(bind.getStatus())
                     .asaasAccountId(bind.getAsaasAccountId())
                     .asaasWalletId(bind.getAsaasWalletId())
-                    .asaasMessage(bind.getMessage());
+                    .asaasMessage(bind.getMessage())
+                    .asaasCommercialStatus(bind.getAsaasCommercialStatus())
+                    .asaasDocumentationStatus(bind.getAsaasDocumentationStatus())
+                    .asaasGeneralStatus(bind.getAsaasGeneralStatus())
+                    .onboardingUrl(bind.getOnboardingUrl());
         }
         return builder.build();
     }

@@ -24,4 +24,8 @@ public class AsaasBindResponse {
     private String asaasWalletId;
     private AsaasBindStatus status;
     private String message;
+    private String asaasCommercialStatus;
+    private String asaasDocumentationStatus;
+    private String asaasGeneralStatus;
+    private String onboardingUrl;
 }

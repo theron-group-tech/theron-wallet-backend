@@ -52,6 +52,8 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - **FINANCE/EMPLOYEE:** CNPJ **próprio** (MEI/filial), distinto por Account.
 - `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; sem URL, create não registra webhooks inline. Necessário em produção para eventos de pagamento/transfer.
 - Operações PIX/deposit/withdraw exigem subconta `ACTIVE` (não `PENDING_EVALUATION`).
+- **Aprovado ≠ Aguardando ativação:** “Aguardando ativação” no painel Asaas é senha/login da UI (e-mail na conta pai no Sandbox). Não é pré-requisito para PIX via API.
+- No Sandbox o BE chama `POST /accounts/{id}/approve` e sincroniza `GET /myAccount/status` (apiKey da subconta). Se docs pendentes, `AsaasBindResponse.onboardingUrl` é exposto.
 
 ## 4. Membership
 

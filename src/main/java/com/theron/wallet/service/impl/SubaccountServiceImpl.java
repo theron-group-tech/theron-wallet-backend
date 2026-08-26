@@ -13,6 +13,7 @@ import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.mapper.SubaccountMapper;
@@ -61,6 +62,7 @@ public class SubaccountServiceImpl implements SubaccountService {
     private final SubaccountRepository subaccountRepository;
     private final SubaccountApiKeyAuditRepository auditRepository;
     private final AsaasSubaccountClient asaasSubaccountClient;
+    private final AsaasAccountStatusClient asaasAccountStatusClient;
     private final ApiKeyEncryptionService encryptionService;
     private final WebhookTokenGenerator webhookTokenGenerator;
     private final AsaasProperties asaasProperties;
@@ -141,6 +143,7 @@ public class SubaccountServiceImpl implements SubaccountService {
                     "Subaccount created in Asaas — awaiting activation/approval");
             subaccount = subaccountRepository.save(subaccount);
             trySandboxApprove(subaccount);
+            syncAsaasStatusAfterApprove(subaccount);
             subaccount = subaccountRepository.save(subaccount);
 
             log.info("Subaccount created successfully: subaccountId={}, asaasAccountId={}, walletId={}, status={}",
@@ -271,6 +274,42 @@ public class SubaccountServiceImpl implements SubaccountService {
             } else {
                 subaccount.setStatusReason(reason);
             }
+        }
+    }
+
+    private void syncAsaasStatusAfterApprove(Subaccount subaccount) {
+        if (subaccount.getEncryptedApiKey() == null) {
+            return;
+        }
+        try {
+            String apiKey = encryptionService.decrypt(subaccount.getEncryptedApiKey());
+            var status = asaasAccountStatusClient.getStatus(apiKey);
+            String commercial = status != null ? status.getCommercialInfo() : null;
+            String general = status != null ? status.getGeneral() : null;
+            boolean approved = (general != null && "APPROVED".equalsIgnoreCase(general))
+                    || (commercial != null && "APPROVED".equalsIgnoreCase(commercial));
+            if (approved) {
+                subaccount.transitionTo(SubaccountStatus.ACTIVE,
+                        "Asaas account status APPROVED (general=" + general + ", commercial=" + commercial + ")");
+                return;
+            }
+            String onboardingUrl = null;
+            try {
+                onboardingUrl = asaasAccountStatusClient.firstOnboardingUrl(apiKey);
+            } catch (Exception ignored) {
+                // optional
+            }
+            String reason = onboardingUrl != null
+                    ? "Asaas documentation pending — complete onboarding at the provided URL"
+                    : "Asaas account not fully approved yet (general=" + general + ", commercial=" + commercial + ")";
+            if (subaccount.getStatus() != SubaccountStatus.PENDING_EVALUATION) {
+                subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION, reason);
+            } else {
+                subaccount.setStatusReason(reason);
+            }
+        } catch (Exception ex) {
+            log.warn("Asaas status sync failed after approve: subaccountId={}, error={}",
+                    subaccount.getId(), ex.getMessage());
         }
     }
 }

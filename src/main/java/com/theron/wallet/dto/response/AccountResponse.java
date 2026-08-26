@@ -32,6 +32,10 @@ public class AccountResponse {
     private String asaasAccountId;
     private String asaasWalletId;
     private String asaasMessage;
+    private String asaasCommercialStatus;
+    private String asaasDocumentationStatus;
+    private String asaasGeneralStatus;
+    private String onboardingUrl;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

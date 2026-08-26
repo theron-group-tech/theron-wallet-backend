@@ -370,11 +370,11 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **DashboardResponse:** ver passo 4.
 
-**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, `ownerUserId?`, `asaasStatus` (`PENDING`|`ACTIVE`|`FAILED`), `asaasAccountId?`, `asaasWalletId?`, `asaasMessage?`, timestamps.
+**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, `ownerUserId?`, `asaasStatus` (`PENDING`|`ACTIVE`|`FAILED`), `asaasAccountId?`, `asaasWalletId?`, `asaasMessage?`, `asaasCommercialStatus?`, `asaasDocumentationStatus?`, `asaasGeneralStatus?`, `onboardingUrl?`, timestamps.
 
 **Asaas bind (produto):** `POST /api/v1/accounts/{accountId}/asaas-subaccount` — provisiona/repara a subconta do **próprio** dono da Account (`wallet.read`). Resposta `AsaasBindResponse`. Após login, se `asaasStatus !== ACTIVE`, abrir Modal pedindo criação.
 
-**Sandbox Asaas:** subcontas criadas ficam “Aguardando ativação” até `POST /v3/accounts/{id}/approve` (Master key). O backend, em sandbox com `ASAAS_AUTO_APPROVE_SUBACCOUNTS=true` (default), chama approve automaticamente após o create e só então marca `asaasStatus=ACTIVE`. Enquanto `PENDING`, mostre copy de aguardando ativação e permita “Tentar novamente” (retry dispara approve em subcontas já criadas). PIX/chaves só após `ACTIVE`.
+**Sandbox Asaas:** após create o BE chama `POST /v3/accounts/{id}/approve` e sincroniza `GET /myAccount/status` com a apiKey da subconta. `asaasStatus=ACTIVE` quando `general` ou `commercialInfo` = `APPROVED`. Se documentação pendente e houver `onboardingUrl`, mostre botão “Continuar onboarding Asaas”. “Aguardando ativação” no painel Asaas (e-mail/senha) **não** bloqueia PIX via API.
 
 **CNPJ-only (Asaas BaaS):** Organization e subconta Asaas exigem **CNPJ** (14 dígitos). CPF é rejeitado no provision (`422`). Ao criar FINANCE/EMPLOYEE, o formulário deve pedir **CNPJ próprio** do titular (MEI/filial), não CPF.
 

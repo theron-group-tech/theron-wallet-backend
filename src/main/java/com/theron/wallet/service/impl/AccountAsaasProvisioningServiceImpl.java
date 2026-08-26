@@ -1,6 +1,7 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasAccountStatusResponse;
 import com.theron.wallet.dto.asaas.AsaasSubaccountRequest;
 import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookConfigRequest;
@@ -18,6 +19,7 @@ import com.theron.wallet.exception.ApiErrorResponse;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.FieldValidationException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
 import com.theron.wallet.mapper.SubaccountMapper;
@@ -65,6 +67,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     private final SubaccountRepository subaccountRepository;
     private final SubaccountApiKeyAuditRepository auditRepository;
     private final AsaasSubaccountClient asaasSubaccountClient;
+    private final AsaasAccountStatusClient asaasAccountStatusClient;
     private final ApiKeyEncryptionService encryptionService;
     private final WebhookTokenGenerator webhookTokenGenerator;
     private final AsaasProperties asaasProperties;
@@ -79,12 +82,22 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public AsaasBindResponse currentBind(UUID accountId) {
         Account account = accountRepository.findByIdWithOrganization(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
         return subaccountRepository.findByAccount_Id(accountId)
-                .map(sub -> toBind(account, sub))
+                .map(sub -> {
+                    AsaasStatusSnapshot snapshot = null;
+                    if (sub.getStatus() == SubaccountStatus.PENDING_EVALUATION
+                            && sub.getEncryptedApiKey() != null) {
+                        snapshot = syncAsaasOperationalStatus(sub);
+                        if (snapshot != null && snapshot.changed()) {
+                            sub = subaccountRepository.save(sub);
+                        }
+                    }
+                    return toBind(account, sub, snapshot);
+                })
                 .orElseGet(() -> AsaasBindResponse.builder()
                         .accountId(account.getId())
                         .organizationId(account.getOrganization().getId())
@@ -120,19 +133,16 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         validateCnpjForProvision(document, organization.getDocumentType());
 
         if (existing != null && isUsable(existing)) {
-            return toBind(account, existing);
+            return toBind(account, existing, null);
         }
 
         if (existing != null
                 && existing.getAsaasAccountId() != null
                 && existing.getStatus() == SubaccountStatus.PENDING_EVALUATION) {
             applyKyc(existing, account, organization, document);
-            trySandboxApprove(existing);
+            AsaasStatusSnapshot snapshot = trySandboxApproveAndSync(existing);
             existing = subaccountRepository.save(existing);
-            if (isUsable(existing)) {
-                return toBind(account, existing);
-            }
-            return toBind(account, existing);
+            return toBind(account, existing, snapshot);
         }
 
         if (existing == null) {
@@ -143,7 +153,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                 Subaccount failed = newFailedRow(account, organization, document,
                         "CPF/CNPJ already linked to another Asaas subaccount");
                 failed = subaccountRepository.save(failed);
-                return toBind(account, failed);
+                return toBind(account, failed, null);
             }
             existing = newProvisioningRow(account, organization, document);
             existing = subaccountRepository.save(existing);
@@ -175,7 +185,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             existing.transitionTo(SubaccountStatus.PENDING_EVALUATION,
                     pendingEvaluationReason());
             existing = subaccountRepository.save(existing);
-            trySandboxApprove(existing);
+            AsaasStatusSnapshot snapshot = trySandboxApproveAndSync(existing);
             existing = subaccountRepository.save(existing);
             auditLogService.record(
                     AuditAction.SUBACCOUNT_PROVISIONED,
@@ -184,6 +194,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                     "Subaccount",
                     existing.getId(),
                     Map.of("accountId", account.getId().toString(), "status", existing.getStatus().name()));
+            return toBind(account, existing, snapshot);
         } catch (Exception ex) {
             String reason;
             if (ex instanceof AsaasApiException asaasEx) {
@@ -199,8 +210,8 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             }
             existing.transitionTo(SubaccountStatus.FAILED, reason);
             existing = subaccountRepository.save(existing);
+            return toBind(account, existing, null);
         }
-        return toBind(account, existing);
     }
 
     private Subaccount newProvisioningRow(
@@ -265,6 +276,11 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
                 && subaccount.getStatus() == SubaccountStatus.ACTIVE;
     }
 
+    private AsaasStatusSnapshot trySandboxApproveAndSync(Subaccount subaccount) {
+        trySandboxApprove(subaccount);
+        return syncAsaasOperationalStatus(subaccount);
+    }
+
     private void trySandboxApprove(Subaccount subaccount) {
         if (!asaasProperties.isAutoApproveSubaccounts()) {
             if (subaccount.getStatus() == SubaccountStatus.PENDING_EVALUATION
@@ -279,6 +295,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         }
         try {
             asaasSubaccountClient.approveSandboxSubaccount(asaasAccountId);
+            // Tentative ACTIVE — syncAsaasOperationalStatus may keep PENDING if docs required
             subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved in Asaas sandbox");
         } catch (Exception ex) {
             String reason;
@@ -302,30 +319,95 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         }
     }
 
+    /**
+     * Sync Theron status from Asaas {@code GET /myAccount/status} (subaccount key).
+     * Marks ACTIVE when general or commercialInfo is APPROVED; otherwise PENDING + optional onboardingUrl.
+     */
+    private AsaasStatusSnapshot syncAsaasOperationalStatus(Subaccount subaccount) {
+        if (subaccount.getEncryptedApiKey() == null) {
+            return null;
+        }
+        try {
+            String apiKey = encryptionService.decrypt(subaccount.getEncryptedApiKey());
+            AsaasAccountStatusResponse status = asaasAccountStatusClient.getStatus(apiKey);
+            String commercial = status != null ? status.getCommercialInfo() : null;
+            String documentation = status != null ? status.getDocumentation() : null;
+            String general = status != null ? status.getGeneral() : null;
+
+            boolean approved = isApproved(general) || isApproved(commercial);
+            String onboardingUrl = null;
+            if (!approved) {
+                try {
+                    onboardingUrl = asaasAccountStatusClient.firstOnboardingUrl(apiKey);
+                } catch (Exception docsEx) {
+                    log.warn("Asaas documents lookup failed: subaccountId={}, error={}",
+                            subaccount.getId(), docsEx.getMessage());
+                }
+            }
+
+            SubaccountStatus before = subaccount.getStatus();
+            String reasonBefore = subaccount.getStatusReason();
+            if (approved) {
+                subaccount.transitionTo(SubaccountStatus.ACTIVE,
+                        "Asaas account status APPROVED (general=" + general + ", commercial=" + commercial + ")");
+            } else {
+                String reason = onboardingUrl != null
+                        ? "Asaas documentation pending — complete onboarding at the provided URL"
+                        : "Asaas account not fully approved yet (general=" + general
+                                + ", commercial=" + commercial + ", documentation=" + documentation + ")";
+                if (subaccount.getStatus() != SubaccountStatus.PENDING_EVALUATION) {
+                    subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION, reason);
+                } else {
+                    subaccount.setStatusReason(reason);
+                }
+            }
+
+            boolean changed = before != subaccount.getStatus()
+                    || !java.util.Objects.equals(reasonBefore, subaccount.getStatusReason());
+            return new AsaasStatusSnapshot(commercial, documentation, general, onboardingUrl, changed);
+        } catch (Exception ex) {
+            log.warn("Asaas status sync failed: subaccountId={}, error={}", subaccount.getId(), ex.getMessage());
+            // Keep post-approve ACTIVE if we already marked it; otherwise leave PENDING
+            return null;
+        }
+    }
+
+    private static boolean isApproved(String status) {
+        return status != null && "APPROVED".equalsIgnoreCase(status.trim());
+    }
+
     private static String pendingEvaluationReason() {
         return "Subaccount created in Asaas — awaiting activation/approval";
     }
 
     private static String awaitingActivationMessage() {
-        return "Subconta criada; aguardando ativação/aprovação Asaas (Sandbox: approve automático após reinício do BE).";
+        return "Subconta criada; aguardando aprovação Asaas. "
+                + "Aguardando ativação no painel Asaas (e-mail/senha) não bloqueia PIX via API.";
     }
 
-    private AsaasBindResponse toBind(Account account, Subaccount subaccount) {
+    private AsaasBindResponse toBind(Account account, Subaccount subaccount, AsaasStatusSnapshot snapshot) {
         return AsaasBindResponse.builder()
                 .accountId(account.getId())
                 .organizationId(account.getOrganization().getId())
                 .asaasAccountId(subaccount.getAsaasAccountId())
                 .asaasWalletId(subaccount.getAsaasWalletId())
                 .status(toPublicStatus(subaccount))
-                .message(resolveBindMessage(subaccount))
+                .message(resolveBindMessage(subaccount, snapshot))
+                .asaasCommercialStatus(snapshot != null ? snapshot.commercialInfo() : null)
+                .asaasDocumentationStatus(snapshot != null ? snapshot.documentation() : null)
+                .asaasGeneralStatus(snapshot != null ? snapshot.general() : null)
+                .onboardingUrl(snapshot != null ? snapshot.onboardingUrl() : null)
                 .build();
     }
 
-    private String resolveBindMessage(Subaccount subaccount) {
+    private String resolveBindMessage(Subaccount subaccount, AsaasStatusSnapshot snapshot) {
         if (subaccount.getStatus() == SubaccountStatus.FAILED) {
             return subaccount.getStatusReason();
         }
         if (subaccount.getStatus() == SubaccountStatus.PENDING_EVALUATION) {
+            if (snapshot != null && snapshot.onboardingUrl() != null) {
+                return "Subconta criada; complete o onboarding Asaas (documentos) pelo link.";
+            }
             if (subaccount.getStatusReason() != null && !subaccount.getStatusReason().isBlank()) {
                 return subaccount.getStatusReason();
             }
@@ -342,6 +424,15 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             return AsaasBindStatus.FAILED;
         }
         return AsaasBindStatus.PENDING;
+    }
+
+    private record AsaasStatusSnapshot(
+            String commercialInfo,
+            String documentation,
+            String general,
+            String onboardingUrl,
+            boolean changed
+    ) {
     }
 
     private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
