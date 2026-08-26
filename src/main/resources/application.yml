@@ -29,13 +29,14 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
 
-# Asaas API Configuration
 asaas:
   api:
     base-url: ${ASAAS_API_BASE_URL:https://api-sandbox.asaas.com/v3}
     key: ${ASAAS_API_KEY}
     webhook-token: ${ASAAS_WEBHOOK_TOKEN:}
-    webhook-url: ${ASAAS_WEBHOOK_URL:}  # optional; omit in dev — subaccounts created without inline webhooks
+    webhook-url: ${ASAAS_WEBHOOK_URL:}
+    transfer-validation-token: ${ASAAS_TRANSFER_VALIDATION_TOKEN:}
+    transfer-validation-url: ${ASAAS_TRANSFER_VALIDATION_URL:}
     master-wallet-id: ${ASAAS_MASTER_WALLET_ID:}
     auto-approve-subaccounts: ${ASAAS_AUTO_APPROVE_SUBACCOUNTS:true}
     subaccount-defaults:
@@ -53,11 +54,9 @@ asaas:
     retry:
       max-attempts: 3
 
-# Encryption (AES-256-GCM for API key storage)
 encryption:
   aes-key: ${ENCRYPTION_AES_KEY}
 
-# Actuator / Health
 management:
   endpoints:
     web:
@@ -67,7 +66,6 @@ management:
     health:
       show-details: when-authorized
 
-# OpenAPI / Swagger
 springdoc:
   api-docs:
     path: /v3/api-docs
@@ -75,14 +73,12 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
 
-# JWT
 jwt:
   secret: ${JWT_SECRET}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
   refresh-expiration-days: ${JWT_REFRESH_EXPIRATION_DAYS:30}
 
-# Default admin seed (first-boot only; no hardcoded password)
 app:
   admin:
     email: ${APP_ADMIN_EMAIL:${DEFAULT_ADMIN_EMAIL:}}
@@ -94,11 +90,6 @@ platform:
     fixed-amount: ${PLATFORM_SPLIT_FIXED_AMOUNT:0}
     enabled: ${PLATFORM_SPLIT_ENABLED:true}
 
-# Logging
 logging:
   level:
     root: INFO
-    com.theron.wallet: DEBUG
-    org.springframework.web.reactive.function.client: WARN
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{correlationId}] %-5level %logger{36} - %msg%n"
