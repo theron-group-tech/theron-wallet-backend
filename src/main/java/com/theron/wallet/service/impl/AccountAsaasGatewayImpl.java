@@ -54,14 +54,24 @@ public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
             throw new AsaasErrorException("Account is not linked to an Asaas subaccount");
         }
 
-        if (!ALLOWED_STATUSES.contains(subaccount.getStatus()) || subaccount.getEncryptedApiKey() == null) {
+        if (subaccount.getEncryptedApiKey() == null) {
             log.warn(
-                    "Asaas gate failed: accountId={}, subaccountId={}, status={}, hasApiKey={} — Asaas HTTP will not be called",
+                    "Asaas gate failed: accountId={}, subaccountId={}, reason=NO_API_KEY — Asaas HTTP will not be called",
+                    accountId,
+                    subaccount.getId());
+            throw new AsaasErrorException(
+                    "Asaas subaccount API key is missing — re-provision the subaccount");
+        }
+
+        if (!ALLOWED_STATUSES.contains(subaccount.getStatus())) {
+            log.warn(
+                    "Asaas gate failed: accountId={}, subaccountId={}, status={} — Asaas HTTP will not be called",
                     accountId,
                     subaccount.getId(),
-                    subaccount.getStatus(),
-                    subaccount.getEncryptedApiKey() != null);
-            throw new AsaasErrorException("Account is not linked to an Asaas subaccount");
+                    subaccount.getStatus());
+            throw new AsaasErrorException(
+                    "Asaas subaccount status is " + subaccount.getStatus()
+                            + " — complete approval/onboarding before PIX");
         }
 
         log.debug("Resolved Asaas Subaccount for accountId={}, subaccountId={}",

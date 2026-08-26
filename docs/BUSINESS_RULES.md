@@ -34,6 +34,7 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
 - Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`).
 - Configura split; administra Platform Account (Master Asaas).
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys` com `ASAAS_API_KEY` (Master). Criação só `EVP`. Resposta usa id Asaas (string); não persiste em `pix_key` (FK de Account).
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
 
@@ -89,7 +90,7 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 
 - Sem ApprovalPolicy. Sem `PENDING_APPROVAL`.
 - Requer bind Asaas utilizável, saldo, limites, Idempotency-Key em transfer.
-- Sem bind → **422** `ASAAS_ERROR`.
+- Sem bind / status ≠ `ACTIVE` / sem apiKey → **422** `ASAAS_ERROR` com mensagem distinta.
 - Criação de chave (`POST /api/v1/pix/keys`): somente `type=EVP` (chave aleatória). A API Asaas não cria CPF, CNPJ, e-mail ou telefone. Outros tipos → **422**. Destino de transferência / beneficiário continua com `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`.
 
 ## 9. Payment Order
