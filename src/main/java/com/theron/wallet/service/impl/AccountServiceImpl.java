@@ -11,6 +11,7 @@ import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.OrganizationStatus;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.DuplicateResourceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
@@ -22,6 +23,7 @@ import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AccountService;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.LedgerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,7 @@ public class AccountServiceImpl implements AccountService {
     private final WalletRepository walletRepository;
     private final LedgerService ledgerService;
     private final AccountAsaasProvisioningService accountAsaasProvisioningService;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     @Transactional
@@ -146,7 +149,12 @@ public class AccountServiceImpl implements AccountService {
         getAccountOrThrow(accountId);
         Wallet wallet = walletRepository.findByAccount_Id(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
-        return WalletMapper.toResponse(wallet);
+        var asaas = asaasBalanceService.fetchAsaasBalance(accountId);
+        boolean unavailable = asaas.isEmpty()
+                && wallet.getSubaccount() != null
+                && wallet.getSubaccount().getStatus() == SubaccountStatus.ACTIVE
+                && wallet.getSubaccount().getEncryptedApiKey() != null;
+        return WalletMapper.toResponse(wallet, asaas.orElse(wallet.getBalance()), wallet.getBalance(), unavailable);
     }
 
     private AccountResponse toEnrichedResponse(Account account) {

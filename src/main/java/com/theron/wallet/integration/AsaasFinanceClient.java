@@ -13,6 +13,10 @@ public class AsaasFinanceClient {
     private final AsaasProperties asaasProperties;
 
     public AsaasFinanceBalanceResponse getMasterBalance() {
-        return gateway.get(asaasProperties.getKey(), "/finance/balance", AsaasFinanceBalanceResponse.class);
+        return getBalance(asaasProperties.getKey());
+    }
+
+    public AsaasFinanceBalanceResponse getBalance(String apiKey) {
+        return gateway.get(apiKey, "/finance/balance", AsaasFinanceBalanceResponse.class);
     }
 }

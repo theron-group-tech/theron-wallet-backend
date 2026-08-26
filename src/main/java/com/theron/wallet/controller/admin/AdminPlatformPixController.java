@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/admin/platform-account/pix")
@@ -93,5 +94,12 @@ public class AdminPlatformPixController {
             @PageableDefault(size = 20, sort = "dateCreated", direction = Sort.Direction.DESC) Pageable pageable) {
         actorResolver.requireAdmin();
         return ResponseEntity.ok(platformPixService.listTransfers(pageable));
+    }
+
+    @PostMapping("/reconcile-credits")
+    @Operation(summary = "Reconcile local credits for completed Platform PIX transfers")
+    public ResponseEntity<Map<String, Integer>> reconcileCredits() {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(Map.of("credited", platformPixService.reconcileCredits()));
     }
 }

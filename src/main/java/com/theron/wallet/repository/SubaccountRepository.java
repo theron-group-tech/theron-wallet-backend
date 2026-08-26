@@ -37,6 +37,14 @@ public interface SubaccountRepository extends JpaRepository<Subaccount, UUID> {
 
     List<Subaccount> findByStatus(SubaccountStatus status);
 
+    @Query("""
+            SELECT s FROM Subaccount s
+            JOIN FETCH s.account a
+            JOIN FETCH a.organization
+            WHERE s.status = :status
+            """)
+    List<Subaccount> findByStatusWithAccountAndOrganization(@Param("status") SubaccountStatus status);
+
     /** Paginated list — optional status filter. */
     Page<Subaccount> findByStatus(SubaccountStatus status, Pageable pageable);
 }

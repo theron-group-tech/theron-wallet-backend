@@ -30,6 +30,7 @@ import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuthorizationService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
@@ -73,6 +74,7 @@ public class WithdrawServiceImpl implements WithdrawService {
     private final AuthorizationService authorizationService;
     private final TransactionLimitService transactionLimitService;
     private final PlatformTransactionManager transactionManager;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     public WithdrawResponse createWithdraw(UUID actorUserId, WithdrawRequest request) {
@@ -127,6 +129,15 @@ public class WithdrawServiceImpl implements WithdrawService {
                     .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
             authorizeAndLimitIfAccountPresent(wallet, actor, request.getAmount());
 
+            if (wallet.getAccount() != null) {
+                java.math.BigDecimal available =
+                        asaasBalanceService.displayBalance(wallet.getAccount().getId());
+                if (available.compareTo(request.getAmount()) < 0) {
+                    throw new InsufficientBalanceException(
+                            String.format("Insufficient balance. Available: %s, Requested: %s",
+                                    available, request.getAmount()));
+                }
+            }
             if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
                 throw new InsufficientBalanceException(
                         String.format("Insufficient balance. Available: %s, Requested: %s",

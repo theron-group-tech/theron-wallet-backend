@@ -15,12 +15,12 @@ import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.mapper.AccountMapper;
 import com.theron.wallet.mapper.TransactionMapper;
-import com.theron.wallet.mapper.WalletMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.MeService;
 import com.theron.wallet.service.MobileScopeService;
 import com.theron.wallet.service.NotificationService;
@@ -66,6 +66,7 @@ public class MeServiceImpl implements MeService {
     private final StatementService statementService;
     private final NotificationService notificationService;
     private final AccountAsaasProvisioningService accountAsaasProvisioningService;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     @Transactional(readOnly = true)
@@ -87,9 +88,12 @@ public class MeServiceImpl implements MeService {
     @Transactional(readOnly = true)
     public DashboardResponse dashboard(UUID userId, UUID organizationId, UUID accountId) {
         List<UUID> accountIds = mobileScopeService.accountIds(userId, organizationId, accountId);
-        BigDecimal balance = money(accountIds.isEmpty()
+        BigDecimal ledgerBalance = money(accountIds.isEmpty()
                 ? BigDecimal.ZERO
                 : walletRepository.sumBalanceByAccountIds(accountIds));
+        BigDecimal balance = accountIds.isEmpty()
+                ? money(BigDecimal.ZERO)
+                : asaasBalanceService.sumDisplayBalances(accountIds);
         BigDecimal blocked = money(accountIds.isEmpty()
                 ? BigDecimal.ZERO
                 : transactionRepository.sumByAccountIdsAndTypeAndStatus(
@@ -123,6 +127,7 @@ public class MeServiceImpl implements MeService {
 
         return DashboardResponse.builder()
                 .balance(balance)
+                .ledgerBalance(ledgerBalance)
                 .availableBalance(available)
                 .blockedBalance(blocked)
                 .currency(CURRENCY)
@@ -162,7 +167,27 @@ public class MeServiceImpl implements MeService {
             return PageResponse.from(Page.empty(clamped));
         }
         return PageResponse.from(walletRepository.findByAccount_IdIn(accountIds, clamped)
-                .map(WalletMapper::toResponse));
+                .map(this::toWalletResponse));
+    }
+
+    private WalletResponse toWalletResponse(com.theron.wallet.entity.Wallet wallet) {
+        UUID accountId = wallet.getAccount() != null ? wallet.getAccount().getId() : null;
+        BigDecimal ledger = money(wallet.getBalance());
+        var asaas = accountId != null ? asaasBalanceService.fetchAsaasBalance(accountId) : java.util.Optional.<BigDecimal>empty();
+        return WalletResponse.builder()
+                .id(wallet.getId())
+                .subaccountId(wallet.getSubaccount() != null ? wallet.getSubaccount().getId() : null)
+                .accountId(accountId)
+                .balance(asaas.orElse(ledger))
+                .ledgerBalance(ledger)
+                .asaasBalanceUnavailable(accountId != null && asaas.isEmpty()
+                        && wallet.getSubaccount() != null
+                        && wallet.getSubaccount().getStatus() == com.theron.wallet.enums.SubaccountStatus.ACTIVE)
+                .currency(wallet.getCurrency())
+                .active(wallet.getActive())
+                .createdAt(wallet.getCreatedAt())
+                .updatedAt(wallet.getUpdatedAt())
+                .build();
     }
 
     @Override

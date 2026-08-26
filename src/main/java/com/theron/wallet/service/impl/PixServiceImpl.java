@@ -50,6 +50,7 @@ import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AccountLimitService;
 import com.theron.wallet.service.ApprovalWorkflowService;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
@@ -97,6 +98,7 @@ public class PixServiceImpl implements PixService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final PlatformTransactionManager transactionManager;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     @Transactional
@@ -346,11 +348,7 @@ public class PixServiceImpl implements PixService {
 
             Wallet wallet = walletRepository.findByAccountIdWithLock(accountId)
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
-            if (wallet.getBalance().compareTo(locked.getAmount()) < 0) {
-                throw new InsufficientBalanceException(String.format(
-                        "Insufficient balance. Available: %s, Requested: %s",
-                        wallet.getBalance(), locked.getAmount()));
-            }
+            assertSufficientSpendBalance(accountId, wallet, locked.getAmount());
 
             accountAsaasGateway.requireConfiguredSubaccount(accountId);
 
@@ -392,11 +390,7 @@ public class PixServiceImpl implements PixService {
             Wallet wallet = walletRepository.findByAccountIdWithLock(managedAccount.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", managedAccount.getId()));
 
-            if (wallet.getBalance().compareTo(request.getAmount()) < 0) {
-                throw new InsufficientBalanceException(String.format(
-                        "Insufficient balance. Available: %s, Requested: %s",
-                        wallet.getBalance(), request.getAmount()));
-            }
+            assertSufficientSpendBalance(managedAccount.getId(), wallet, request.getAmount());
 
             // Ensure Asaas rail still configured (no local-only money movement)
             accountAsaasGateway.requireConfiguredSubaccount(managedAccount.getId());
@@ -608,6 +602,24 @@ public class PixServiceImpl implements PixService {
                 LimitTransactionType.PIX,
                 amount,
                 excludeTransactionId));
+    }
+
+    /**
+     * Spend gate prefers Asaas balance for display truth; ledger must still cover the debit.
+     */
+    private void assertSufficientSpendBalance(UUID accountId, Wallet wallet, java.math.BigDecimal amount) {
+        java.math.BigDecimal available = asaasBalanceService.displayBalance(accountId);
+        if (available.compareTo(amount) < 0) {
+            throw new InsufficientBalanceException(String.format(
+                    "Insufficient balance. Available: %s, Requested: %s",
+                    available, amount));
+        }
+        if (wallet.getBalance().compareTo(amount) < 0) {
+            throw new InsufficientBalanceException(String.format(
+                    "Insufficient local ledger balance (Asaas available: %s, ledger: %s, requested: %s). "
+                            + "Ask platform admin to run PIX credit reconcile.",
+                    available, wallet.getBalance(), amount));
+        }
     }
 
     private record TransferDestination(String pixKey, PixKeyType pixKeyType, Beneficiary beneficiary) {

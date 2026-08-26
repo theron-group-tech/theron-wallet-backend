@@ -3,11 +3,13 @@ package com.theron.wallet.service.impl;
 import com.theron.wallet.dto.response.WalletResponse;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.mapper.WalletMapper;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
@@ -26,13 +28,14 @@ public class WalletServiceImpl implements WalletService {
     private final WalletRepository walletRepository;
     private final SubaccountRepository subaccountRepository;
     private final LedgerService ledgerService;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     @Transactional(readOnly = true)
     public WalletResponse findBySubaccountId(UUID subaccountId) {
         Wallet wallet = walletRepository.findBySubaccountId(subaccountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "subaccountId", subaccountId));
-        return WalletMapper.toResponse(wallet);
+        return toEnrichedResponse(wallet);
     }
 
     @Override
@@ -40,15 +43,29 @@ public class WalletServiceImpl implements WalletService {
     public WalletResponse findById(UUID walletId) {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "id", walletId));
-        return WalletMapper.toResponse(wallet);
+        return toEnrichedResponse(wallet);
     }
 
     @Override
     @Transactional
     public WalletResponse getOrCreateWallet(UUID subaccountId) {
         return walletRepository.findBySubaccountId(subaccountId)
-                .map(WalletMapper::toResponse)
+                .map(this::toEnrichedResponse)
                 .orElseGet(() -> createWallet(subaccountId));
+    }
+
+    private WalletResponse toEnrichedResponse(Wallet wallet) {
+        UUID accountId = wallet.getAccount() != null ? wallet.getAccount().getId() : null;
+        BigDecimal ledger = wallet.getBalance();
+        if (accountId == null) {
+            return WalletMapper.toResponse(wallet, ledger, ledger, null);
+        }
+        var asaas = asaasBalanceService.fetchAsaasBalance(accountId);
+        boolean unavailable = asaas.isEmpty()
+                && wallet.getSubaccount() != null
+                && wallet.getSubaccount().getStatus() == SubaccountStatus.ACTIVE
+                && wallet.getSubaccount().getEncryptedApiKey() != null;
+        return WalletMapper.toResponse(wallet, asaas.orElse(ledger), ledger, unavailable);
     }
 
     @Override

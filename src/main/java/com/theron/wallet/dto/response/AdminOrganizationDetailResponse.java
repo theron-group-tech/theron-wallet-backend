@@ -40,6 +40,10 @@ public class AdminOrganizationDetailResponse {
         private String asaasAccountId;
         private String asaasWalletId;
         private LocalDateTime createdAt;
+        /** Local ledger ({@code wallet.balance}). */
         private BigDecimal walletBalance;
+        /** Asaas {@code /finance/balance} when subaccount ACTIVE. */
+        private BigDecimal asaasBalance;
+        private Boolean asaasBalanceUnavailable;
     }
 }

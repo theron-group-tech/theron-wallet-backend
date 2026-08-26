@@ -484,11 +484,13 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | GET | `/api/v1/admin/organizations/{id}` | `{ organization, accounts[] }` — unwrap no FE |
 | POST | `/api/v1/admin/organizations/{id}/owners` | Criar OWNER completo: user + membership OWNER + Account + Asaas. Body: `name`, `email`, `password`, `phone?`, `document`, `documentType` |
 | POST | `/api/v1/admin/organizations/{id}/admin` | Legado: assign OWNER a `userId` já existente |
-| GET | `/api/v1/admin/platform-account` | Carteira Master: `label`, `asaasMasterWalletId`, `balance`, `currency` |
+| GET | `/api/v1/admin/platform-account` | Carteira Master: `label`, `asaasMasterWalletId`, `balance` (Asaas), `currency` |
+| GET | `/api/v1/admin/platform-account/balance-divergences` | Contas ACTIVE com diferença Asaas vs ledger (`divergedCount`, `items[]`) |
 | GET/POST/DELETE | `/api/v1/admin/platform-account/pix/keys` | Chaves PIX Master (`ASAAS_API_KEY`). POST só `{ "type": "EVP" }`. Resposta: `id` (Asaas string), `type`, `key`, `status` — sem `accountId` |
 | GET | `/api/v1/admin/platform-account/pix/keys/lookup?type&key` | Lookup automático no modal de envio PIX Master (Asaas external): `ownerName`, `ownerCpfCnpj`, `institutionName`, `institutionCode`, `ispb` — sem passo separado no formulário |
 | GET | `/api/v1/pix/keys/lookup?accountId&type&key` | Idem no produto (modal de envio; apiKey da subconta; `pix.transfer` + bind ACTIVE) |
-| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId` |
+| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local |
+| POST | `/api/v1/admin/platform-account/pix/reconcile-credits` | Backfill créditos locais de transfers Master COMPLETED sem `credit_transaction_id` → `{ credited }` |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
 | GET/PATCH | `/api/v1/admin/splits` | Config de split |
 

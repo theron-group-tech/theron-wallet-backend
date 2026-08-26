@@ -13,8 +13,10 @@ import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
 import com.theron.wallet.dto.response.AdminOwnerResponse;
 import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
+import com.theron.wallet.dto.response.BalanceDivergenceResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.dto.response.PlatformAccountResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.Account;
@@ -44,9 +46,11 @@ import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.AdminPlatformService;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.OrganizationMembershipService;
 import com.theron.wallet.service.OrganizationService;
+import com.theron.wallet.service.PlatformAccountService;
 import com.theron.wallet.service.PlatformSplitService;
 import com.theron.wallet.service.RoleAssignmentService;
 import com.theron.wallet.service.UserService;
@@ -61,10 +65,13 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -84,6 +91,10 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     private final AccountAsaasProvisioningService provisioningService;
     private final PlatformSplitService platformSplitService;
     private final AuditLogService auditLogService;
+    private final AsaasBalanceService asaasBalanceService;
+    private final PlatformAccountService platformAccountService;
+
+    private static final BigDecimal DIVERGENCE_TOLERANCE = new BigDecimal("0.01");
 
     @Override
     @Transactional
@@ -406,6 +417,11 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
     private AdminOrganizationDetailResponse.AdminAccountSummary toAccountSummary(Account account) {
         Subaccount subaccount = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
         Wallet wallet = walletRepository.findByAccount_Id(account.getId()).orElse(null);
+        Optional<BigDecimal> asaas = asaasBalanceService.fetchAsaasBalance(account.getId());
+        boolean asaasUnavailable = subaccount != null
+                && subaccount.getStatus() == SubaccountStatus.ACTIVE
+                && subaccount.getEncryptedApiKey() != null
+                && asaas.isEmpty();
         return AdminOrganizationDetailResponse.AdminAccountSummary.builder()
                 .accountId(account.getId())
                 .ownerUserId(account.getOwnerUser() != null ? account.getOwnerUser().getId() : null)
@@ -417,6 +433,64 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
                 .asaasWalletId(subaccount == null ? null : subaccount.getAsaasWalletId())
                 .createdAt(account.getCreatedAt())
                 .walletBalance(wallet == null ? null : wallet.getBalance())
+                .asaasBalance(asaas.orElse(null))
+                .asaasBalanceUnavailable(asaasUnavailable)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BalanceDivergenceResponse listBalanceDivergences() {
+        BigDecimal masterBalance = null;
+        try {
+            PlatformAccountResponse platform = platformAccountService.get();
+            masterBalance = platform.getBalance();
+        } catch (Exception ignored) {
+            // master balance optional for the panel
+        }
+
+        List<BalanceDivergenceResponse.Item> items = new ArrayList<>();
+        for (Subaccount subaccount : subaccountRepository.findByStatusWithAccountAndOrganization(
+                SubaccountStatus.ACTIVE)) {
+            if (subaccount.getEncryptedApiKey() == null || subaccount.getAccount() == null) {
+                continue;
+            }
+            Account account = subaccount.getAccount();
+            Optional<BigDecimal> asaasOpt = asaasBalanceService.fetchAsaasBalance(account.getId());
+            BigDecimal ledger = asaasBalanceService.ledgerBalance(account.getId());
+            boolean unavailable = asaasOpt.isEmpty();
+            BigDecimal asaas = asaasOpt.orElse(null);
+            BigDecimal difference = unavailable
+                    ? null
+                    : asaas.subtract(ledger).setScale(2, RoundingMode.HALF_UP);
+            boolean diverged = unavailable
+                    || difference.abs().compareTo(DIVERGENCE_TOLERANCE) >= 0;
+            if (!diverged) {
+                continue;
+            }
+            items.add(BalanceDivergenceResponse.Item.builder()
+                    .accountId(account.getId())
+                    .organizationId(account.getOrganization() != null
+                            ? account.getOrganization().getId() : null)
+                    .organizationName(account.getOrganization() != null
+                            ? (account.getOrganization().getTradeName() != null
+                                    && !account.getOrganization().getTradeName().isBlank()
+                                    ? account.getOrganization().getTradeName()
+                                    : account.getOrganization().getLegalName())
+                            : null)
+                    .accountName(account.getName())
+                    .asaasBalance(asaas)
+                    .ledgerBalance(ledger)
+                    .difference(difference)
+                    .diverged(true)
+                    .asaasBalanceUnavailable(unavailable)
+                    .build());
+        }
+
+        return BalanceDivergenceResponse.builder()
+                .masterAsaasBalance(masterBalance)
+                .divergedCount(items.size())
+                .items(items)
                 .build();
     }
 

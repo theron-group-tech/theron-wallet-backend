@@ -9,6 +9,7 @@ import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
 import com.theron.wallet.dto.response.AdminOwnerResponse;
 import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
+import com.theron.wallet.dto.response.BalanceDivergenceResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
@@ -61,4 +62,6 @@ public interface AdminPlatformService {
     SplitConfigResponse getSplit();
 
     SplitConfigResponse updateSplit(UpdateSplitConfigRequest request, UUID adminId);
+
+    BalanceDivergenceResponse listBalanceDivergences();
 }

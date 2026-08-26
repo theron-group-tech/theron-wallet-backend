@@ -10,6 +10,7 @@ import com.theron.wallet.dto.response.AdminOrganizationDetailResponse;
 import com.theron.wallet.dto.response.AdminOwnerResponse;
 import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
+import com.theron.wallet.dto.response.BalanceDivergenceResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.PlatformAccountResponse;
@@ -184,5 +185,12 @@ public class AdminPlatformController {
     public ResponseEntity<PlatformAccountResponse> getPlatformAccount() {
         actorResolver.requireAdmin();
         return ResponseEntity.ok(platformAccountService.get());
+    }
+
+    @GetMapping("/platform-account/balance-divergences")
+    @Operation(summary = "Accounts where Asaas balance diverges from local ledger")
+    public ResponseEntity<BalanceDivergenceResponse> balanceDivergences() {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(adminPlatformService.listBalanceDivergences());
     }
 }

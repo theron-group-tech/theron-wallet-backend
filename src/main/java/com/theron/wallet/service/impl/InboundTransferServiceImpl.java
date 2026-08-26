@@ -10,6 +10,7 @@ import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.UnauthorizedException;
+import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -37,6 +38,7 @@ public class InboundTransferServiceImpl implements InboundTransferService {
 
     private final AsaasProperties asaasProperties;
     private final SubaccountRepository subaccountRepository;
+    private final PlatformPixTransferRepository platformPixTransferRepository;
     private final TransactionRepository transactionRepository;
     private final WalletRepository walletRepository;
     private final WalletService walletService;
@@ -93,6 +95,9 @@ public class InboundTransferServiceImpl implements InboundTransferService {
             log.warn("Ignoring inbound Asaas transfer without positive value: transferId={}", transfer.getId());
             return;
         }
+        if (isAlreadyHandledPlatformTransfer(transfer)) {
+            return;
+        }
 
         Optional<Transaction> existing = transactionRepository.findByAsaasPaymentIdForUpdate(transfer.getId());
         Transaction transaction = existing.orElseGet(() -> createTransaction(subaccount, transfer, amount, event));
@@ -106,6 +111,31 @@ public class InboundTransferServiceImpl implements InboundTransferService {
         } else if (transaction.getStatus() == TransactionStatus.PENDING) {
             log.info("Inbound Asaas transfer pending: transferId={}, event={}", transfer.getId(), event);
         }
+    }
+
+    private boolean isAlreadyHandledPlatformTransfer(AsaasWebhookPayload.Transfer transfer) {
+        if (transfer.getExternalReference() == null || transfer.getExternalReference().isBlank()) {
+            return false;
+        }
+        return platformPixTransferRepository.findByIdempotencyKey(transfer.getExternalReference())
+                .map(row -> {
+                    if (row.getCreditTransactionId() != null) {
+                        log.info(
+                                "Inbound Platform PIX transfer already credited; webhook ignored: "
+                                        + "transferId={}, transactionId={}",
+                                transfer.getId(), row.getCreditTransactionId());
+                        return true;
+                    }
+                    if (transactionRepository.findByAsaasPaymentId(transfer.getId()).isPresent()) {
+                        log.info(
+                                "Inbound Platform PIX transfer already has a local transaction; webhook ignored: "
+                                        + "transferId={}",
+                                transfer.getId());
+                        return true;
+                    }
+                    return false;
+                })
+                .orElse(false);
     }
 
     private Transaction createTransaction(

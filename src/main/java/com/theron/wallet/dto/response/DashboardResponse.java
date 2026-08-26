@@ -20,6 +20,8 @@ import java.util.UUID;
 public class DashboardResponse {
 
     private BigDecimal balance;
+    /** Local ledger total for the same scope (for divergence / audit). */
+    private BigDecimal ledgerBalance;
     private BigDecimal availableBalance;
     private BigDecimal blockedBalance;
     private String currency;

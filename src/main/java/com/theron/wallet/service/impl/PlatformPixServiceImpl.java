@@ -12,15 +12,28 @@ import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
+import com.theron.wallet.entity.PixKey;
 import com.theron.wallet.entity.PlatformPixTransfer;
+import com.theron.wallet.entity.Transaction;
+import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.NotificationType;
+import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.PixKeyLookupMapper;
+import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PlatformPixTransferRepository;
+import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.PlatformPixService;
+import com.theron.wallet.service.TransactionLifecycleService;
+import com.theron.wallet.service.WalletService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -33,10 +46,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -52,6 +68,12 @@ public class PlatformPixServiceImpl implements PlatformPixService {
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasProperties asaasProperties;
     private final PlatformPixTransferRepository platformPixTransferRepository;
+    private final PixKeyRepository pixKeyRepository;
+    private final TransactionRepository transactionRepository;
+    private final WalletRepository walletRepository;
+    private final WalletService walletService;
+    private final NotificationService notificationService;
+    private final TransactionLifecycleService transactionLifecycleService;
     private final PlatformTransactionManager transactionManager;
 
     @Override
@@ -109,6 +131,10 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         Optional<PlatformPixTransfer> existing =
                 platformPixTransferRepository.findByIdempotencyKey(normalizedKey);
         if (existing.isPresent()) {
+            if (existing.get().getStatus() == TransactionStatus.COMPLETED
+                    && existing.get().getCreditTransactionId() == null) {
+                creditInNewTransaction(existing.get().getId());
+            }
             return toTransferResponse(existing.get());
         }
 
@@ -164,6 +190,9 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         if (saved == null) {
             throw new InvalidRequestException("Failed to persist Platform PIX transfer");
         }
+        if (saved.getStatus() == TransactionStatus.COMPLETED) {
+            creditInNewTransaction(saved.getId());
+        }
         return toTransferResponse(saved);
     }
 
@@ -192,7 +221,7 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         if (asaasTransferId == null || asaasTransferId.isBlank()) {
             return;
         }
-        platformPixTransferRepository.findByAsaasTransferId(asaasTransferId).ifPresent(row -> {
+        platformPixTransferRepository.findByAsaasTransferIdForUpdate(asaasTransferId).ifPresent(row -> {
             TransactionStatus next = mapWebhookEventToStatus(event);
             if (next != null && row.getStatus() != next) {
                 row.setStatus(next);
@@ -200,7 +229,122 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 log.info("Updated platform_pix_transfer status: asaasTransferId={}, status={}",
                         asaasTransferId, next);
             }
+            if (row.getStatus() == TransactionStatus.COMPLETED) {
+                maybeCreditInternalDestination(row);
+            }
         });
+    }
+
+    @Override
+    @Transactional
+    public int reconcileCredits() {
+        int credited = 0;
+        List<PlatformPixTransfer> rows =
+                platformPixTransferRepository.findByStatusAndCreditTransactionIdIsNull(
+                        TransactionStatus.COMPLETED);
+        for (PlatformPixTransfer row : rows) {
+            if (maybeCreditInternalDestination(row)) {
+                credited++;
+            }
+        }
+        return credited;
+    }
+
+    private boolean creditInNewTransaction(UUID platformTransferId) {
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        Boolean credited = requiresNew.execute(status -> platformPixTransferRepository
+                .findByIdForUpdate(platformTransferId)
+                .map(this::maybeCreditInternalDestination)
+                .orElse(false));
+        return Boolean.TRUE.equals(credited);
+    }
+
+    private boolean maybeCreditInternalDestination(PlatformPixTransfer row) {
+        if (row.getStatus() != TransactionStatus.COMPLETED || row.getCreditTransactionId() != null) {
+            return false;
+        }
+
+        PixKey destination = pixKeyRepository
+                .findByKeyAndStatus(row.getDestinationPixKey(), PixKeyStatus.ACTIVE)
+                .orElse(null);
+        if (destination == null) {
+            return false;
+        }
+
+        String creditIdempotencyKey = "asaas:platform-pix:in:" + row.getAsaasTransferId();
+        Optional<Transaction> existing =
+                transactionRepository.findByAsaasPaymentId(row.getAsaasTransferId());
+        if (existing.isEmpty()) {
+            existing = transactionRepository.findByIdempotencyKey(creditIdempotencyKey);
+        }
+
+        if (existing.isPresent()) {
+            Transaction transaction = existing.get();
+            boolean credited = completeExistingCredit(transaction);
+            if (transaction.getStatus() == TransactionStatus.COMPLETED) {
+                row.setCreditTransactionId(transaction.getId());
+                platformPixTransferRepository.save(row);
+            }
+            return credited;
+        }
+
+        Wallet wallet = walletRepository.findByAccountIdWithLock(destination.getAccount().getId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Wallet not found for internal PIX destination account"));
+        Transaction transaction = transactionRepository.save(Transaction.builder()
+                .wallet(wallet)
+                .account(destination.getAccount())
+                .organization(destination.getOrganization())
+                .type(TransactionType.TRANSFER_IN)
+                .status(TransactionStatus.PENDING)
+                .amount(row.getAmount())
+                .currency("BRL")
+                .description(row.getDescription() != null
+                        ? row.getDescription()
+                        : "Transferência PIX recebida da conta Master")
+                .asaasPaymentId(row.getAsaasTransferId())
+                .externalReference(row.getIdempotencyKey())
+                .idempotencyKey(creditIdempotencyKey)
+                .build());
+        transaction = transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
+        walletService.credit(wallet.getId(), row.getAmount());
+        row.setCreditTransactionId(transaction.getId());
+        platformPixTransferRepository.save(row);
+        notifyReceived(transaction);
+        log.info("Credited internal Platform PIX destination: asaasTransferId={}, transactionId={}, accountId={}",
+                row.getAsaasTransferId(), transaction.getId(), destination.getAccount().getId());
+        return true;
+    }
+
+    private boolean completeExistingCredit(Transaction transaction) {
+        if (transaction.getStatus() == TransactionStatus.COMPLETED) {
+            return false;
+        }
+        if (transaction.getStatus() != TransactionStatus.PENDING
+                && transaction.getStatus() != TransactionStatus.PROCESSING) {
+            log.warn("Cannot reconcile Platform PIX credit from terminal transaction: transactionId={}, status={}",
+                    transaction.getId(), transaction.getStatus());
+            return false;
+        }
+        transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
+        walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
+        notifyReceived(transaction);
+        return true;
+    }
+
+    private void notifyReceived(Transaction transaction) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("amount", transaction.getAmount().toPlainString());
+        data.put("transactionId", transaction.getId().toString());
+        data.put("type", transaction.getType().name());
+        notificationService.notifyUsersWithPermission(
+                transaction.getOrganization().getId(),
+                PermissionCodes.WALLET_READ,
+                null,
+                NotificationType.TRANSFER_RECEIVED,
+                transaction.getId(),
+                data);
     }
 
     private String requireMasterApiKey() {

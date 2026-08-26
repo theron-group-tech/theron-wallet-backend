@@ -23,8 +23,12 @@ public class WalletResponse {
     private UUID subaccountId;
     private UUID accountId;
     private BigDecimal balance;
+    /** Local ledger mirror ({@code wallet.balance}). */
+    private BigDecimal ledgerBalance;
     private String currency;
     private Boolean active;
+    /** True when Asaas ACTIVE subaccount exists but balance could not be fetched. */
+    private Boolean asaasBalanceUnavailable;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

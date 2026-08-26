@@ -32,10 +32,11 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 ## 2. Platform Owner
 
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
-- Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`).
+- Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`). Divergências Asaas vs ledger local: `GET /admin/platform-account/balance-divergences`.
 - Configura split; administra Platform Account (Master Asaas).
-- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup` (lookup de destino via Asaas `/pix/addressKeys/external`, usado no modal de confirmação de envio) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` (sem FK de Account) para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / URL). Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status sem exigir subconta.
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup` (lookup de destino via Asaas `/pix/addressKeys/external`, usado no modal de confirmação de envio) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` (sem FK de Account) para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / URL). Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status; se o destino for chave PIX Theron ACTIVE, creditam `TRANSFER_IN` + wallet local (`credit_transaction_id`). Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
 - PIX produto: `GET /pix/keys/lookup?accountId&type&key` consulta destino com a apiKey da subconta no modal de envio (exige bind ACTIVE + `pix.transfer`).
+- **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). `wallet.balance` / ledger permanecem espelho interno; dashboard inclui `ledgerBalance` para auditoria.
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
 

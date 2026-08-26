@@ -32,6 +32,18 @@ public interface PixKeyRepository extends JpaRepository<PixKey, UUID> {
             """)
     Optional<PixKey> findByIdWithOwner(@Param("id") UUID id);
 
+    @Query("""
+            SELECT p FROM PixKey p
+            JOIN FETCH p.account a
+            JOIN FETCH a.organization
+            JOIN FETCH p.organization
+            WHERE p.key = :key
+              AND p.status = :status
+            """)
+    Optional<PixKey> findByKeyAndStatus(
+            @Param("key") String key,
+            @Param("status") PixKeyStatus status);
+
     boolean existsByAccount_IdAndKeyAndStatus(UUID accountId, String key, PixKeyStatus status);
 
     boolean existsByAccount_IdAndKeyAndStatusAndIdNot(UUID accountId, String key, PixKeyStatus status, UUID id);

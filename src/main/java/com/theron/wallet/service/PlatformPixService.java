@@ -26,4 +26,6 @@ public interface PlatformPixService {
     Page<PlatformPixTransferResponse> listTransfers(Pageable pageable);
 
     void applyWebhookStatus(String asaasTransferId, String event);
+
+    int reconcileCredits();
 }
