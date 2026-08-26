@@ -10,11 +10,13 @@ import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
+import com.theron.wallet.entity.PlatformPixTransfer;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasTransferClient;
+import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.service.PlatformPixService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,10 +24,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 @Slf4j
@@ -41,6 +48,8 @@ public class PlatformPixServiceImpl implements PlatformPixService {
     private final AsaasPixClient asaasPixClient;
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasProperties asaasProperties;
+    private final PlatformPixTransferRepository platformPixTransferRepository;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     public List<PlatformPixKeyResponse> listKeys() {
@@ -79,6 +88,13 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new InvalidRequestException("Idempotency-Key is required for Platform PIX transfers");
         }
+        String normalizedKey = idempotencyKey.trim();
+        Optional<PlatformPixTransfer> existing =
+                platformPixTransferRepository.findByIdempotencyKey(normalizedKey);
+        if (existing.isPresent()) {
+            return toTransferResponse(existing.get());
+        }
+
         String destinationKey = request.getDestinationPixKey() != null
                 ? request.getDestinationPixKey().trim()
                 : null;
@@ -100,15 +116,38 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .pixAddressKeyType(request.getDestinationPixKeyType().name())
                 .operationType("PIX")
                 .description(description)
-                .externalReference(idempotencyKey.trim())
+                .externalReference(normalizedKey)
                 .build();
 
         AsaasTransferResponse created = asaasTransferClient.createTransfer(
-                masterKey, transferRequest, idempotencyKey.trim());
+                masterKey, transferRequest, normalizedKey);
         log.info("Created Platform Account PIX transfer in Asaas: id={}, status={}",
                 created.getId(), created.getStatus());
-        return toTransferResponse(
-                created, destinationKey, request.getDestinationPixKeyType(), description);
+
+        // Commit immediately so Asaas transfer-validation can APPROVE before this HTTP returns.
+        TransactionStatus status = mapTransferStatus(created.getStatus());
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        PlatformPixTransfer saved = requiresNew.execute(statusTx -> {
+            Optional<PlatformPixTransfer> raced =
+                    platformPixTransferRepository.findByIdempotencyKey(normalizedKey);
+            if (raced.isPresent()) {
+                return raced.get();
+            }
+            return platformPixTransferRepository.save(PlatformPixTransfer.builder()
+                    .asaasTransferId(created.getId())
+                    .amount(created.getValue() != null ? created.getValue() : request.getAmount())
+                    .status(status)
+                    .destinationPixKey(destinationKey)
+                    .destinationPixKeyType(request.getDestinationPixKeyType())
+                    .description(description)
+                    .idempotencyKey(normalizedKey)
+                    .build());
+        });
+        if (saved == null) {
+            throw new InvalidRequestException("Failed to persist Platform PIX transfer");
+        }
+        return toTransferResponse(saved);
     }
 
     @Override
@@ -130,6 +169,23 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         return new PageImpl<>(content, pageable, total);
     }
 
+    @Override
+    @Transactional
+    public void applyWebhookStatus(String asaasTransferId, String event) {
+        if (asaasTransferId == null || asaasTransferId.isBlank()) {
+            return;
+        }
+        platformPixTransferRepository.findByAsaasTransferId(asaasTransferId).ifPresent(row -> {
+            TransactionStatus next = mapWebhookEventToStatus(event);
+            if (next != null && row.getStatus() != next) {
+                row.setStatus(next);
+                platformPixTransferRepository.save(row);
+                log.info("Updated platform_pix_transfer status: asaasTransferId={}, status={}",
+                        asaasTransferId, next);
+            }
+        });
+    }
+
     private String requireMasterApiKey() {
         String key = asaasProperties.getKey();
         if (key == null || key.isBlank()) {
@@ -145,6 +201,19 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .type(type)
                 .key(asaas.getKey())
                 .status(asaas.getStatus())
+                .build();
+    }
+
+    private PlatformPixTransferResponse toTransferResponse(PlatformPixTransfer row) {
+        return PlatformPixTransferResponse.builder()
+                .id(row.getAsaasTransferId())
+                .amount(row.getAmount())
+                .status(row.getStatus())
+                .destinationPixKey(row.getDestinationPixKey())
+                .destinationPixKeyType(row.getDestinationPixKeyType())
+                .providerReference(row.getAsaasTransferId())
+                .description(row.getDescription())
+                .createdAt(row.getCreatedAt() != null ? row.getCreatedAt().toString() : null)
                 .build();
     }
 
@@ -191,6 +260,20 @@ public class PlatformPixServiceImpl implements PlatformPixService {
             return TransactionStatus.PROCESSING;
         }
         return TransactionStatus.PROCESSING;
+    }
+
+    static TransactionStatus mapWebhookEventToStatus(String event) {
+        if (event == null || event.isBlank()) {
+            return null;
+        }
+        return switch (event.trim().toUpperCase(Locale.ROOT)) {
+            case "TRANSFER_DONE" -> TransactionStatus.COMPLETED;
+            case "TRANSFER_FAILED", "TRANSFER_BLOCKED" -> TransactionStatus.FAILED;
+            case "TRANSFER_CANCELLED" -> TransactionStatus.CANCELLED;
+            case "TRANSFER_CREATED", "TRANSFER_PENDING", "TRANSFER_IN_BANK_PROCESSING" ->
+                    TransactionStatus.PROCESSING;
+            default -> null;
+        };
     }
 
     private static PixKeyType parseType(String raw) {

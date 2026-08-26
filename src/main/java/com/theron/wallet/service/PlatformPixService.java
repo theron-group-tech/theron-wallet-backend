@@ -20,4 +20,6 @@ public interface PlatformPixService {
     PlatformPixTransferResponse createTransfer(CreatePlatformPixTransferRequest request, String idempotencyKey);
 
     Page<PlatformPixTransferResponse> listTransfers(Pageable pageable);
+
+    void applyWebhookStatus(String asaasTransferId, String event);
 }

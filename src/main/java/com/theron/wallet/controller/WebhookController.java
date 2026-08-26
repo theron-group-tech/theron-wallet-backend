@@ -3,9 +3,12 @@ package com.theron.wallet.controller;
 import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.dto.asaas.AsaasTransferValidationRequest;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.entity.PlatformPixTransfer;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.service.InboundTransferService;
+import com.theron.wallet.service.PlatformPixService;
 import com.theron.wallet.service.WebhookService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -21,8 +24,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Optional;
 
 @Slf4j
 @RestController
@@ -36,6 +40,8 @@ public class WebhookController {
     private final WebhookService webhookService;
     private final InboundTransferService inboundTransferService;
     private final TransactionRepository transactionRepository;
+    private final PlatformPixTransferRepository platformPixTransferRepository;
+    private final PlatformPixService platformPixService;
     private final AsaasProperties asaasProperties;
 
     @PostMapping("/asaas")
@@ -51,6 +57,9 @@ public class WebhookController {
 
         log.info("Webhook received: event={}", payload.getEvent());
         if (isUnregisteredTransferEvent(payload)) {
+            if (tryHandlePlatformMasterTransfer(webhookToken, payload)) {
+                return ResponseEntity.ok().build();
+            }
             inboundTransferService.receive(webhookToken, payload);
         } else {
             webhookService.receive(webhookToken, payload);
@@ -80,23 +89,56 @@ public class WebhookController {
             return ResponseEntity.ok(TransferValidationResponse.refused("Transferência sem ID"));
         }
 
-        var transaction = transactionRepository.findByAsaasPaymentId(transferId);
-        if (transaction.isEmpty()) {
-            return ResponseEntity.ok(TransferValidationResponse.refused("Transferência não encontrada no Theron"));
-        }
-
-        var tx = transaction.get();
         BigDecimal providerValue = payload.getTransfer().getValue();
-        if (providerValue == null || tx.getAmount() == null || tx.getAmount().compareTo(providerValue) != 0) {
-            return ResponseEntity.ok(TransferValidationResponse.refused(
-                    "Valor da transferência não corresponde ao registrado no Theron"));
-        }
-        if (tx.getStatus() != TransactionStatus.PROCESSING && tx.getStatus() != TransactionStatus.PENDING) {
-            return ResponseEntity.ok(TransferValidationResponse.refused(
-                    "Transferência não está em estado elegível para autorização"));
+
+        var transaction = transactionRepository.findByAsaasPaymentId(transferId);
+        if (transaction.isPresent()) {
+            var tx = transaction.get();
+            if (providerValue == null || tx.getAmount() == null || tx.getAmount().compareTo(providerValue) != 0) {
+                return ResponseEntity.ok(TransferValidationResponse.refused(
+                        "Valor da transferência não corresponde ao registrado no Theron"));
+            }
+            if (tx.getStatus() != TransactionStatus.PROCESSING && tx.getStatus() != TransactionStatus.PENDING) {
+                return ResponseEntity.ok(TransferValidationResponse.refused(
+                        "Transferência não está em estado elegível para autorização"));
+            }
+            return ResponseEntity.ok(TransferValidationResponse.approved());
         }
 
-        return ResponseEntity.ok(TransferValidationResponse.approved());
+        Optional<PlatformPixTransfer> platformTransfer =
+                platformPixTransferRepository.findByAsaasTransferId(transferId);
+        if (platformTransfer.isPresent()) {
+            PlatformPixTransfer row = platformTransfer.get();
+            if (providerValue == null || row.getAmount() == null || row.getAmount().compareTo(providerValue) != 0) {
+                return ResponseEntity.ok(TransferValidationResponse.refused(
+                        "Valor da transferência Master não corresponde ao registrado no Theron"));
+            }
+            if (row.getStatus() != TransactionStatus.PROCESSING && row.getStatus() != TransactionStatus.PENDING) {
+                return ResponseEntity.ok(TransferValidationResponse.refused(
+                        "Transferência Master não está em estado elegível para autorização"));
+            }
+            return ResponseEntity.ok(TransferValidationResponse.approved());
+        }
+
+        return ResponseEntity.ok(TransferValidationResponse.refused("Transferência não encontrada no Theron"));
+    }
+
+    /**
+     * Master Platform Account TRANSFER_* webhooks: no Subaccount row. Ack with global token
+     * and update {@code platform_pix_transfer} when present — avoid 401 Unknown Asaas subaccount.
+     */
+    private boolean tryHandlePlatformMasterTransfer(String webhookToken, AsaasWebhookPayload payload) {
+        if (!isGlobalWebhookToken(webhookToken)) {
+            return false;
+        }
+        if (inboundTransferService.canHandle(webhookToken, payload)) {
+            return false;
+        }
+        String transferId = payload.getTransfer() != null ? payload.getTransfer().getId() : null;
+        platformPixService.applyWebhookStatus(transferId, payload.getEvent());
+        log.info("Ack Master/unbound Asaas TRANSFER webhook: event={}, transferId={}",
+                payload.getEvent(), transferId);
+        return true;
     }
 
     private boolean isUnregisteredTransferEvent(AsaasWebhookPayload payload) {
@@ -105,6 +147,10 @@ public class WebhookController {
         }
         String transferId = payload.getTransfer() != null ? payload.getTransfer().getId() : null;
         return transferId == null || transactionRepository.findByAsaasPaymentId(transferId).isEmpty();
+    }
+
+    private boolean isGlobalWebhookToken(String token) {
+        return tokenMatches(asaasProperties.getWebhookToken(), token);
     }
 
     private static boolean tokenMatches(String expected, String actual) {
