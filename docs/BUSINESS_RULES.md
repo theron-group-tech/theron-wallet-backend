@@ -34,7 +34,7 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
 - Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`).
 - Configura split; administra Platform Account (Master Asaas).
-- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys` com `ASAAS_API_KEY` (Master). Criação só `EVP`. Resposta usa id Asaas (string); não persiste em `pix_key` (FK de Account).
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys` e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key`. Respostas usam id Asaas (string); não persistem em tabelas com FK de Account.
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
 

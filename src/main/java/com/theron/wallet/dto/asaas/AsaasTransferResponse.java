@@ -25,4 +25,8 @@ public class AsaasTransferResponse {
     private String description;
     private String scheduleDate;
     private BigDecimal transferFee;
+    private String pixAddressKey;
+    private String pixAddressKeyType;
+    private String externalReference;
+    private String dateCreated;
 }

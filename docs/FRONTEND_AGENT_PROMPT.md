@@ -486,6 +486,7 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | POST | `/api/v1/admin/organizations/{id}/admin` | Legado: assign OWNER a `userId` já existente |
 | GET | `/api/v1/admin/platform-account` | Carteira Master: `label`, `asaasMasterWalletId`, `balance`, `currency` |
 | GET/POST/DELETE | `/api/v1/admin/platform-account/pix/keys` | Chaves PIX Master (`ASAAS_API_KEY`). POST só `{ "type": "EVP" }`. Resposta: `id` (Asaas string), `type`, `key`, `status` — sem `accountId` |
+| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId` |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
 | GET/PATCH | `/api/v1/admin/splits` | Config de split |
 
