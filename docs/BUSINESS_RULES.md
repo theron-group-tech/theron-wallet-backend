@@ -112,6 +112,8 @@ Estados: `PENDING_APPROVAL` → `APPROVED` → `PROCESSING` → `COMPLETED` | `F
 
 - Continuam como segurança (por operação / diário / hierárquicos).
 - Aplicados na Account correspondente (PIX pessoal e origem de PaymentOrder).
+- `account_limit` (max por operação + diário PIX): provisionado automaticamente na criação da Account (defaults 5000 / 10000) e backfill para contas existentes; sem CRUD HTTP. Auto-ensure no assert do PIX se a linha faltar.
+- `transaction_limit` (UI `/limites`): camada hierárquica org/conta/usuário/role por tipo e período — complementar ao `account_limit`.
 
 ## 11. Split
 

@@ -236,7 +236,7 @@ Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`)
 - `GET /api/v1/limits?organizationId=`
 - `PATCH /api/v1/limits/{id}` `{ "maxAmount?", "enabled?" }`
 
-Há também limite por conta (`account_limit`) provisionado no backend, sem CRUD HTTP dedicado neste catálogo. PIX sem limite de conta → 422.
+Há também limite operacional por conta (`account_limit`: max por operação + diário), **provisionado automaticamente** na criação da Account (defaults `5000` / `10000`, configuráveis via `theron.account-limit.*`) e com backfill Flyway. Sem CRUD HTTP dedicado. A tela `/limites` gerencia `transaction_limit` (camada hierárquica extra). PIX exige ambos os checks quando aplicáveis; `account_limit` ausente é auto-criado no assert.
 
 ### Passo 11 — Notificações
 

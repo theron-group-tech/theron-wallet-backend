@@ -90,6 +90,11 @@ platform:
     fixed-amount: ${PLATFORM_SPLIT_FIXED_AMOUNT:0}
     enabled: ${PLATFORM_SPLIT_ENABLED:true}
 
+theron:
+  account-limit:
+    default-max-operation: ${THERON_ACCOUNT_LIMIT_MAX_OPERATION:5000.00}
+    default-daily: ${THERON_ACCOUNT_LIMIT_DAILY:10000.00}
+
 logging:
   level:
     root: INFO

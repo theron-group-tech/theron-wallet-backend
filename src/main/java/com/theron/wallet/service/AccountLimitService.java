@@ -9,8 +9,14 @@ import java.util.UUID;
 public interface AccountLimitService {
 
     /**
+     * Ensures an {@code account_limit} row exists (creates defaults if missing).
+     */
+    void ensureDefaults(UUID accountId);
+
+    /**
      * Locks account_limit row and validates amount against max operation and daily remaining.
      * Must run inside the same DB transaction as the debit.
+     * Missing rows are auto-provisioned with defaults.
      */
     void assertWithinLimits(UUID accountId, BigDecimal amount);
 

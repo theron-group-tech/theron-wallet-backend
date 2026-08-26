@@ -22,6 +22,7 @@ import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AccountLimitService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.LedgerService;
@@ -45,6 +46,7 @@ public class AccountServiceImpl implements AccountService {
     private final LedgerService ledgerService;
     private final AccountAsaasProvisioningService accountAsaasProvisioningService;
     private final AsaasBalanceService asaasBalanceService;
+    private final AccountLimitService accountLimitService;
 
     @Override
     @Transactional
@@ -95,6 +97,7 @@ public class AccountServiceImpl implements AccountService {
                 .build();
         walletRepository.save(wallet);
         ledgerService.provisionForAccount(account);
+        accountLimitService.ensureDefaults(account.getId());
 
         if (owner != null) {
             accountAsaasProvisioningService.provision(account, asaasDocument);
