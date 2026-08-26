@@ -1,6 +1,7 @@
 package com.theron.wallet.integration;
 
 import com.theron.wallet.dto.asaas.AsaasListResponse;
+import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeRequest;
@@ -9,10 +10,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Asaas PIX client — gerenciamento de chaves Pix e QR Codes estáticos.
- * Todas as operações usam a API key da subconta para isolamento de tenant.
+ * Operações usam a API key passada pelo caller (subconta ou Master).
  */
 @Slf4j
 @Component
@@ -32,6 +34,18 @@ public class AsaasPixClient {
                 apiKey,
                 "/pix/addressKeys",
                 new ParameterizedTypeReference<AsaasListResponse<AsaasPixKeyResponse>>() {});
+    }
+
+    public AsaasPixExternalKeyResponse lookupExternalKey(String apiKey, String type, String key) {
+        log.info("Looking up external PIX key in Asaas: type={}", type);
+        String uri = UriComponentsBuilder
+                .fromPath("/pix/addressKeys/external")
+                .queryParam("type", type)
+                .queryParam("key", key)
+                .encode()
+                .build()
+                .toUriString();
+        return asaasHttpGateway.get(apiKey, uri, AsaasPixExternalKeyResponse.class);
     }
 
     public void deletePixKey(String apiKey, String pixKeyId) {

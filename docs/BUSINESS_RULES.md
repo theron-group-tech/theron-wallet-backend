@@ -34,7 +34,8 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
 - Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`).
 - Configura split; administra Platform Account (Master Asaas).
-- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys` e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` (sem FK de Account) para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / URL). Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status sem exigir subconta.
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup` (confirma chave destino via Asaas `/pix/addressKeys/external`) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` (sem FK de Account) para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / URL). Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status sem exigir subconta.
+- PIX produto: `GET /pix/keys/lookup?accountId&type&key` confirma destino com a apiKey da subconta (exige bind ACTIVE + `pix.transfer`).
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
 

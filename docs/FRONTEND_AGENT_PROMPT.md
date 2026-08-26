@@ -486,6 +486,8 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | POST | `/api/v1/admin/organizations/{id}/admin` | Legado: assign OWNER a `userId` já existente |
 | GET | `/api/v1/admin/platform-account` | Carteira Master: `label`, `asaasMasterWalletId`, `balance`, `currency` |
 | GET/POST/DELETE | `/api/v1/admin/platform-account/pix/keys` | Chaves PIX Master (`ASAAS_API_KEY`). POST só `{ "type": "EVP" }`. Resposta: `id` (Asaas string), `type`, `key`, `status` — sem `accountId` |
+| GET | `/api/v1/admin/platform-account/pix/keys/lookup?type&key` | Confirma chave destino (Asaas external): `ownerName`, `ownerCpfCnpj`, `institutionName`, `institutionCode`, `ispb` |
+| GET | `/api/v1/pix/keys/lookup?accountId&type&key` | Idem no produto (apiKey da subconta; `pix.transfer` + bind ACTIVE) |
 | GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId` |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
 | GET/PATCH | `/api/v1/admin/splits` | Config de split |

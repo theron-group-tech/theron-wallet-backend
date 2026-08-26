@@ -6,8 +6,10 @@ import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
+import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
 import com.theron.wallet.entity.PlatformPixTransfer;
@@ -16,6 +18,7 @@ import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasTransferClient;
+import com.theron.wallet.mapper.PixKeyLookupMapper;
 import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.service.PlatformPixService;
 import lombok.RequiredArgsConstructor;
@@ -80,6 +83,20 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         String masterKey = requireMasterApiKey();
         asaasPixClient.deletePixKey(masterKey, asaasPixKeyId.trim());
         log.info("Deleted Platform Account PIX key in Asaas: id={}", asaasPixKeyId);
+    }
+
+    @Override
+    public PixKeyLookupResponse checkKey(PixKeyType type, String key) {
+        if (type == null) {
+            throw new InvalidRequestException("PIX key type is required");
+        }
+        if (key == null || key.isBlank()) {
+            throw new InvalidRequestException("PIX key is required");
+        }
+        String masterKey = requireMasterApiKey();
+        AsaasPixExternalKeyResponse asaas = asaasPixClient.lookupExternalKey(
+                masterKey, type.name(), key.trim());
+        return PixKeyLookupMapper.toResponse(asaas);
     }
 
     @Override

@@ -2,8 +2,10 @@ package com.theron.wallet.controller.admin;
 
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
+import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.PlatformPixService;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -42,6 +45,15 @@ public class AdminPlatformPixController {
     public ResponseEntity<List<PlatformPixKeyResponse>> listKeys() {
         actorResolver.requireAdmin();
         return ResponseEntity.ok(platformPixService.listKeys());
+    }
+
+    @GetMapping("/keys/lookup")
+    @Operation(summary = "Confirm destination PIX key via Asaas (Master)", description = "Calls GET /pix/addressKeys/external")
+    public ResponseEntity<PixKeyLookupResponse> lookupKey(
+            @RequestParam PixKeyType type,
+            @RequestParam String key) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformPixService.checkKey(type, key));
     }
 
     @PostMapping("/keys")

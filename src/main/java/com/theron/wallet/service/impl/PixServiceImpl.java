@@ -6,11 +6,13 @@ import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeRequest;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
+import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
 import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
+import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Beneficiary;
@@ -34,6 +36,7 @@ import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasTransferClient;
+import com.theron.wallet.mapper.PixKeyLookupMapper;
 import com.theron.wallet.mapper.PixMapper;
 import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.AccountRepository;
@@ -156,6 +159,23 @@ public class PixServiceImpl implements PixService {
         return pixKeyRepository.findByAccountIdOrderByCreatedAtDesc(accountId).stream()
                 .map(PixMapper::toKeyResponse)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PixKeyLookupResponse checkKey(UUID actorUserId, UUID accountId, PixKeyType type, String key) {
+        if (type == null) {
+            throw new InvalidRequestException("PIX key type is required");
+        }
+        if (key == null || key.isBlank()) {
+            throw new InvalidRequestException("PIX key is required");
+        }
+        Subaccount subaccount = accountAsaasGateway.requireConfiguredSubaccount(accountId);
+        Account account = requireAccount(subaccount, accountId);
+        resourceAuthorization.requireAccount(actorUserId, account.getId(), PermissionCodes.PIX_TRANSFER);
+        String apiKey = accountAsaasGateway.resolveApiKey(accountId);
+        AsaasPixExternalKeyResponse asaas = asaasPixClient.lookupExternalKey(apiKey, type.name(), key.trim());
+        return PixKeyLookupMapper.toResponse(asaas);
     }
 
     @Override

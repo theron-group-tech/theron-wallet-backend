@@ -5,7 +5,9 @@ import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
+import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
+import com.theron.wallet.enums.PixKeyType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -19,6 +21,8 @@ public interface PixService {
     List<AccountPixKeyResponse> listKeys(UUID actorUserId, UUID accountId);
 
     void deleteKey(UUID actorUserId, UUID pixKeyId);
+
+    PixKeyLookupResponse checkKey(UUID actorUserId, UUID accountId, PixKeyType type, String key);
 
     PixTransferResponse createTransfer(UUID actorUserId, CreatePixTransferRequest request);
 

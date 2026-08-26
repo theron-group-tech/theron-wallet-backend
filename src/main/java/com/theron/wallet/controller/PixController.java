@@ -5,7 +5,9 @@ import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
+import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
+import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.PixService;
@@ -53,6 +55,18 @@ public class PixController {
     public ResponseEntity<List<AccountPixKeyResponse>> listKeys(
             @RequestParam UUID accountId) {
         return ResponseEntity.ok(pixService.listKeys(actorResolver.requireProductUserId(), accountId));
+    }
+
+    @GetMapping("/keys/lookup")
+    @Operation(
+            summary = "Confirm destination PIX key via Asaas",
+            description = "Calls GET /pix/addressKeys/external with the Account subaccount API key.")
+    public ResponseEntity<PixKeyLookupResponse> lookupKey(
+            @RequestParam UUID accountId,
+            @RequestParam PixKeyType type,
+            @RequestParam String key) {
+        return ResponseEntity.ok(pixService.checkKey(
+                actorResolver.requireProductUserId(), accountId, type, key));
     }
 
     @DeleteMapping("/keys/{id}")
