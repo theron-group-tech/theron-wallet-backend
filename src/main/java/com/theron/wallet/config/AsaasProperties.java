@@ -15,10 +15,9 @@ public class AsaasProperties {
     private String key;
     private String webhookToken;
     private String webhookUrl;
+    private String transferValidationToken;
+    private String transferValidationUrl;
     private String masterWalletId;
-    /**
-     * When true (default in sandbox), call {@code POST /accounts/{id}/approve} after subaccount creation.
-     */
     private Boolean autoApproveSubaccounts;
     private SubaccountDefaults subaccountDefaults = new SubaccountDefaults();
     private TimeoutProperties timeout = new TimeoutProperties();
@@ -28,9 +27,6 @@ public class AsaasProperties {
         return baseUrl != null && baseUrl.toLowerCase().contains("sandbox");
     }
 
-    /**
-     * Sandbox-only approve; production Asaas has no approve endpoint — always false outside sandbox.
-     */
     public boolean isAutoApproveSubaccounts() {
         if (!isSandbox()) {
             return false;
