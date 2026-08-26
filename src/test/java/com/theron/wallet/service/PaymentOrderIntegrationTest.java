@@ -163,13 +163,31 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    @DisplayName("Insufficient balance → 409")
-    void insufficientBalanceConflict() throws Exception {
+    @DisplayName("Create succeeds without debit even when amount exceeds OWNER balance")
+    void createDoesNotRequireBalance() throws Exception {
         mockMvc.perform(post("/api/v1/payment-orders")
                         .header("Authorization", bearer(tokenFinance))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(orderBody(financeAccount.getId(), "99999.00"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
+
+        assertBalance(ownerAccount.getId(), "5000.00");
+    }
+
+    @Test
+    @DisplayName("Approve with insufficient balance → 409")
+    void insufficientBalanceOnApproveConflict() throws Exception {
+        UUID orderId = createOrder(tokenFinance, financeAccount.getId(), "99999.00");
+
+        mockMvc.perform(post("/api/v1/payment-orders/{id}/approve", orderId)
+                        .header("Authorization", bearer(tokenOwner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
                 .andExpect(status().isConflict());
+
+        assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(financeAccount.getId(), "100.00");
     }
 
     @Test

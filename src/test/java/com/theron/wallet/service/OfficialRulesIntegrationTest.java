@@ -209,7 +209,8 @@ class OfficialRulesIntegrationTest extends BaseIntegrationTest {
                         .header("Authorization", bearer(tokenFinance))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(paymentOrder(financeAccount.getId(), "99999.00"))))
-                .andExpect(status().isConflict());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
     }
 
     @Test

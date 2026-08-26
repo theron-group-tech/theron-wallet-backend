@@ -102,7 +102,7 @@ Instrução administrativa: FINANCE cria → OWNER aprova/rejeita.
 - **Não** possui dinheiro próprio.
 - Origem v1: **sempre** Account do OWNER da org.
 - Destino: Account da mesma Organization.
-- Create **não** debita; approve revalida saldo (insuficiente → **409**).
+- Create **não** debita e **não** exige saldo; approve revalida saldo Asaas/ledger (insuficiente → **409**).
 - FINANCE pode cancelar enquanto `PENDING_APPROVAL`.
 - Criador não aprova a própria order.
 

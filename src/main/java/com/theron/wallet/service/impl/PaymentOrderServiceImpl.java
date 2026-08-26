@@ -28,6 +28,7 @@ import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
@@ -62,6 +63,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     private final LedgerService ledgerService;
     private final IdempotencyService idempotencyService;
     private final TransactionLifecycleService transactionLifecycleService;
+    private final AsaasBalanceService asaasBalanceService;
 
     @Override
     @Transactional
@@ -84,8 +86,6 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         if (source.getId().equals(destination.getId())) {
             throw new InvalidRequestException("Source and destination must be different accounts");
         }
-
-        assertSufficientBalance(source.getId(), request.getAmount());
 
         User creator = userRepository.findById(actorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
@@ -297,7 +297,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
 
         if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) {
             throw new InsufficientBalanceException(String.format(
-                    "Insufficient balance. Available: %s, Requested: %s",
+                    "Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s",
                     sourceWallet.getBalance(), order.getAmount()));
         }
 
@@ -370,10 +370,16 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     private void assertSufficientBalance(UUID accountId, java.math.BigDecimal amount) {
         Wallet wallet = walletRepository.findByAccount_Id(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
+        java.math.BigDecimal available = asaasBalanceService.displayBalance(accountId);
+        if (available.compareTo(amount) < 0) {
+            throw new InsufficientBalanceException(String.format(
+                    "Saldo insuficiente. Disponível: %s, Solicitado: %s",
+                    available, amount));
+        }
         if (wallet.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(String.format(
-                    "Insufficient balance. Available: %s, Requested: %s",
-                    wallet.getBalance(), amount));
+                    "Saldo no ledger local insuficiente (Asaas disponível: %s, ledger: %s, solicitado: %s).",
+                    available, wallet.getBalance(), amount));
         }
     }
 
