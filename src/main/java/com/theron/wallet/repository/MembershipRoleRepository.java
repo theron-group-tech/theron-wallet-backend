@@ -52,6 +52,7 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
             SELECT DISTINCT r.code
             FROM membership_role mr
             INNER JOIN organization_membership om ON om.id = mr.membership_id
+            INNER JOIN role_permission rp ON rp.role_id = mr.role_id
             INNER JOIN role r ON r.id = mr.role_id
             WHERE om.organization_id = :organizationId
               AND om.user_id = :userId
@@ -61,13 +62,6 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
     List<String> findRoleCodesByOrganizationAndUser(
             @Param("organizationId") UUID organizationId,
             @Param("userId") UUID userId);
-
-    @Query("""
-            SELECT mr FROM MembershipRole mr
-            JOIN FETCH mr.role
-            WHERE mr.membership.id = :membershipId
-            """)
-    List<MembershipRole> findByMembershipIdWithRole(@Param("membershipId") UUID membershipId);
 
     @Query("""
             SELECT DISTINCT mr.role.id
@@ -106,4 +100,15 @@ public interface MembershipRoleRepository extends JpaRepository<MembershipRole, 
             LIMIT 1
             """, nativeQuery = true)
     Optional<UUID> findOwnerUserId(@Param("organizationId") UUID organizationId);
+
+    @Query(value = """
+            SELECT DISTINCT om.user_id
+            FROM membership_role mr
+            INNER JOIN organization_membership om ON om.id = mr.membership_id
+            INNER JOIN role r ON r.id = mr.role_id
+            WHERE om.organization_id = :organizationId
+              AND om.status = 'ACTIVE'
+              AND r.code = 'OWNER'
+            """, nativeQuery = true)
+    List<UUID> findOwnerUserIds(@Param("organizationId") UUID organizationId);
 }
