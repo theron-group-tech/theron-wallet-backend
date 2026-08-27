@@ -1,5 +1,6 @@
 package com.theron.wallet.integration;
 
+import com.theron.wallet.dto.asaas.AsaasAccountTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
@@ -23,6 +24,20 @@ public class AsaasTransferClient {
         log.info("Creating transfer in Asaas: value={}, pixKeyType={}",
                 request.getValue(), request.getPixAddressKeyType());
         return asaasHttpGateway.postFinancial(apiKey, "/transfers", request, idempotencyKey, AsaasTransferResponse.class);
+    }
+
+    public AsaasTransferResponse createAccountTransfer(
+            String apiKey,
+            AsaasAccountTransferRequest request,
+            String idempotencyKey) {
+        log.info("Creating Asaas account-to-account transfer: value={}, destinationWalletId={}",
+                request.getValue(), request.getWalletId());
+        return asaasHttpGateway.postFinancial(
+                apiKey,
+                "/transfers",
+                request,
+                idempotencyKey,
+                AsaasTransferResponse.class);
     }
 
     public AsaasTransferResponse retrieveTransfer(String apiKey, String transferId) {

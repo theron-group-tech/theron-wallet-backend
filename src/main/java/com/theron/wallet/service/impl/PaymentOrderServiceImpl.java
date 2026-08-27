@@ -1,5 +1,7 @@
 package com.theron.wallet.service.impl;
 
+import com.theron.wallet.dto.asaas.AsaasAccountTransferRequest;
+import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.CreatePaymentOrderRequest;
 import com.theron.wallet.dto.request.DecidePaymentOrderRequest;
 import com.theron.wallet.dto.response.PaymentOrderDestinationResponse;
@@ -10,6 +12,7 @@ import com.theron.wallet.entity.PaymentOrder;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.PaymentOrderStatus;
 import com.theron.wallet.enums.TransactionStatus;
@@ -18,6 +21,7 @@ import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaaTransferClient;
 import com.theron.wallet.mapper.PaymentOrderMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.MembershipRoleRepository;
@@ -28,6 +32,7 @@ import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.IdempotencyService;
@@ -64,6 +69,8 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     private final IdempotencyService idempotencyService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final AsaasBalanceService asaasBalanceService;
+    private final AccountAsaasGateway accountAsaasGateway;
+    private final AsaasTransferClient asaasTransferClient;
 
     @Override
     @Transactional
@@ -185,9 +192,15 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
             throw new InvalidRequestException("Approving OWNER account cannot be the destination account");
         }
 
-        // The financial source is determined by the OWNER who actually approves the order.
         order.setSourceAccount(source);
         assertSufficientBalance(source.getId(), order.getAmount());
+
+        // Validate both Asaas rails before changing the local financial state.
+        accountAsaasGateway.requireConfiguredSubaccount(source.getId());
+        Subaccount destinationSubaccount = accountAsaasGateway.requireConfiguredSubaccount(destination.getId());
+        if (destinationSubaccount.getAsaasWalletId() == null || destinationSubaccount.getAsaasWalletId().isBlank()) {
+            throw new InvalidRequestException("Destination account has no Asaas wallet configured");
+        }
 
         order.setStatus(PaymentOrderStatus.PROCESSING);
         order.setDecidedBy(decider);
@@ -198,9 +211,21 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         order = paymentOrderRepository.save(order);
 
         try {
-            executeTransfer(order, decider);
-            order.setStatus(PaymentOrderStatus.COMPLETED);
-            order.setCompletedAt(LocalDateTime.now());
+            AsaasTransferResponse providerTransfer = executeTransfer(order, decider, destinationSubaccount);
+            String providerStatus = providerTransfer.getStatus();
+
+            if ("CANCELLED".equalsIgnoreCase(providerStatus)) {
+                throw new InvalidRequestException("Asaas cancelled the payment order transfer");
+            }
+
+            if ("DONE".equalsIgnoreCase(providerStatus) || providerStatus == null || providerStatus.isBlank()) {
+                order.setStatus(PaymentOrderStatus.COMPLETED);
+                order.setCompletedAt(LocalDateTime.now());
+            } else {
+                // Asaas accepted the transfer but is still processing it.
+                order.setStatus(PaymentOrderStatus.PROCESSING);
+            }
+
             order = paymentOrderRepository.save(order);
 
             auditLogService.record(
@@ -210,16 +235,22 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                     "PaymentOrder",
                     order.getId(),
                     Map.of(
-                            "status", PaymentOrderStatus.COMPLETED.name(),
+                            "status", order.getStatus().name(),
                             "sourceAccountId", source.getId().toString(),
+                            "destinationAccountId", destination.getId().toString(),
+                            "asaasTransferId", providerTransfer.getId() == null ? "unknown" : providerTransfer.getId(),
+                            "asaasTransferStatus", providerStatus == null ? "unknown" : providerStatus,
                             "approvingOwnerUserId", actorUserId.toString()));
-            auditLogService.record(
-                    AuditAction.PAYMENT_ORDER_COMPLETED,
-                    organizationId,
-                    actorUserId,
-                    "PaymentOrder",
-                    order.getId(),
-                    Map.of());
+
+            if (order.getStatus() == PaymentOrderStatus.COMPLETED) {
+                auditLogService.record(
+                        AuditAction.PAYMENT_ORDER_COMPLETED,
+                        organizationId,
+                        actorUserId,
+                        "PaymentOrder",
+                        order.getId(),
+                        Map.of("asaasTransferId", providerTransfer.getId() == null ? "unknown" : providerTransfer.getId()));
+            }
         } catch (RuntimeException ex) {
             order.setStatus(PaymentOrderStatus.FAILED);
             order = paymentOrderRepository.save(order);
@@ -290,7 +321,10 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 .toList();
     }
 
-    private void executeTransfer(PaymentOrder order, User actor) {
+    private AsaasTransferResponse executeTransfer(
+            PaymentOrder order,
+            User actor,
+            Subaccount destinationSubaccount) {
         UUID sourceId = order.getSourceAccount().getId();
         UUID destId = order.getDestinationAccount().getId();
         boolean sourceFirst = sourceId.compareTo(destId) < 0;
@@ -311,6 +345,10 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                     sourceWallet.getBalance(), order.getAmount()));
         }
 
+        // The local ledger is changed before the provider call. If Asaas rejects the
+        // transfer, the surrounding transaction rolls the local changes back. If the
+        // provider times out after accepting the transfer, the same idempotency key is
+        // reused on retry to prevent a duplicate movement.
         sourceWallet.debit(order.getAmount());
         destWallet.credit(order.getAmount());
         walletRepository.save(sourceWallet);
@@ -363,11 +401,44 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 "ledger:payment-order:" + order.getId(),
                 debitTx.getId().toString());
 
+        // Payment Orders move funds between Theron Accounts that are represented by
+        // Asaas subaccounts. Asaas has a dedicated account-to-account transfer flow:
+        // the destination is the Asaas walletId, not the Theron Account UUID and not
+        // a PIX key. This keeps the real provider balances aligned with the local ledger.
+        String sourceApiKey = accountAsaasGateway.resolveApiKey(sourceId);
+        AsaasAccountTransferRequest providerRequest = AsaasAccountTransferRequest.builder()
+                .value(order.getAmount())
+                .walletId(destinationSubaccount.getAsaasWalletId())
+                .build();
+
+        AsaasTransferResponse providerTransfer = asaasTransferClient.createAccountTransfer(
+                sourceApiKey,
+                providerRequest,
+                idempotencyKey);
+
+        if (providerTransfer.getId() == null || providerTransfer.getId().isBlank()) {
+            throw new InvalidRequestException("Asaas did not return a transfer id");
+        }
+
+        debitTx.setAsaasPaymentId(providerTransfer.getId());
+        debitTx.setExternalReference(providerTransfer.getId());
+        transactionRepository.save(debitTx);
+
         order.setDebitTransaction(debitTx);
         order.setCreditTransaction(creditTx);
 
-        log.info("PaymentOrder {} completed: debit={}, credit={}, amount={}, sourceAccountId={}, approvingOwnerUserId={}",
-                order.getId(), debitTx.getId(), creditTx.getId(), order.getAmount(), sourceId, actor.getId());
+        log.info("PaymentOrder {} submitted to Asaas: debit={}, credit={}, amount={}, sourceAccountId={}, destinationAccountId={}, asaasTransferId={}, asaasStatus={}, approvingOwnerUserId={}",
+                order.getId(),
+                debitTx.getId(),
+                creditTx.getId(),
+                order.getAmount(),
+                sourceId,
+                destId,
+                providerTransfer.getId(),
+                providerTransfer.getStatus(),
+                actor.getId());
+
+        return providerTransfer;
     }
 
     private Account resolveOwnerAccount(UUID organizationId) {
