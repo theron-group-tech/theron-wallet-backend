@@ -19,4 +19,5 @@ public class AsaasAccountTransferRequest {
 
     private BigDecimal value;
     private String walletId;
+    private String externalReference;
 }
