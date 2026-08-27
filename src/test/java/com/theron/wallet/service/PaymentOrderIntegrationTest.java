@@ -49,12 +49,15 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
 
     private OrganizationResponse org;
     private UserResponse owner;
+    private UserResponse secondOwner;
     private UserResponse finance;
     private UserResponse employee;
     private AccountResponse ownerAccount;
+    private AccountResponse secondOwnerAccount;
     private AccountResponse financeAccount;
     private AccountResponse employeeAccount;
     private String tokenOwner;
+    private String tokenSecondOwner;
     private String tokenFinance;
     private String tokenEmployee;
 
@@ -66,20 +69,26 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 .documentType(DocumentType.CNPJ)
                 .build());
         owner = createUser("po-owner@theron.test");
+        secondOwner = createUser("po-owner-2@theron.test");
         finance = createUser("po-finance@theron.test");
         employee = createUser("po-emp@theron.test");
 
         membershipService.addMember(org.getId(), member(owner.getId()));
+        membershipService.addMember(org.getId(), member(secondOwner.getId()));
         membershipService.addMember(org.getId(), member(finance.getId()));
         membershipService.addMember(org.getId(), member(employee.getId()));
 
         roleAssignmentService.assignRolesInternal(org.getId(), owner.getId(), List.of(RoleCode.OWNER.name()));
+        roleAssignmentService.assignRolesInternal(org.getId(), secondOwner.getId(), List.of(RoleCode.OWNER.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), finance.getId(), List.of(RoleCode.FINANCE.name()));
         roleAssignmentService.assignRolesInternal(org.getId(), employee.getId(), List.of(RoleCode.EMPLOYEE.name()));
 
         ownerAccount = accountService.create(org.getId(),
                 CreateAccountRequest.builder().name("Owner Wallet").type(AccountType.MAIN).build(),
                 owner.getId(), "33445566701");
+        secondOwnerAccount = accountService.create(org.getId(),
+                CreateAccountRequest.builder().name("Second Owner Wallet").type(AccountType.MAIN).build(),
+                secondOwner.getId(), "33445566704");
         financeAccount = accountService.create(org.getId(),
                 CreateAccountRequest.builder().name("Finance Wallet").type(AccountType.MAIN).build(),
                 finance.getId(), "33445566702");
@@ -88,10 +97,12 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 employee.getId(), "33445566703");
 
         fundWallet(ownerAccount.getId(), "5000.00");
+        fundWallet(secondOwnerAccount.getId(), "3000.00");
         fundWallet(financeAccount.getId(), "100.00");
         fundWallet(employeeAccount.getId(), "50.00");
 
         tokenOwner = productAccessToken(owner.getEmail());
+        tokenSecondOwner = productAccessToken(secondOwner.getEmail());
         tokenFinance = productAccessToken(finance.getEmail());
         tokenEmployee = productAccessToken(employee.getEmail());
     }
@@ -119,6 +130,7 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.destinationAccountId").value(financeAccount.getId().toString()));
 
         assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(secondOwnerAccount.getId(), "3000.00");
     }
 
     @Test
@@ -144,6 +156,7 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("CANCELLED"));
 
         assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(secondOwnerAccount.getId(), "3000.00");
     }
 
     @Test
@@ -156,10 +169,31 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"comment\":\"ok\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.sourceAccountId").value(ownerAccount.getId().toString()));
 
         assertBalance(ownerAccount.getId(), "4700.00");
+        assertBalance(secondOwnerAccount.getId(), "3000.00");
         assertBalance(employeeAccount.getId(), "350.00");
+    }
+
+    @Test
+    @DisplayName("Approving OWNER is the payment source; another OWNER balance is untouched")
+    void approvingOwnerIsPaymentSource() throws Exception {
+        UUID orderId = createOrder(tokenFinance, employeeAccount.getId(), "700.00");
+
+        mockMvc.perform(post("/api/v1/payment-orders/{id}/approve", orderId)
+                        .header("Authorization", bearer(tokenSecondOwner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"comment\":\"approved by second owner\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.sourceAccountId").value(secondOwnerAccount.getId().toString()))
+                .andExpect(jsonPath("$.decidedByUserId").value(secondOwner.getId().toString()));
+
+        assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(secondOwnerAccount.getId(), "2300.00");
+        assertBalance(employeeAccount.getId(), "750.00");
     }
 
     @Test
@@ -173,6 +207,7 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"));
 
         assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(secondOwnerAccount.getId(), "3000.00");
     }
 
     @Test
@@ -187,6 +222,7 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isConflict());
 
         assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(secondOwnerAccount.getId(), "3000.00");
         assertBalance(financeAccount.getId(), "100.00");
     }
 
