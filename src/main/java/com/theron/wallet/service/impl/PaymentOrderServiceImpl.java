@@ -21,7 +21,7 @@ import com.theron.wallet.exception.ForbiddenException;
 import com.theron.wallet.exception.InsufficientBalanceException;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
-import com.theron.wallet.integration.AsaaTransferClient;
+import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.PaymentOrderMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.MembershipRoleRepository;
