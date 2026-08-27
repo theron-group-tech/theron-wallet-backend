@@ -244,7 +244,7 @@ class AsaasHardeningIntegrationTest extends BaseIntegrationTest {
             properties.getTimeout().setConnect(1_000);
             properties.getTimeout().setRead(readTimeoutMs);
             properties.getRetry().setMaxAttempts(3);
-            return new AsaasHttpGateway(properties, WebClient.builder());
+            return new AsaasHttpGateway(properties, WebClient.builder(), new ObjectMapper());
         }
 
         private void enqueueJson(int status, String body) {

@@ -1,5 +1,7 @@
 package com.theron.wallet.integration;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.exception.AsaasApiException;
 import io.netty.channel.ChannelOption;
@@ -13,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ClientRequest;
+import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
@@ -31,10 +34,13 @@ public class AsaasHttpGateway {
     private static final Duration DEFAULT_BACKOFF = Duration.ofMillis(200);
 
     private final AsaasProperties asaasProperties;
+    private final ObjectMapper objectMapper;
     private final WebClient webClient;
 
-    public AsaasHttpGateway(AsaasProperties asaasProperties, WebClient.Builder webClientBuilder) {
+    public AsaasHttpGateway(
+            AsaasProperties asaasProperties, WebClient.Builder webClientBuilder, ObjectMapper objectMapper) {
         this.asaasProperties = asaasProperties;
+        this.objectMapper = objectMapper;
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, asaasProperties.getTimeout().getConnect())
                 .responseTimeout(Duration.ofMillis(asaasProperties.getTimeout().getRead()));
@@ -136,6 +142,9 @@ public class AsaasHttpGateway {
                             .flatMap(errorBody -> Mono.error(new AsaasApiException(
                                     "Asaas API request failed", status, errorBody, retryAfter)));
                 }
+                if (shouldLogRawTransferBody(method, uri)) {
+                    return readAndLogTransferBody(response, uri, responseClass, responseRef);
+                }
                 if (responseRef != null) {
                     return response.bodyToMono(responseRef);
                 }
@@ -152,6 +161,44 @@ public class AsaasHttpGateway {
             }
             throw unwrapAsaas(ex);
         }
+    }
+
+    private static boolean shouldLogRawTransferBody(HttpMethod method, String uri) {
+        if (method != HttpMethod.POST || uri == null) {
+            return false;
+        }
+        String path = uri.contains("?") ? uri.substring(0, uri.indexOf('?')) : uri;
+        return "/transfers".equals(path);
+    }
+
+    private <T> Mono<T> readAndLogTransferBody(
+            ClientResponse response,
+            String uri,
+            Class<T> responseClass,
+            ParameterizedTypeReference<T> responseRef) {
+        int status = response.statusCode().value();
+        String endpoint = "POST " + (uri != null ? uri : "/transfers");
+        return response.bodyToMono(String.class)
+                .defaultIfEmpty("")
+                .flatMap(rawBody -> {
+                    log.info("Asaas response status={} endpoint={} body={}",
+                            status, endpoint, AsaasSecretRedactor.redact(rawBody));
+                    try {
+                        if (responseRef != null) {
+                            T parsed = objectMapper.readValue(
+                                    rawBody, objectMapper.constructType(responseRef.getType()));
+                            return Mono.just(parsed);
+                        }
+                        if (isVoid(responseClass)) {
+                            return Mono.empty();
+                        }
+                        T parsed = objectMapper.readValue(rawBody, responseClass);
+                        return Mono.just(parsed);
+                    } catch (JsonProcessingException ex) {
+                        return Mono.error(new AsaasApiException(
+                                "Failed to parse Asaas transfer response", status, rawBody));
+                    }
+                });
     }
 
     private boolean shouldRetry(
