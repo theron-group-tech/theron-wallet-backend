@@ -20,7 +20,6 @@ import com.theron.wallet.dto.response.PlatformAccountResponse;
 import com.theron.wallet.dto.response.SplitConfigResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.Account;
-import com.theron.wallet.entity.Beneficiary;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
@@ -54,6 +53,7 @@ import com.theron.wallet.service.PlatformAccountService;
 import com.theron.wallet.service.PlatformSplitService;
 import com.theron.wallet.service.RoleAssignmentService;
 import com.theron.wallet.service.UserService;
+import com.theron.wallet.util.TransactionCounterpartHints;
 import com.theron.wallet.util.AsaasDocumentRules;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -387,31 +387,12 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
                 .currency(transaction.getCurrency())
                 .reference(transaction.getReference())
                 .description(transaction.getDescription())
-                .counterpartHint(resolveCounterpartHint(transaction))
+                .counterpartHint(TransactionCounterpartHints.resolve(transaction))
                 .asaasPaymentId(transaction.getAsaasPaymentId())
                 .createdAt(transaction.getCreatedAt())
                 .updatedAt(transaction.getUpdatedAt())
                 .completedAt(transaction.getCompletedAt())
                 .build();
-    }
-
-    private static String resolveCounterpartHint(Transaction transaction) {
-        Beneficiary beneficiary = transaction.getBeneficiary();
-        if (beneficiary != null) {
-            if (beneficiary.getName() != null && !beneficiary.getName().isBlank()) {
-                return beneficiary.getName();
-            }
-            if (beneficiary.getPixKey() != null && !beneficiary.getPixKey().isBlank()) {
-                return beneficiary.getPixKey();
-            }
-        }
-        if (transaction.getExternalReference() != null && !transaction.getExternalReference().isBlank()) {
-            return transaction.getExternalReference();
-        }
-        if (transaction.getReference() != null && !transaction.getReference().isBlank()) {
-            return transaction.getReference();
-        }
-        return null;
     }
 
     private AdminOrganizationDetailResponse.AdminAccountSummary toAccountSummary(Account account) {

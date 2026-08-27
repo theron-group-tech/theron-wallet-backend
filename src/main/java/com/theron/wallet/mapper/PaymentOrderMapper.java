@@ -19,7 +19,13 @@ public final class PaymentOrderMapper {
                 .description(order.getDescription())
                 .status(order.getStatus())
                 .createdByUserId(order.getCreatedBy().getId())
+                .createdByName(order.getCreatedBy().getName())
                 .decidedByUserId(order.getDecidedBy() != null ? order.getDecidedBy().getId() : null)
+                .decidedByName(order.getDecidedBy() != null ? order.getDecidedBy().getName() : null)
+                .destinationOwnerName(order.getDestinationAccount().getOwnerUser() != null
+                        ? order.getDestinationAccount().getOwnerUser().getName()
+                        : null)
+                .destinationAccountName(order.getDestinationAccount().getName())
                 .decisionComment(order.getDecisionComment())
                 .debitTransactionId(order.getDebitTransaction() != null ? order.getDebitTransaction().getId() : null)
                 .creditTransactionId(order.getCreditTransaction() != null ? order.getCreditTransaction().getId() : null)

@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -22,6 +23,7 @@ public class OrganizationMembershipResponse {
     private UUID userId;
     private String userName;
     private String userEmail;
+    private List<String> roleCodes;
     private MembershipStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -31,6 +31,7 @@ public class TransactionResponse {
     private String currency;
     private String reference;
     private String description;
+    private String counterpartHint;
     private String asaasPaymentId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -7,6 +7,8 @@ import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.OrganizationMembership;
 import com.theron.wallet.entity.User;
 
+import java.util.List;
+
 public final class UserMapper {
 
     private UserMapper() {
@@ -26,6 +28,11 @@ public final class UserMapper {
     }
 
     public static OrganizationMembershipResponse toMembershipResponse(OrganizationMembership membership) {
+        return toMembershipResponse(membership, null);
+    }
+
+    public static OrganizationMembershipResponse toMembershipResponse(
+            OrganizationMembership membership, List<String> roleCodes) {
         User user = membership.getUser();
         return OrganizationMembershipResponse.builder()
                 .id(membership.getId())
@@ -33,6 +40,7 @@ public final class UserMapper {
                 .userId(user.getId())
                 .userName(user.getName())
                 .userEmail(user.getEmail())
+                .roleCodes(roleCodes)
                 .status(membership.getStatus())
                 .createdAt(membership.getCreatedAt())
                 .updatedAt(membership.getUpdatedAt())

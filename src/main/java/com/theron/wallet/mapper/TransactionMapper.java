@@ -5,6 +5,7 @@ import com.theron.wallet.dto.response.InternalTransferResponse;
 import com.theron.wallet.dto.response.TransactionResponse;
 import com.theron.wallet.dto.response.WithdrawResponse;
 import com.theron.wallet.entity.Transaction;
+import com.theron.wallet.util.TransactionCounterpartHints;
 
 public final class TransactionMapper {
 
@@ -33,6 +34,7 @@ public final class TransactionMapper {
     public static TransactionResponse toMobileResponse(Transaction entity) {
         TransactionResponse response = toResponse(entity);
         response.setAsaasPaymentId(null);
+        response.setCounterpartHint(TransactionCounterpartHints.resolve(entity));
         return response;
     }
 

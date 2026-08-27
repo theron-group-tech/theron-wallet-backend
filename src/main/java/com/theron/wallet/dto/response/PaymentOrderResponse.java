@@ -29,7 +29,11 @@ public class PaymentOrderResponse {
     private String description;
     private PaymentOrderStatus status;
     private UUID createdByUserId;
+    private String createdByName;
     private UUID decidedByUserId;
+    private String decidedByName;
+    private String destinationOwnerName;
+    private String destinationAccountName;
     private String decisionComment;
     private UUID debitTransactionId;
     private UUID creditTransactionId;

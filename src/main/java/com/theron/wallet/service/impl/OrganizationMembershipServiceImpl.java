@@ -97,7 +97,10 @@ public class OrganizationMembershipServiceImpl implements OrganizationMembership
         Page<OrganizationMembership> page = status != null
                 ? membershipRepository.findByOrganizationIdAndStatus(organizationId, status, pageable)
                 : membershipRepository.findByOrganizationId(organizationId, pageable);
-        return page.map(UserMapper::toMembershipResponse);
+        return page.map(membership -> UserMapper.toMembershipResponse(
+                membership,
+                membershipRoleRepository.findRoleCodesByOrganizationAndUser(
+                        organizationId, membership.getUser().getId())));
     }
 
     @Override
