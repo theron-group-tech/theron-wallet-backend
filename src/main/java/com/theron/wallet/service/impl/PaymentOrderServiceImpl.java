@@ -354,7 +354,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         walletRepository.save(sourceWallet);
         walletRepository.save(destWallet);
 
-        String idempotencyKey = "payment-order:" + order.getId();
+        String idempotencyKey = order.getId().toString().replace("-", "");
         String requestHash = idempotencyService.hash(
                 TransactionType.TRANSFER_OUT.name(),
                 sourceId.toString(),
