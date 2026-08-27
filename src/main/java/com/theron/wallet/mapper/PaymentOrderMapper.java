@@ -12,7 +12,7 @@ public final class PaymentOrderMapper {
         return PaymentOrderResponse.builder()
                 .id(order.getId())
                 .organizationId(order.getOrganization().getId())
-                .sourceAccountId(order.getSourceAccount().getId())
+                .sourceAccountId(order.getSourceAccount() != null ? order.getSourceAccount().getId() : null)
                 .destinationAccountId(order.getDestinationAccount().getId())
                 .amount(order.getAmount())
                 .currency(order.getCurrency())

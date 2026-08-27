@@ -26,4 +26,6 @@ public interface PaymentOrderService {
     PaymentOrderResponse reject(UUID actorUserId, UUID paymentOrderId, DecidePaymentOrderRequest request);
 
     List<PaymentOrderDestinationResponse> listDestinations(UUID actorUserId, UUID organizationId);
+
+    PaymentOrderResponse syncProcessingOrder(UUID paymentOrderId);
 }

@@ -11,12 +11,14 @@ import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.enums.NotificationType;
+import com.theron.wallet.enums.PaymentOrderStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.AsaasApiException;
 import com.theron.wallet.exception.UnauthorizedException;
 import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.integration.AsaasTransferClient;
+import com.theron.wallet.repository.PaymentOrderRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -31,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.LinkedHashMap;
@@ -46,6 +49,7 @@ import java.util.UUID;
 public class WebhookServiceImpl implements WebhookService {
 
     private final TransactionRepository transactionRepository;
+    private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
@@ -289,8 +293,10 @@ public class WebhookServiceImpl implements WebhookService {
 
         if (event.isConfirmation()) {
             handleTransferConfirmation(transaction);
+            syncPaymentOrderFromTransfer(transaction, PaymentOrderStatus.COMPLETED);
         } else if (event.isFailure()) {
             handleTransferFailure(transaction, event);
+            syncPaymentOrderFromTransfer(transaction, PaymentOrderStatus.FAILED);
         } else {
             log.info("Transfer webhook event {} does not require action for transactionId={}",
                     eventName, transaction.getId());
@@ -350,6 +356,24 @@ public class WebhookServiceImpl implements WebhookService {
             pixTx.setStatus(transaction.getStatus());
             pixTransactionRepository.save(pixTx);
             log.debug("Synced PixTransaction {} to status {}", pixTx.getId(), pixTx.getStatus());
+        });
+    }
+
+    private void syncPaymentOrderFromTransfer(Transaction transaction, PaymentOrderStatus nextStatus) {
+        if (transaction.getReference() == null || !transaction.getReference().startsWith("payment-order:")) {
+            return;
+        }
+        paymentOrderRepository.findByDebitTransactionId(transaction.getId()).ifPresent(order -> {
+            if (order.getStatus() != PaymentOrderStatus.PROCESSING) {
+                return;
+            }
+            order.setStatus(nextStatus);
+            if (nextStatus == PaymentOrderStatus.COMPLETED) {
+                order.setCompletedAt(LocalDateTime.now());
+            }
+            paymentOrderRepository.save(order);
+            log.info("Synced PaymentOrder {} to {} from transfer webhook transactionId={}",
+                    order.getId(), nextStatus, transaction.getId());
         });
     }
 

@@ -29,4 +29,7 @@ public class AsaasTransferResponse {
     private String pixAddressKeyType;
     private String externalReference;
     private String dateCreated;
+    private String walletId;
+    private String failReason;
+    private String effectiveDate;
 }

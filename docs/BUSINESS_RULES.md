@@ -100,13 +100,15 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 Instrução administrativa: FINANCE cria → OWNER aprova/rejeita.
 
 - **Não** possui dinheiro próprio.
-- Origem v1: **sempre** Account do OWNER da org.
+- Origem na **aprovação**: Account do **OWNER que aprova** (não há origem fixa no create; `sourceAccountId` vem null em `PENDING_APPROVAL`).
 - Destino: Account da mesma Organization.
 - Create **não** debita e **não** exige saldo; approve revalida saldo Asaas/ledger (insuficiente → **409**).
+- Approve chama Asaas `POST /transfers` (account-to-account, `walletId` destino) com API key da subconta do OWNER aprovador; confirma com `GET /transfers/{id}` e só aceita `DONE` antes de debitar ledger local.
 - FINANCE pode cancelar enquanto `PENDING_APPROVAL`.
 - Criador não aprova a própria order.
+- Ordens legadas `PROCESSING`: webhook `TRANSFER_*` ou `POST /admin/payment-orders/{id}/sync`.
 
-Estados: `PENDING_APPROVAL` → `APPROVED` → `PROCESSING` → `COMPLETED` | `FAILED` | `REJECTED` | `CANCELLED`.
+Estados: `PENDING_APPROVAL` → `PROCESSING` (legado) → `COMPLETED` | `FAILED` | `REJECTED` | `CANCELLED`.
 
 ## 10. Limites
 

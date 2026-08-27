@@ -40,8 +40,8 @@ public class PaymentOrder {
     @JoinColumn(name = "organization_id", nullable = false)
     private Organization organization;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "source_account_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_account_id")
     private Account sourceAccount;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

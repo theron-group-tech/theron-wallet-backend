@@ -214,11 +214,11 @@ Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`)
 
 **Não** use `/approvals` para PIX pessoal. Use PaymentOrder para liberação administrativa:
 
-- `POST /api/v1/payment-orders` — FINANCE ou OWNER (`payment_orders.create`). Body: `{ organizationId, destinationAccountId, amount, description? }`. Status inicial `PENDING_APPROVAL`. **Não debita** e **não exige saldo** na criação. Origem = Account do OWNER (backend resolve).
+- `POST /api/v1/payment-orders` — FINANCE ou OWNER (`payment_orders.create`). Body: `{ organizationId, destinationAccountId, amount, description? }`. Status inicial `PENDING_APPROVAL`. **Não debita** e **não exige saldo** na criação. `sourceAccountId` null até approve.
 - `GET /api/v1/payment-orders?organizationId=` — `payment_orders.read`
 - `GET /api/v1/payment-orders/destinations?organizationId=` — contas destino **sem saldo** (`payment_orders.create`)
 - `POST .../{id}/cancel` — FINANCE criador / perm cancel; só `PENDING_APPROVAL`
-- `POST .../{id}/approve` — OWNER (`payment_orders.approve`); revalida saldo Asaas/ledger; débito OWNER → crédito destino. Saldo insuficiente → **409**. Criador não aprova a própria.
+- `POST .../{id}/approve` — OWNER (`payment_orders.approve`); debita a **própria Account OWNER** aprovadora; transfer Asaas account-to-account; revalida saldo Asaas/ledger; saldo insuficiente → **409**; Asaas não confirmado → **422**. Criador não aprova a própria.
 - `POST .../{id}/reject` — OWNER (`payment_orders.reject`)
 
 ### Passo 9 — Equipe (OWNER)
@@ -491,6 +491,7 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | GET | `/api/v1/pix/keys/lookup?accountId&type&key` | Idem no produto (modal de envio; apiKey da subconta; `pix.transfer` + bind ACTIVE) |
 | GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local |
 | POST | `/api/v1/admin/platform-account/pix/reconcile-credits` | Backfill créditos locais de transfers Master COMPLETED sem `credit_transaction_id` → `{ credited }` |
+| POST | `/api/v1/admin/payment-orders/{id}/sync` | Reconciliar ordem `PROCESSING` com `GET /transfers/{id}` Asaas; 404 → `FAILED` (sem auto-reverter ledger) |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
 | GET/PATCH | `/api/v1/admin/splits` | Config de split |
 

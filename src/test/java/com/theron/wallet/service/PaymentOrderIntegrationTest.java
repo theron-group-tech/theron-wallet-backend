@@ -2,6 +2,7 @@ package com.theron.wallet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
+import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
@@ -12,13 +13,17 @@ import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.PaymentOrderResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.RoleCode;
+import com.theron.wallet.integration.AsaasTransferClient;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
@@ -30,6 +35,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,6 +53,8 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
     @Autowired private AccountService accountService;
     @Autowired private WalletService walletService;
     @Autowired private WalletRepository walletRepository;
+    @Autowired private SubaccountRepository subaccountRepository;
+    @Autowired private AsaasTransferClient asaasTransferClient;
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
 
@@ -105,6 +116,24 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
         tokenSecondOwner = productAccessToken(secondOwner.getEmail());
         tokenFinance = productAccessToken(finance.getEmail());
         tokenEmployee = productAccessToken(employee.getEmail());
+
+        when(asaasTransferClient.createAccountTransfer(any(), any(), any())).thenAnswer(invocation -> {
+            String transferId = "tr_" + UUID.randomUUID();
+            return AsaasTransferResponse.builder()
+                    .id(transferId)
+                    .status("DONE")
+                    .value(invocation.getArgument(1, com.theron.wallet.dto.asaas.AsaasAccountTransferRequest.class)
+                            .getValue())
+                    .operationType("INTERNAL")
+                    .walletId("wal_destination")
+                    .build();
+        });
+        when(asaasTransferClient.retrieveTransfer(any(), any())).thenAnswer(invocation ->
+                AsaasTransferResponse.builder()
+                        .id(invocation.getArgument(1))
+                        .status("DONE")
+                        .operationType("INTERNAL")
+                        .build());
     }
 
     @Test
@@ -126,11 +155,12 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
                         .content(objectMapper.writeValueAsString(orderBody(financeAccount.getId(), "200.00"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
-                .andExpect(jsonPath("$.sourceAccountId").value(ownerAccount.getId().toString()))
+                .andExpect(jsonPath("$.sourceAccountId").doesNotExist())
                 .andExpect(jsonPath("$.destinationAccountId").value(financeAccount.getId().toString()));
 
         assertBalance(ownerAccount.getId(), "5000.00");
         assertBalance(secondOwnerAccount.getId(), "3000.00");
+        assertBalance(financeAccount.getId(), "100.00");
     }
 
     @Test
@@ -194,6 +224,13 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
         assertBalance(ownerAccount.getId(), "5000.00");
         assertBalance(secondOwnerAccount.getId(), "2300.00");
         assertBalance(employeeAccount.getId(), "750.00");
+
+        Subaccount secondOwnerSubaccount = subaccountRepository.findByAccount_Id(secondOwnerAccount.getId())
+                .orElseThrow();
+        ArgumentCaptor<String> apiKeyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(asaasTransferClient).createAccountTransfer(apiKeyCaptor.capture(), any(), any());
+        assertThat(apiKeyCaptor.getValue()).isNotBlank();
+        assertThat(secondOwnerSubaccount.getEncryptedApiKey()).isNotNull();
     }
 
     @Test
@@ -224,6 +261,46 @@ class PaymentOrderIntegrationTest extends BaseIntegrationTest {
         assertBalance(ownerAccount.getId(), "5000.00");
         assertBalance(secondOwnerAccount.getId(), "3000.00");
         assertBalance(financeAccount.getId(), "100.00");
+    }
+
+    @Test
+    @DisplayName("Approve fails when Asaas transfer stays PENDING")
+    void approveFailsWhenAsaasPending() throws Exception {
+        when(asaasTransferClient.createAccountTransfer(any(), any(), any())).thenReturn(
+                AsaasTransferResponse.builder().id("tr_pending").status("PENDING").build());
+        when(asaasTransferClient.retrieveTransfer(any(), eq("tr_pending"))).thenReturn(
+                AsaasTransferResponse.builder().id("tr_pending").status("PENDING").build());
+
+        UUID orderId = createOrder(tokenFinance, employeeAccount.getId(), "100.00");
+
+        mockMvc.perform(post("/api/v1/payment-orders/{id}/approve", orderId)
+                        .header("Authorization", bearer(tokenOwner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(employeeAccount.getId(), "50.00");
+    }
+
+    @Test
+    @DisplayName("Approve fails when Asaas transfer is not found after create")
+    void approveFailsWhenAsaasTransferNotFound() throws Exception {
+        when(asaasTransferClient.createAccountTransfer(any(), any(), any())).thenReturn(
+                AsaasTransferResponse.builder().id("tr_missing").status("DONE").build());
+        when(asaasTransferClient.retrieveTransfer(any(), eq("tr_missing")))
+                .thenThrow(new com.theron.wallet.exception.AsaasApiException("not found", 404, ""));
+
+        UUID orderId = createOrder(tokenFinance, employeeAccount.getId(), "80.00");
+
+        mockMvc.perform(post("/api/v1/payment-orders/{id}/approve", orderId)
+                        .header("Authorization", bearer(tokenOwner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        assertBalance(ownerAccount.getId(), "5000.00");
+        assertBalance(employeeAccount.getId(), "50.00");
     }
 
     @Test

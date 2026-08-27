@@ -23,10 +23,19 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID
     @Query("""
             SELECT po FROM PaymentOrder po
             JOIN FETCH po.organization
-            JOIN FETCH po.sourceAccount
+            LEFT JOIN FETCH po.sourceAccount
             JOIN FETCH po.destinationAccount
             JOIN FETCH po.createdBy
             WHERE po.id = :id
             """)
     Optional<PaymentOrder> findByIdWithDetails(@Param("id") UUID id);
+
+    @Query("""
+            SELECT po FROM PaymentOrder po
+            JOIN FETCH po.organization
+            LEFT JOIN FETCH po.sourceAccount
+            JOIN FETCH po.destinationAccount
+            WHERE po.debitTransaction.id = :debitTransactionId
+            """)
+    Optional<PaymentOrder> findByDebitTransactionId(@Param("debitTransactionId") UUID debitTransactionId);
 }
