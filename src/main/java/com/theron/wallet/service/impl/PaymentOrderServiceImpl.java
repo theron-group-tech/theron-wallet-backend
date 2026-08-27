@@ -165,8 +165,9 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     public PaymentOrderResponse approve(
             UUID actorUserId, UUID paymentOrderId, DecidePaymentOrderRequest request) {
         PaymentOrder order = requireOrder(paymentOrderId);
+        UUID organizationId = order.getOrganization().getId();
         resourceAuthorization.requireOrganization(
-                actorUserId, order.getOrganization().getId(), PermissionCodes.PAYMENT_ORDERS_APPROVE);
+                actorUserId, organizationId, PermissionCodes.PAYMENT_ORDERS_APPROVE);
 
         if (order.getStatus() != PaymentOrderStatus.PENDING_APPROVAL) {
             throw new InvalidRequestException("Only PENDING_APPROVAL payment orders can be approved");
@@ -175,12 +176,18 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
             throw new ForbiddenException("Creator cannot approve their own payment order");
         }
 
-        Account source = order.getSourceAccount();
-        Account destination = order.getDestinationAccount();
-        assertSufficientBalance(source.getId(), order.getAmount());
-
         User decider = userRepository.findById(actorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
+
+        Account source = resolveApprovingOwnerAccount(organizationId, actorUserId);
+        Account destination = order.getDestinationAccount();
+        if (source.getId().equals(destination.getId())) {
+            throw new InvalidRequestException("Approving OWNER account cannot be the destination account");
+        }
+
+        // The financial source is determined by the OWNER who actually approves the order.
+        order.setSourceAccount(source);
+        assertSufficientBalance(source.getId(), order.getAmount());
 
         order.setStatus(PaymentOrderStatus.PROCESSING);
         order.setDecidedBy(decider);
@@ -198,14 +205,17 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
 
             auditLogService.record(
                     AuditAction.PAYMENT_ORDER_APPROVED,
-                    order.getOrganization().getId(),
+                    organizationId,
                     actorUserId,
                     "PaymentOrder",
                     order.getId(),
-                    Map.of("status", PaymentOrderStatus.COMPLETED.name()));
+                    Map.of(
+                            "status", PaymentOrderStatus.COMPLETED.name(),
+                            "sourceAccountId", source.getId().toString(),
+                            "approvingOwnerUserId", actorUserId.toString()));
             auditLogService.record(
                     AuditAction.PAYMENT_ORDER_COMPLETED,
-                    order.getOrganization().getId(),
+                    organizationId,
                     actorUserId,
                     "PaymentOrder",
                     order.getId(),
@@ -215,7 +225,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
             order = paymentOrderRepository.save(order);
             auditLogService.record(
                     AuditAction.PAYMENT_ORDER_FAILED,
-                    order.getOrganization().getId(),
+                    organizationId,
                     actorUserId,
                     "PaymentOrder",
                     order.getId(),
@@ -356,8 +366,8 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         order.setDebitTransaction(debitTx);
         order.setCreditTransaction(creditTx);
 
-        log.info("PaymentOrder {} completed: debit={}, credit={}, amount={}",
-                order.getId(), debitTx.getId(), creditTx.getId(), order.getAmount());
+        log.info("PaymentOrder {} completed: debit={}, credit={}, amount={}, sourceAccountId={}, approvingOwnerUserId={}",
+                order.getId(), debitTx.getId(), creditTx.getId(), order.getAmount(), sourceId, actor.getId());
     }
 
     private Account resolveOwnerAccount(UUID organizationId) {
@@ -365,6 +375,16 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 .orElseThrow(() -> new InvalidRequestException("Organization has no OWNER"));
         return accountRepository.findByOrganization_IdAndOwnerUser_Id(organizationId, ownerUserId)
                 .orElseThrow(() -> new InvalidRequestException("OWNER account not found"));
+    }
+
+    private Account resolveApprovingOwnerAccount(UUID organizationId, UUID approvingUserId) {
+        boolean isOwner = membershipRoleRepository.findOwnerUserIds(organizationId).stream()
+                .anyMatch(ownerUserId -> ownerUserId.equals(approvingUserId));
+        if (!isOwner) {
+            throw new ForbiddenException("Only an OWNER can approve payment orders");
+        }
+        return accountRepository.findByOrganization_IdAndOwnerUser_Id(organizationId, approvingUserId)
+                .orElseThrow(() -> new InvalidRequestException("Approving OWNER account not found"));
     }
 
     private void assertSufficientBalance(UUID accountId, java.math.BigDecimal amount) {
