@@ -30,13 +30,13 @@ import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.IdempotencyService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.PaymentOrderService;
-import com.theron.wallet.service.ResourceAuthorizationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,7 +61,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
     private final MembershipRoleRepository membershipRoleRepository;
-    private final ResourceAuthorizationService resourceAuthorization;
+    private final ResourceAuthorization resourceAuthorization;
     private final AccountAsaasGateway accountAsaasGateway;
     private final AsaasBalanceService asaasBalanceService;
     private final AsaasTransferClient asaasTransferClient;
@@ -261,44 +261,54 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         Wallet second = walletRepository.findByAccountIdWithLock(secondId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", secondId));
         Wallet sourceWallet = sourceId.equals(firstId) ? first : second;
         Wallet destWallet = destId.equals(firstId) ? first : second;
-        if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s", sourceWallet.getBalance(), order.getAmount()));
-        sourceWallet.debit(order.getAmount());
-        destWallet.credit(order.getAmount());
-        walletRepository.save(sourceWallet);
-        walletRepository.save(destWallet);
-        if (order.getDebitTransaction() == null || order.getCreditTransaction() == null) throw new InvalidRequestException("Payment order has incomplete local transactions");
-        if (order.getDebitTransaction().getStatus() != TransactionStatus.COMPLETED) { order.getDebitTransaction().setStatus(TransactionStatus.COMPLETED); order.getDebitTransaction().setCompletedAt(LocalDateTime.now()); transactionRepository.save(order.getDebitTransaction()); }
-        if (order.getCreditTransaction().getStatus() != TransactionStatus.COMPLETED) { order.getCreditTransaction().setStatus(TransactionStatus.COMPLETED); order.getCreditTransaction().setCompletedAt(LocalDateTime.now()); transactionRepository.save(order.getCreditTransaction()); }
-        ledgerService.postTransfer(sourceId, destId, order.getAmount(), "ledger:payment-order:" + order.getId(), order.getDebitTransaction().getId().toString());
+        Transaction debitTx = order.getDebitTransaction();
+        Transaction creditTx = order.getCreditTransaction();
+        if (debitTx == null || creditTx == null) throw new InvalidRequestException("Payment order transactions are incomplete");
+        if (debitTx.getStatus() != TransactionStatus.COMPLETED) {
+            if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s", sourceWallet.getBalance(), order.getAmount()));
+            sourceWallet.setBalance(sourceWallet.getBalance().subtract(order.getAmount()));
+            destWallet.setBalance(destWallet.getBalance().add(order.getAmount()));
+            walletRepository.save(sourceWallet);
+            walletRepository.save(destWallet);
+        }
+        debitTx.setStatus(TransactionStatus.COMPLETED);
+        debitTx.setCompletedAt(LocalDateTime.now());
+        creditTx.setStatus(TransactionStatus.COMPLETED);
+        creditTx.setCompletedAt(LocalDateTime.now());
+        transactionRepository.save(debitTx);
+        transactionRepository.save(creditTx);
+        ledgerService.postTransfer(debitTx, creditTx, order.getAmount(), order.getCurrency(), "Payment order " + order.getId());
     }
 
     private void completeLocalPaymentOrder(PaymentOrder order, AsaasTransferResponse providerTransfer) {
-        order.setAsaasTransferId(providerTransfer.getId());
         order.setStatus(PaymentOrderStatus.COMPLETED);
-        order.setCompletedAt(LocalDateTime.now());
-        order = paymentOrderRepository.save(order);
-        UUID organizationId = order.getOrganization().getId();
-        UUID actorUserId = order.getDecidedBy().getId();
-        auditLogService.record(AuditAction.PAYMENT_ORDER_APPROVED, organizationId, actorUserId, "PaymentOrder", order.getId(), Map.of("status", order.getStatus().name(), "sourceAccountId", order.getSourceAccount().getId().toString(), "destinationAccountId", order.getDestinationAccount().getId().toString(), "asaasTransferId", providerTransfer.getId(), "asaasTransferStatus", providerTransfer.getStatus() == null ? "DONE" : providerTransfer.getStatus(), "asaasOperationType", providerTransfer.getOperationType() == null ? "unknown" : providerTransfer.getOperationType(), "approvingOwnerUserId", actorUserId.toString()));
-        auditLogService.record(AuditAction.PAYMENT_ORDER_COMPLETED, organizationId, actorUserId, "PaymentOrder", order.getId(), Map.of("asaasTransferId", providerTransfer.getId()));
+        order.setAsaasTransferId(providerTransfer.getId());
+        paymentOrderRepository.save(order);
+        auditLogService.record(AuditAction.PAYMENT_ORDER_APPROVED, order.getOrganization().getId(), order.getDecidedBy().getId(), "PaymentOrder", order.getId(), Map.of("asaasTransferId", providerTransfer.getId(), "status", providerTransfer.getStatus()));
     }
 
-    private boolean isPendingStatus(String status) { return "PENDING".equalsIgnoreCase(status) || "IN_BANK_PROCESSING".equalsIgnoreCase(status); }
-    private boolean isCompletedStatus(String status) { return status == null || status.isBlank() || "DONE".equalsIgnoreCase(status) || "COMPLETED".equalsIgnoreCase(status); }
-    private boolean isFailedStatus(String status) { return "FAILED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status) || "REFUNDED".equalsIgnoreCase(status); }
+    private boolean isPendingStatus(String status) {
+        return status != null && ("PENDING".equalsIgnoreCase(status) || "SCHEDULED".equalsIgnoreCase(status));
+    }
 
-    private Account resolveApprovingOwnerAccount(UUID organizationId, UUID approvingUserId) {
-        boolean isOwner = membershipRoleRepository.findOwnerUserIds(organizationId).stream().anyMatch(ownerUserId -> ownerUserId.equals(approvingUserId));
-        if (!isOwner) throw new ForbiddenException("Only an OWNER can approve payment orders");
-        return accountRepository.findByOrganization_IdAndOwnerUser_Id(organizationId, approvingUserId).orElseThrow(() -> new InvalidRequestException("Approving OWNER account not found"));
+    private boolean isCompletedStatus(String status) {
+        return status != null && ("DONE".equalsIgnoreCase(status) || "COMPLETED".equalsIgnoreCase(status));
+    }
+
+    private boolean isFailedStatus(String status) {
+        return status != null && ("FAILED".equalsIgnoreCase(status) || "CANCELLED".equalsIgnoreCase(status));
+    }
+
+    private PaymentOrder requireOrder(UUID paymentOrderId) {
+        return paymentOrderRepository.findById(paymentOrderId).orElseThrow(() -> new ResourceNotFoundException("PaymentOrder", "id", paymentOrderId));
+    }
+
+    private Account resolveApprovingOwnerAccount(UUID organizationId, UUID actorUserId) {
+        return accountRepository.findByOrganization_IdAndOwnerUser_Id(organizationId, actorUserId).orElseThrow(() -> new ResourceNotFoundException("Account", "organizationId/ownerUserId", organizationId + "/" + actorUserId));
     }
 
     private void assertSufficientBalance(UUID accountId, java.math.BigDecimal amount) {
-        Wallet wallet = walletRepository.findByAccount_Id(accountId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
-        java.math.BigDecimal available = asaasBalanceService.displayBalance(accountId);
-        if (available.compareTo(amount) < 0) throw new InsufficientBalanceException(String.format("Saldo insuficiente. Disponível: %s, Solicitado: %s", available, amount));
-        if (wallet.getBalance().compareTo(amount) < 0) throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s", wallet.getBalance(), amount));
+        Wallet wallet = walletRepository.findByAccountId(accountId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
+        if (wallet.getBalance().compareTo(amount) < 0) throw new InsufficientBalanceException(String.format("Saldo insuficiente. Disponível: %s, Solicitado: %s", wallet.getBalance(), amount));
     }
-
-    private PaymentOrder requireOrder(UUID paymentOrderId) { return paymentOrderRepository.findById(paymentOrderId).orElseThrow(() -> new ResourceNotFoundException("PaymentOrder", "id", paymentOrderId)); }
 }
