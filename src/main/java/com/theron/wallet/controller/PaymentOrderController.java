@@ -79,6 +79,12 @@ public class PaymentOrderController {
                 actorResolver.requireProductUserId(), id, request == null ? new DecidePaymentOrderRequest() : request));
     }
 
+    @PostMapping("/{id}/sync")
+    @Operation(summary = "Synchronize a PROCESSING payment order with Asaas")
+    public ResponseEntity<PaymentOrderResponse> sync(@PathVariable UUID id) {
+        return ResponseEntity.ok(paymentOrderService.syncProcessingOrder(id));
+    }
+
     @PostMapping("/{id}/reject")
     public ResponseEntity<PaymentOrderResponse> reject(
             @PathVariable UUID id,
