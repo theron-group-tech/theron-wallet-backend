@@ -29,6 +29,11 @@ public class CreatePaymentOrderRequest {
     @DecimalMin(value = "0.01")
     private BigDecimal amount;
 
+    @Size(max = 3)
+    @Schema(description = "Currency code", example = "BRL", defaultValue = "BRL")
+    @Builder.Default
+    private String currency = "BRL";
+
     @Size(max = 500)
     private String description;
 }
