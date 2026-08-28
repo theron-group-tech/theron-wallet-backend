@@ -142,8 +142,13 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 throw new InvalidRequestException("Asaas transfer failed to enter a processable state (status=" + providerTransfer.getStatus() + ")");
             }
         } catch (RuntimeException ex) {
-            order.setStatus(order.getAsaasTransferId() != null && !order.getAsaasTransferId().isBlank() ? PaymentOrderStatus.PROCESSING : PaymentOrderStatus.FAILED);
-            paymentOrderRepository.save(order);
+            if (order.getAsaasTransferId() == null || order.getAsaasTransferId().isBlank()) {
+                order.setStatus(PaymentOrderStatus.FAILED);
+                paymentOrderRepository.save(order);
+            } else {
+                order.setStatus(PaymentOrderStatus.PROCESSING);
+                paymentOrderRepository.save(order);
+            }
             throw ex;
         }
         return PaymentOrderMapper.toResponse(order);
@@ -264,20 +269,21 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         Transaction debitTx = order.getDebitTransaction();
         Transaction creditTx = order.getCreditTransaction();
         if (debitTx == null || creditTx == null) throw new InvalidRequestException("Payment order transactions are incomplete");
-        if (debitTx.getStatus() != TransactionStatus.COMPLETED) {
+        boolean alreadyCompleted = debitTx.getStatus() == TransactionStatus.COMPLETED && creditTx.getStatus() == TransactionStatus.COMPLETED;
+        if (!alreadyCompleted) {
             if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s", sourceWallet.getBalance(), order.getAmount()));
             sourceWallet.setBalance(sourceWallet.getBalance().subtract(order.getAmount()));
             destWallet.setBalance(destWallet.getBalance().add(order.getAmount()));
             walletRepository.save(sourceWallet);
             walletRepository.save(destWallet);
+            debitTx.setStatus(TransactionStatus.COMPLETED);
+            debitTx.setCompletedAt(LocalDateTime.now());
+            creditTx.setStatus(TransactionStatus.COMPLETED);
+            creditTx.setCompletedAt(LocalDateTime.now());
+            transactionRepository.save(debitTx);
+            transactionRepository.save(creditTx);
+            ledgerService.postTransfer(debitTx, creditTx, order.getAmount(), order.getCurrency(), "Payment order " + order.getId());
         }
-        debitTx.setStatus(TransactionStatus.COMPLETED);
-        debitTx.setCompletedAt(LocalDateTime.now());
-        creditTx.setStatus(TransactionStatus.COMPLETED);
-        creditTx.setCompletedAt(LocalDateTime.now());
-        transactionRepository.save(debitTx);
-        transactionRepository.save(creditTx);
-        ledgerService.postTransfer(debitTx, creditTx, order.getAmount(), order.getCurrency(), "Payment order " + order.getId());
     }
 
     private void completeLocalPaymentOrder(PaymentOrder order, AsaasTransferResponse providerTransfer) {
