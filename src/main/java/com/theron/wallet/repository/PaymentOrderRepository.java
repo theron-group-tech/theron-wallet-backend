@@ -20,6 +20,17 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID
     Page<PaymentOrder> findByOrganization_IdAndStatusOrderByCreatedAtDesc(
             UUID organizationId, PaymentOrderStatus status, Pageable pageable);
 
+    /** Compatibility alias used by the payment-order service. */
+    default Page<PaymentOrder> findByOrganization_Id(UUID organizationId, Pageable pageable) {
+        return findByOrganization_IdOrderByCreatedAtDesc(organizationId, pageable);
+    }
+
+    /** Compatibility alias used by the payment-order service. */
+    default Page<PaymentOrder> findByOrganization_IdAndStatus(
+            UUID organizationId, PaymentOrderStatus status, Pageable pageable) {
+        return findByOrganization_IdAndStatusOrderByCreatedAtDesc(organizationId, status, pageable);
+    }
+
     @Query("""
             SELECT po FROM PaymentOrder po
             JOIN FETCH po.organization
