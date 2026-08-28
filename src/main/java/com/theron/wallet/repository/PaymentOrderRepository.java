@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +20,8 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, UUID
 
     Page<PaymentOrder> findByOrganization_IdAndStatusOrderByCreatedAtDesc(
             UUID organizationId, PaymentOrderStatus status, Pageable pageable);
+
+    List<PaymentOrder> findTop100ByStatusOrderByCreatedAtAsc(PaymentOrderStatus status);
 
     /** Compatibility alias used by the payment-order service. */
     default Page<PaymentOrder> findByOrganization_Id(UUID organizationId, Pageable pageable) {
