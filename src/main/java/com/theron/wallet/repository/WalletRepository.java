@@ -23,6 +23,11 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
 
     Optional<Wallet> findByAccount_Id(UUID accountId);
 
+    /** Compatibility alias used by payment-order service. */
+    default Optional<Wallet> findByAccountId(UUID accountId) {
+        return findByAccount_Id(accountId);
+    }
+
     List<Wallet> findByAccount_IdIn(Collection<UUID> accountIds);
 
     Page<Wallet> findByAccount_IdIn(Collection<UUID> accountIds, Pageable pageable);
