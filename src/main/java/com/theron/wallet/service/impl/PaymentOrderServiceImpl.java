@@ -182,34 +182,84 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     @Transactional
     public PaymentOrderResponse syncProcessingOrder(UUID paymentOrderId) {
         PaymentOrder order = requireOrder(paymentOrderId);
-        if (order.getStatus() != PaymentOrderStatus.PROCESSING) throw new InvalidRequestException("Only PROCESSING payment orders can be synced");
-        if (order.getSourceAccount() == null) throw new InvalidRequestException("Payment order has no source account");
+    
+        if (order.getStatus() != PaymentOrderStatus.PROCESSING) {
+            throw new InvalidRequestException("Only PROCESSING payment orders can be synced");
+        }
+    
+        if (order.getSourceAccount() == null) {
+            throw new InvalidRequestException("Payment order has no source account");
+        }
+    
         String transferId = order.getAsaasTransferId();
-        if ((transferId == null || transferId.isBlank()) && order.getDebitTransaction() != null) transferId = order.getDebitTransaction().getAsaasPaymentId();
-        if (transferId == null || transferId.isBlank()) throw new InvalidRequestException("Payment order has no Asaas transfer id");
-        String sourceApiKey = accountAsaasGateway.resolveApiKey(order.getSourceAccount().getId());
+    
+        if ((transferId == null || transferId.isBlank()) && order.getDebitTransaction() != null) {
+            transferId = order.getDebitTransaction().getAsaasPaymentId();
+        }
+    
+        if (transferId == null || transferId.isBlank()) {
+            throw new InvalidRequestException("Payment order has no Asaas transfer id");
+        }
+    
+        String sourceApiKey = accountAsaasGateway.resolveApiKey(
+                order.getSourceAccount().getId()
+        );
+    
         try {
-            AsaasTransferResponse remote = asaasTransferClient.retrieveTransfer(sourceApiKey, transferId);
-            order.setAsaasTransferId(remote.getId() == null ? transferId : remote.getId());
-            log.info("Payment order transfer status: orderId={}, asaasTransferId={}, status={}", order.getId(), transferId, remote.getStatus());
+            AsaasTransferResponse remote =
+                    asaasTransferClient.retrieveTransfer(sourceApiKey, transferId);
+    
+            order.setAsaasTransferId(
+                    remote.getId() == null ? transferId : remote.getId()
+            );
+    
+            log.info(
+                    "Payment order transfer status: orderId={}, asaasTransferId={}, status={}",
+                    order.getId(),
+                    transferId,
+                    remote.getStatus()
+            );
+    
             if (isCompletedStatus(remote.getStatus())) {
                 completeProcessingTransactions(order);
                 completeLocalPaymentOrder(order, remote);
                 return PaymentOrderMapper.toResponse(order);
             }
-            if (isPendingStatus(remote.getStatus())) return PaymentOrderMapper.toResponse(paymentOrderRepository.save(order));
+    
+            if (isPendingStatus(remote.getStatus())) {
+                return PaymentOrderMapper.toResponse(
+                        paymentOrderRepository.save(order)
+                );
+            }
+    
             if (isFailedStatus(remote.getStatus())) {
                 order.setStatus(PaymentOrderStatus.FAILED);
                 paymentOrderRepository.save(order);
-                throw new InvalidRequestException("Asaas transfer failed (status=" + remote.getStatus() + ")");
+    
+                log.warn(
+                        "Payment order transfer failed: orderId={}, asaasTransferId={}, status={}",
+                        order.getId(),
+                        transferId,
+                        remote.getStatus()
+                );
+    
+                return PaymentOrderMapper.toResponse(order);
             }
-            throw new InvalidRequestException("Unknown Asaas transfer status (status=" + remote.getStatus() + ")");
+    
+            throw new InvalidRequestException(
+                    "Unknown Asaas transfer status (status=" + remote.getStatus() + ")"
+            );
+    
         } catch (AsaasApiException ex) {
             if (ex.getAsaasStatusCode() == 404) {
                 order.setStatus(PaymentOrderStatus.FAILED);
                 paymentOrderRepository.save(order);
-                throw new InvalidRequestException("Asaas transfer not found; payment order marked FAILED");
+    
+                throw new InvalidRequestException(
+                        "Asaas transfer not found; payment order marked FAILED"
+                );
             }
+    
             throw ex;
         }
     }
