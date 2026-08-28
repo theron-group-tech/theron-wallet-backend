@@ -1,6 +1,6 @@
 package com.theron.wallet.service.impl;
 
-import com.theron.wallet.dto.asaas.AsaasAccountTransferRequest;
+import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.request.CreatePaymentOrderRequest;
 import com.theron.wallet.dto.request.DecidePaymentOrderRequest;
@@ -8,12 +8,13 @@ import com.theron.wallet.dto.response.PaymentOrderDestinationResponse;
 import com.theron.wallet.dto.response.PaymentOrderResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.PaymentOrder;
-import com.theron.wallet.entity.Subaccount;
+import com.theron.wallet.entity.PixKey;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.User;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.PaymentOrderStatus;
+import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.AsaasApiException;
@@ -26,6 +27,7 @@ import com.theron.wallet.mapper.PaymentOrderMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.MembershipRoleRepository;
 import com.theron.wallet.repository.PaymentOrderRepository;
+import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -61,6 +63,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
     private final MembershipRoleRepository membershipRoleRepository;
+    private final PixKeyRepository pixKeyRepository;
     private final ResourceAuthorization resourceAuthorization;
     private final AccountAsaasGateway accountAsaasGateway;
     private final AsaasBalanceService asaasBalanceService;
@@ -122,15 +125,14 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         order.setSourceAccount(source);
         assertSufficientBalance(source.getId(), order.getAmount());
         accountAsaasGateway.requireConfiguredSubaccount(source.getId());
-        Subaccount destinationSubaccount = accountAsaasGateway.requireConfiguredSubaccount(destination.getId());
-        if (destinationSubaccount.getAsaasWalletId() == null || destinationSubaccount.getAsaasWalletId().isBlank()) throw new InvalidRequestException("Destination account has no Asaas wallet configured");
+        resolveDestinationPixKey(destination.getId());
         order.setStatus(PaymentOrderStatus.PROCESSING);
         order.setDecidedBy(decider);
         order.setDecidedAt(LocalDateTime.now());
         if (request != null) order.setDecisionComment(request.getComment());
         order = paymentOrderRepository.save(order);
         try {
-            AsaasTransferResponse providerTransfer = executeTransfer(order, decider, destinationSubaccount);
+            AsaasTransferResponse providerTransfer = executeTransfer(order, decider);
             order.setAsaasTransferId(providerTransfer.getId());
             if (isCompletedStatus(providerTransfer.getStatus())) {
                 completeProcessingTransactions(order);
@@ -189,6 +191,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         try {
             AsaasTransferResponse remote = asaasTransferClient.retrieveTransfer(sourceApiKey, transferId);
             order.setAsaasTransferId(remote.getId() == null ? transferId : remote.getId());
+            log.info("Payment order transfer status: orderId={}, asaasTransferId={}, status={}", order.getId(), transferId, remote.getStatus());
             if (isCompletedStatus(remote.getStatus())) {
                 completeProcessingTransactions(order);
                 completeLocalPaymentOrder(order, remote);
@@ -211,7 +214,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         }
     }
 
-    private AsaasTransferResponse executeTransfer(PaymentOrder order, User actor, Subaccount destinationSubaccount) {
+    private AsaasTransferResponse executeTransfer(PaymentOrder order, User actor) {
         UUID sourceId = order.getSourceAccount().getId();
         UUID destId = order.getDestinationAccount().getId();
         UUID firstId = sourceId.compareTo(destId) < 0 ? sourceId : destId;
@@ -219,9 +222,21 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         Wallet sourceWallet = sourceId.equals(firstId) ? walletRepository.findByAccountIdWithLock(firstId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", firstId)) : walletRepository.findByAccountIdWithLock(secondId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", secondId));
         walletRepository.findByAccountIdWithLock(sourceId.equals(firstId) ? secondId : firstId).orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", destId));
         if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s", sourceWallet.getBalance(), order.getAmount()));
+        PixKey destinationPixKey = resolveDestinationPixKey(destId);
         String idempotencyKey = order.getId().toString().replace("-", "");
         String sourceApiKey = accountAsaasGateway.resolveApiKey(sourceId);
-        AsaasTransferResponse providerTransfer = confirmAsaasAccountTransfer(order, destinationSubaccount, sourceApiKey, idempotencyKey);
+        AsaasTransferRequest request = AsaasTransferRequest.builder()
+                .value(order.getAmount())
+                .pixAddressKey(destinationPixKey.getKey())
+                .pixAddressKeyType(destinationPixKey.getType().name())
+                .operationType("PIX")
+                .description(order.getDescription() == null ? "Payment order " + order.getId() : order.getDescription())
+                .externalReference("payment-order:" + order.getId())
+                .build();
+        log.info("Creating payment order PIX transfer: orderId={}, amount={}, destinationAccountId={}, pixKeyType={}", order.getId(), order.getAmount(), destId, destinationPixKey.getType());
+        AsaasTransferResponse providerTransfer = asaasTransferClient.createTransfer(sourceApiKey, request, idempotencyKey);
+        if (providerTransfer.getId() == null || providerTransfer.getId().isBlank()) throw new InvalidRequestException("Asaas did not return a transfer id");
+        log.info("Payment order PIX transfer created: orderId={}, asaasTransferId={}, status={}", order.getId(), providerTransfer.getId(), providerTransfer.getStatus());
         order.setAsaasTransferId(providerTransfer.getId());
         if (order.getDebitTransaction() == null) {
             String requestHash = idempotencyService.hash(TransactionType.TRANSFER_OUT.name(), sourceId.toString(), destId.toString(), idempotencyService.amountPart(order.getAmount()), "PAYMENT_ORDER");
@@ -242,19 +257,12 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         return paymentOrderRepository.save(order) != null ? providerTransfer : providerTransfer;
     }
 
-    private AsaasTransferResponse confirmAsaasAccountTransfer(PaymentOrder order, Subaccount destinationSubaccount, String sourceApiKey, String idempotencyKey) {
-        if (order.getAsaasTransferId() != null && !order.getAsaasTransferId().isBlank()) return asaasTransferClient.retrieveTransfer(sourceApiKey, order.getAsaasTransferId());
-        AsaasAccountTransferRequest request = AsaasAccountTransferRequest.builder().value(order.getAmount()).walletId(destinationSubaccount.getAsaasWalletId()).externalReference("payment-order:" + order.getId()).build();
-        AsaasTransferResponse created = asaasTransferClient.createAccountTransfer(sourceApiKey, request, idempotencyKey);
-        if (created.getId() == null || created.getId().isBlank()) throw new InvalidRequestException("Asaas did not return a transfer id");
-        order.setAsaasTransferId(created.getId());
-        paymentOrderRepository.save(order);
-        AsaasTransferResponse confirmed;
-        try { confirmed = asaasTransferClient.retrieveTransfer(sourceApiKey, created.getId()); }
-        catch (AsaasApiException ex) { if (ex.getAsaasStatusCode() == 404) throw new InvalidRequestException("Asaas transfer not found after creation (id=" + created.getId() + ")"); throw ex; }
-        if (confirmed.getId() == null || !confirmed.getId().equals(created.getId())) throw new InvalidRequestException("Asaas transfer id mismatch after confirmation");
-        if (isPendingStatus(confirmed.getStatus()) || isCompletedStatus(confirmed.getStatus())) return confirmed;
-        throw new InvalidRequestException("Asaas account transfer failed (status=" + confirmed.getStatus() + ")");
+    private PixKey resolveDestinationPixKey(UUID destinationAccountId) {
+        return pixKeyRepository.findByAccountIdOrderByCreatedAtDesc(destinationAccountId).stream()
+                .filter(pixKey -> pixKey.getStatus() == PixKeyStatus.ACTIVE)
+                .filter(pixKey -> pixKey.getKey() != null && !pixKey.getKey().isBlank())
+                .findFirst()
+                .orElseThrow(() -> new InvalidRequestException("Destination account has no active PIX key configured"));
     }
 
     private void completeProcessingTransactions(PaymentOrder order) {
@@ -290,6 +298,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         order.setStatus(PaymentOrderStatus.COMPLETED);
         order.setAsaasTransferId(providerTransfer.getId());
         paymentOrderRepository.save(order);
+        log.info("Payment order completed successfully: orderId={}, asaasTransferId={}, status={}, amount={}, sourceAccountId={}, destinationAccountId={}", order.getId(), providerTransfer.getId(), providerTransfer.getStatus(), order.getAmount(), order.getSourceAccount().getId(), order.getDestinationAccount().getId());
         auditLogService.record(AuditAction.PAYMENT_ORDER_APPROVED, order.getOrganization().getId(), order.getDecidedBy().getId(), "PaymentOrder", order.getId(), Map.of("asaasTransferId", providerTransfer.getId(), "status", providerTransfer.getStatus()));
     }
 
