@@ -29,6 +29,7 @@ import com.theron.wallet.repository.PaymentOrderRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
+import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
@@ -37,7 +38,6 @@ import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.PaymentOrderService;
 import com.theron.wallet.service.ResourceAuthorizationService;
 import com.theron.wallet.service.TransactionLifecycleService;
-import com.theron.wallet.security.PermissionCodes;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -112,6 +112,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
             order = paymentOrderRepository.save(order);
 
             if (isCompletedStatus(providerTransfer.getStatus())) {
+                completeProcessingTransactions(order);
                 completeLocalPaymentOrder(order, providerTransfer);
             } else if (isPendingStatus(providerTransfer.getStatus())) {
                 order.setStatus(PaymentOrderStatus.PROCESSING);
@@ -121,8 +122,8 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                         + providerTransfer.getStatus() + ")");
             }
         } catch (RuntimeException ex) {
-            // If Asaas already returned a transfer id, the provider-side operation exists or may exist.
-            // Never turn that order into FAILED and allow another transfer to be created on retry.
+            // If Asaas already returned a transfer id, keep the order PROCESSING and reconcile it later.
+            // Retrying /approve must never create another provider transfer.
             if (order.getAsaasTransferId() != null && !order.getAsaasTransferId().isBlank()) {
                 order.setStatus(PaymentOrderStatus.PROCESSING);
                 paymentOrderRepository.save(order);
@@ -242,7 +243,6 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         Wallet second = walletRepository.findByAccountIdWithLock(secondId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", secondId));
         Wallet sourceWallet = sourceFirst ? first : second;
-        Wallet destWallet = sourceFirst ? second : first;
         if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) {
             throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s",
                     sourceWallet.getBalance(), order.getAmount()));
@@ -270,6 +270,8 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         transactionRepository.save(debitTx);
 
         if (order.getCreditTransaction() == null) {
+            Wallet destWallet = walletRepository.findByAccountIdWithLock(destId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", destId));
             Transaction.TransactionBuilder creditBuilder = Transaction.builder()
                     .wallet(destWallet).type(TransactionType.TRANSFER_IN).status(TransactionStatus.PROCESSING)
                     .amount(order.getAmount()).description(order.getDescription() == null ? "Payment order " + order.getId() : order.getDescription())
@@ -315,18 +317,40 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     }
 
     private void completeProcessingTransactions(PaymentOrder order) {
-        if (order.getDebitTransaction() != null && order.getDebitTransaction().getStatus() != TransactionStatus.COMPLETED) {
+        UUID sourceId = order.getSourceAccount().getId();
+        UUID destId = order.getDestinationAccount().getId();
+        UUID firstId = sourceId.compareTo(destId) < 0 ? sourceId : destId;
+        UUID secondId = sourceId.compareTo(destId) < 0 ? destId : sourceId;
+        Wallet first = walletRepository.findByAccountIdWithLock(firstId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", firstId));
+        Wallet second = walletRepository.findByAccountIdWithLock(secondId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", secondId));
+        Wallet sourceWallet = sourceId.equals(firstId) ? first : second;
+        Wallet destWallet = destId.equals(firstId) ? first : second;
+
+        if (sourceWallet.getBalance().compareTo(order.getAmount()) < 0) {
+            throw new InsufficientBalanceException(String.format("Saldo no ledger local insuficiente. Disponível: %s, Solicitado: %s",
+                    sourceWallet.getBalance(), order.getAmount()));
+        }
+        sourceWallet.debit(order.getAmount());
+        destWallet.credit(order.getAmount());
+        walletRepository.save(sourceWallet);
+        walletRepository.save(destWallet);
+
+        if (order.getDebitTransaction() == null || order.getCreditTransaction() == null) {
+            throw new InvalidRequestException("Payment order has incomplete local transactions");
+        }
+        if (order.getDebitTransaction().getStatus() != TransactionStatus.COMPLETED) {
             transactionLifecycleService.transition(order.getDebitTransaction(), TransactionStatus.COMPLETED);
             transactionRepository.save(order.getDebitTransaction());
         }
-        if (order.getCreditTransaction() != null && order.getCreditTransaction().getStatus() != TransactionStatus.COMPLETED) {
+        if (order.getCreditTransaction().getStatus() != TransactionStatus.COMPLETED) {
             transactionLifecycleService.transition(order.getCreditTransaction(), TransactionStatus.COMPLETED);
             transactionRepository.save(order.getCreditTransaction());
         }
-        if (order.getDebitTransaction() != null) {
-            ledgerService.postTransfer(order.getSourceAccount().getId(), order.getDestinationAccount().getId(), order.getAmount(),
-                    "ledger:payment-order:" + order.getId(), order.getDebitTransaction().getId().toString());
-        }
+
+        ledgerService.postTransfer(sourceId, destId, order.getAmount(),
+                "ledger:payment-order:" + order.getId(), order.getDebitTransaction().getId().toString());
     }
 
     private void completeLocalPaymentOrder(PaymentOrder order, AsaasTransferResponse providerTransfer) {
