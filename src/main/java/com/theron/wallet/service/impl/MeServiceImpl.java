@@ -121,7 +121,7 @@ public class MeServiceImpl implements MeService {
         List<TransactionResponse> recent = accountIds.isEmpty()
                 ? List.of()
                 : transactionRepository.findByAccount_IdIn(
-                                accountIds, PageRequest.of(0, 10, MobilePageables.DEFAULT_SORT))
+                                accountIds, PageRequest.of(0, 4, MobilePageables.DEFAULT_SORT))
                         .map(TransactionMapper::toMobileResponse)
                         .getContent();
 
