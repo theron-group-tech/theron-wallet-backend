@@ -53,6 +53,8 @@ public final class PermissionCodes {
 
     public static final String PAYMENT_ORDERS_CREATE = "payment_orders.create";
     public static final String PAYMENT_ORDERS_READ = "payment_orders.read";
+    /** Alias kept for compatibility with payment-order service naming. */
+    public static final String PAYMENT_ORDERS_VIEW = PAYMENT_ORDERS_READ;
     public static final String PAYMENT_ORDERS_CANCEL = "payment_orders.cancel";
     public static final String PAYMENT_ORDERS_APPROVE = "payment_orders.approve";
     public static final String PAYMENT_ORDERS_REJECT = "payment_orders.reject";
