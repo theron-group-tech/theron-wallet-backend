@@ -81,6 +81,9 @@ public class PaymentOrder {
     @JoinColumn(name = "credit_transaction_id")
     private Transaction creditTransaction;
 
+    @Column(name = "asaas_transfer_id", length = 50, unique = true)
+    private String asaasTransferId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
