@@ -154,12 +154,109 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
                                   "transfer": {
                                     "id": "transfer-qr-validation",
                                     "value": 50.00,
+                                    "status": "PENDING",
+                                    "externalReference": "idem-pay-validation"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+    }
+
+    @Test
+    @DisplayName("transfer-validation approves QR pay when Asaas returns AWAITING_REQUEST without transferId")
+    void transferValidationApprovesQrPayWithoutTransferIdInPayResponse() throws Exception {
+        when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-no-transfer-id")))
+                .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                        .id("pix-tx-no-transfer-id")
+                        .status("AWAITING_REQUEST")
+                        .value(new BigDecimal("50.00"))
+                        .description("QR pay without transfer id")
+                        .build());
+
+        mockMvc.perform(post("/api/v1/admin/platform-account/pix/qr-codes/pay")
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Idempotency-Key", "idem-pay-no-transfer-id")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(CreatePlatformPixPayQrCodeRequest.builder()
+                                .payload("00020126580014br.gov.bcb.pix0136test")
+                                .amount(new BigDecimal("50.00"))
+                                .description("QR pay without transfer id")
+                                .build())))
+                .andExpect(status().isCreated());
+
+        PlatformPixTransfer reserved = platformPixTransferRepository
+                .findByIdempotencyKey("idem-pay-no-transfer-id")
+                .orElseThrow();
+        assertThat(reserved.getAsaasTransferId()).isNull();
+        assertThat(reserved.getAsaasPixTransactionId()).isEqualTo("pix-tx-no-transfer-id");
+        assertThat(reserved.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
+
+        mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                        .header("asaas-access-token", "test-transfer-validation-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "TRANSFER",
+                                  "transfer": {
+                                    "id": "transfer-from-validation",
+                                    "value": 50.00,
+                                    "status": "PENDING",
+                                    "externalReference": "idem-pay-no-transfer-id"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        PlatformPixTransfer bound = platformPixTransferRepository
+                .findByAsaasTransferId("transfer-from-validation")
+                .orElseThrow();
+        assertThat(bound.getIdempotencyKey()).isEqualTo("idem-pay-no-transfer-id");
+    }
+
+    @Test
+    @DisplayName("transfer-validation approves pending QR pay via amount fallback without externalReference")
+    void transferValidationApprovesQrPayViaAmountFallback() throws Exception {
+        when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-amount-fallback")))
+                .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                        .id("pix-tx-amount-fallback")
+                        .status("AWAITING_REQUEST")
+                        .value(new BigDecimal("75.00"))
+                        .description("QR pay amount fallback")
+                        .build());
+
+        mockMvc.perform(post("/api/v1/admin/platform-account/pix/qr-codes/pay")
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Idempotency-Key", "idem-pay-amount-fallback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(CreatePlatformPixPayQrCodeRequest.builder()
+                                .payload("00020126580014br.gov.bcb.pix0136test")
+                                .amount(new BigDecimal("75.00"))
+                                .description("QR pay amount fallback")
+                                .build())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                        .header("asaas-access-token", "test-transfer-validation-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "TRANSFER",
+                                  "transfer": {
+                                    "id": "transfer-amount-fallback",
+                                    "value": 75.00,
                                     "status": "PENDING"
                                   }
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        PlatformPixTransfer bound = platformPixTransferRepository
+                .findByAsaasTransferId("transfer-amount-fallback")
+                .orElseThrow();
+        assertThat(bound.getIdempotencyKey()).isEqualTo("idem-pay-amount-fallback");
     }
 
     @Test

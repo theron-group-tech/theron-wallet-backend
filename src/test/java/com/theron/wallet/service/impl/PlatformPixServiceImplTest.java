@@ -113,8 +113,8 @@ class PlatformPixServiceImplTest {
                     return transaction;
                 });
 
-        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE");
-        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE");
+        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE", null, null);
+        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE", null, null);
 
         assertThat(row.getCreditTransactionId()).isEqualTo(transactionId);
         verify(walletService, times(1)).credit(walletId, new BigDecimal("42.50"));

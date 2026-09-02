@@ -8,6 +8,9 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,4 +32,19 @@ public interface PlatformPixTransferRepository extends JpaRepository<PlatformPix
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<PlatformPixTransfer> findByStatusAndCreditTransactionIdIsNull(TransactionStatus status);
+
+    @Query("""
+            SELECT p FROM PlatformPixTransfer p
+            WHERE p.asaasTransferId IS NULL
+              AND p.destinationPixKey = :destinationKey
+              AND p.status IN :statuses
+              AND p.amount = :amount
+              AND p.createdAt >= :since
+            ORDER BY p.createdAt DESC
+            """)
+    List<PlatformPixTransfer> findPendingQrPayForBind(
+            @Param("destinationKey") String destinationKey,
+            @Param("statuses") Collection<TransactionStatus> statuses,
+            @Param("amount") BigDecimal amount,
+            @Param("since") LocalDateTime since);
 }

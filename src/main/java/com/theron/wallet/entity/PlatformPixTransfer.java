@@ -34,7 +34,7 @@ public class PlatformPixTransfer {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "asaas_transfer_id", nullable = false, unique = true, length = 80)
+    @Column(name = "asaas_transfer_id", length = 80)
     private String asaasTransferId;
 
     @Column(nullable = false, precision = 19, scale = 2)

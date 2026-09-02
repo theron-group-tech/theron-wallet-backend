@@ -57,6 +57,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -71,7 +72,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlatformPixServiceImpl implements PlatformPixService {
 
-    private static final String QR_PAY_DESTINATION_FALLBACK = "QR_CODE_PAY";
+    static final String QR_PAY_DESTINATION_FALLBACK = "QR_CODE_PAY";
+    private static final int QR_PAY_BIND_WINDOW_MINUTES = 10;
     private static final Set<String> COMPLETED_REMOTE = Set.of("DONE");
     private static final Set<String> FAILED_REMOTE = Set.of("FAILED", "CANCELLED", "BLOCKED");
     private static final Set<String> PROCESSING_REMOTE = Set.of(
@@ -201,59 +203,115 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                         .build())
                 .value(payAmount)
                 .description(description)
+                .externalReference(normalizedKey)
                 .build();
+
+        // Commit before Asaas so transfer-validation can APPROVE during the pay HTTP call.
+        reserveQrPayAuthorization(normalizedKey, payAmount, description);
 
         AsaasPixPayQrCodeResponse asaasResponse = asaasPixClient.payQrCode(
                 masterKey, asaasRequest, normalizedKey);
-        log.info("Paid Platform Account PIX QR code in Asaas: id={}, status={}",
-                asaasResponse.getId(), asaasResponse.getStatus());
+        log.info("Paid Platform Account PIX QR code in Asaas: id={}, status={}, transferId={}",
+                asaasResponse.getId(), asaasResponse.getStatus(), asaasResponse.getTransferId());
 
-        PlatformPixTransfer saved = persistQrPayAuthorization(
+        PlatformPixTransfer saved = completeQrPayAuthorization(
                 normalizedKey, asaasResponse, payAmount, description);
-        if (saved != null && saved.getStatus() == TransactionStatus.COMPLETED) {
+        if (saved.getStatus() == TransactionStatus.COMPLETED) {
             creditInNewTransaction(saved.getId());
         }
         return toPayQrCodeResponse(asaasResponse, description);
     }
 
-    private PlatformPixTransfer persistQrPayAuthorization(
-            String idempotencyKey,
-            AsaasPixPayQrCodeResponse asaasResponse,
-            BigDecimal payAmount,
-            String description) {
-        if (asaasResponse.getTransferId() == null || asaasResponse.getTransferId().isBlank()) {
-            log.warn(
-                    "PIX QR pay response has no transferId; external transfer-validation may refuse: pixTxId={}",
-                    asaasResponse.getId());
-            return null;
-        }
-        TransactionStatus status = mapPixPayStatus(asaasResponse.getStatus());
-        String destinationKey = resolveQrPayDestinationKey(asaasResponse);
+    private PlatformPixTransfer reserveQrPayAuthorization(
+            String idempotencyKey, BigDecimal payAmount, String description) {
         TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
         requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        PlatformPixTransfer saved = requiresNew.execute(statusTx -> {
+        return requiresNew.execute(statusTx -> {
             Optional<PlatformPixTransfer> raced =
                     platformPixTransferRepository.findByIdempotencyKey(idempotencyKey);
             if (raced.isPresent()) {
                 return raced.get();
             }
-            Optional<PlatformPixTransfer> byTransferId =
-                    platformPixTransferRepository.findByAsaasTransferId(asaasResponse.getTransferId());
-            if (byTransferId.isPresent()) {
-                return byTransferId.get();
-            }
             return platformPixTransferRepository.save(PlatformPixTransfer.builder()
-                    .asaasTransferId(asaasResponse.getTransferId())
-                    .asaasPixTransactionId(asaasResponse.getId())
-                    .amount(asaasResponse.getValue() != null ? asaasResponse.getValue() : payAmount)
-                    .status(status)
-                    .destinationPixKey(destinationKey)
+                    .amount(payAmount)
+                    .status(TransactionStatus.PROCESSING)
+                    .destinationPixKey(QR_PAY_DESTINATION_FALLBACK)
                     .destinationPixKeyType(PixKeyType.EVP)
                     .description(description)
                     .idempotencyKey(idempotencyKey)
                     .build());
         });
-        return saved;
+    }
+
+    private PlatformPixTransfer completeQrPayAuthorization(
+            String idempotencyKey,
+            AsaasPixPayQrCodeResponse asaasResponse,
+            BigDecimal payAmount,
+            String description) {
+        TransactionStatus status = mapPixPayStatus(asaasResponse.getStatus());
+        String destinationKey = resolveQrPayDestinationKey(asaasResponse);
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return requiresNew.execute(statusTx -> {
+            PlatformPixTransfer row = platformPixTransferRepository.findByIdempotencyKey(idempotencyKey)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Missing reserved QR pay authorization: " + idempotencyKey));
+            if (asaasResponse.getId() != null && !asaasResponse.getId().isBlank()) {
+                row.setAsaasPixTransactionId(asaasResponse.getId());
+            }
+            if (asaasResponse.getTransferId() != null && !asaasResponse.getTransferId().isBlank()) {
+                row.setAsaasTransferId(asaasResponse.getTransferId());
+            }
+            row.setAmount(asaasResponse.getValue() != null ? asaasResponse.getValue() : payAmount);
+            row.setStatus(status);
+            row.setDestinationPixKey(destinationKey);
+            if (description != null && !description.isBlank()) {
+                row.setDescription(description);
+            }
+            return platformPixTransferRepository.save(row);
+        });
+    }
+
+    @Override
+    public Optional<PlatformPixTransfer> bindAndFindPlatformTransferForValidation(
+            String transferId, String externalReference, BigDecimal amount) {
+        if (transferId == null || transferId.isBlank()) {
+            return Optional.empty();
+        }
+        Optional<PlatformPixTransfer> byTransferId =
+                platformPixTransferRepository.findByAsaasTransferId(transferId);
+        if (byTransferId.isPresent()) {
+            return byTransferId;
+        }
+        if (externalReference != null && !externalReference.isBlank()) {
+            Optional<PlatformPixTransfer> byIdempotency =
+                    platformPixTransferRepository.findByIdempotencyKey(externalReference.trim());
+            if (byIdempotency.isPresent()) {
+                return Optional.of(bindTransferId(byIdempotency.get(), transferId));
+            }
+        }
+        if (amount != null) {
+            LocalDateTime since = LocalDateTime.now().minusMinutes(QR_PAY_BIND_WINDOW_MINUTES);
+            List<PlatformPixTransfer> pending = platformPixTransferRepository.findPendingQrPayForBind(
+                    QR_PAY_DESTINATION_FALLBACK,
+                    List.of(TransactionStatus.PROCESSING, TransactionStatus.PENDING),
+                    amount,
+                    since);
+            if (!pending.isEmpty()) {
+                return Optional.of(bindTransferId(pending.getFirst(), transferId));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private PlatformPixTransfer bindTransferId(PlatformPixTransfer row, String transferId) {
+        if (row.getAsaasTransferId() == null || row.getAsaasTransferId().isBlank()) {
+            row.setAsaasTransferId(transferId);
+            log.info("Bound asaas_transfer_id to platform_pix_transfer: id={}, transferId={}",
+                    row.getId(), transferId);
+            return platformPixTransferRepository.save(row);
+        }
+        return row;
     }
 
     private static String resolveQrPayDestinationKey(AsaasPixPayQrCodeResponse asaasResponse) {
@@ -385,11 +443,18 @@ public class PlatformPixServiceImpl implements PlatformPixService {
 
     @Override
     @Transactional
-    public void applyWebhookStatus(String asaasTransferId, String event) {
+    public void applyWebhookStatus(
+            String asaasTransferId, String event, String externalReference, BigDecimal value) {
         if (asaasTransferId == null || asaasTransferId.isBlank()) {
             return;
         }
-        platformPixTransferRepository.findByAsaasTransferIdForUpdate(asaasTransferId).ifPresent(row -> {
+        Optional<PlatformPixTransfer> rowOpt =
+                platformPixTransferRepository.findByAsaasTransferIdForUpdate(asaasTransferId);
+        if (rowOpt.isEmpty()) {
+            rowOpt = bindAndFindPlatformTransferForValidation(asaasTransferId, externalReference, value)
+                    .flatMap(row -> platformPixTransferRepository.findByAsaasTransferIdForUpdate(asaasTransferId));
+        }
+        rowOpt.ifPresent(row -> {
             TransactionStatus next = mapWebhookEventToStatus(event);
             if (next != null && row.getStatus() != next) {
                 row.setStatus(next);

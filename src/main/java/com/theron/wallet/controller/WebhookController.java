@@ -5,7 +5,6 @@ import com.theron.wallet.dto.asaas.AsaasTransferValidationRequest;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.PlatformPixTransfer;
 import com.theron.wallet.enums.TransactionStatus;
-import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.service.InboundTransferService;
 import com.theron.wallet.service.PlatformPixService;
@@ -40,7 +39,6 @@ public class WebhookController {
     private final WebhookService webhookService;
     private final InboundTransferService inboundTransferService;
     private final TransactionRepository transactionRepository;
-    private final PlatformPixTransferRepository platformPixTransferRepository;
     private final PlatformPixService platformPixService;
     private final AsaasProperties asaasProperties;
 
@@ -78,48 +76,63 @@ public class WebhookController {
             @RequestBody AsaasTransferValidationRequest payload) {
 
         if (!tokenMatches(asaasProperties.getTransferValidationToken(), webhookToken)) {
+            log.warn("Transfer validation rejected: invalid token");
             return ResponseEntity.status(401).build();
         }
         if (payload == null || !"TRANSFER".equalsIgnoreCase(payload.getType()) || payload.getTransfer() == null) {
+            log.info("Transfer validation REFUSED: invalid payload type");
             return ResponseEntity.ok(TransferValidationResponse.refused("Operação de transferência inválida"));
         }
 
         String transferId = payload.getTransfer().getId();
         if (transferId == null || transferId.isBlank()) {
+            log.info("Transfer validation REFUSED: missing transferId");
             return ResponseEntity.ok(TransferValidationResponse.refused("Transferência sem ID"));
         }
 
         BigDecimal providerValue = payload.getTransfer().getValue();
+        String externalReference = payload.getTransfer().getExternalReference();
+        log.info("Transfer validation request: transferId={}, externalReference={}, value={}",
+                transferId, externalReference, providerValue);
 
         var transaction = transactionRepository.findByAsaasPaymentId(transferId);
         if (transaction.isPresent()) {
             var tx = transaction.get();
             if (providerValue == null || tx.getAmount() == null || tx.getAmount().compareTo(providerValue) != 0) {
+                log.info("Transfer validation REFUSED: subaccount amount mismatch transferId={}", transferId);
                 return ResponseEntity.ok(TransferValidationResponse.refused(
                         "Valor da transferência não corresponde ao registrado no Theron"));
             }
             if (tx.getStatus() != TransactionStatus.PROCESSING && tx.getStatus() != TransactionStatus.PENDING) {
+                log.info("Transfer validation REFUSED: subaccount invalid status transferId={}", transferId);
                 return ResponseEntity.ok(TransferValidationResponse.refused(
                         "Transferência não está em estado elegível para autorização"));
             }
+            log.info("Transfer validation APPROVED: subaccount transferId={}", transferId);
             return ResponseEntity.ok(TransferValidationResponse.approved());
         }
 
-        Optional<PlatformPixTransfer> platformTransfer =
-                platformPixTransferRepository.findByAsaasTransferId(transferId);
+        Optional<PlatformPixTransfer> platformTransfer = platformPixService
+                .bindAndFindPlatformTransferForValidation(transferId, externalReference, providerValue);
         if (platformTransfer.isPresent()) {
             PlatformPixTransfer row = platformTransfer.get();
             if (providerValue == null || row.getAmount() == null || row.getAmount().compareTo(providerValue) != 0) {
+                log.info("Transfer validation REFUSED: master amount mismatch transferId={}", transferId);
                 return ResponseEntity.ok(TransferValidationResponse.refused(
                         "Valor da transferência Master não corresponde ao registrado no Theron"));
             }
             if (row.getStatus() != TransactionStatus.PROCESSING && row.getStatus() != TransactionStatus.PENDING) {
+                log.info("Transfer validation REFUSED: master invalid status transferId={}", transferId);
                 return ResponseEntity.ok(TransferValidationResponse.refused(
                         "Transferência Master não está em estado elegível para autorização"));
             }
+            log.info("Transfer validation APPROVED: master transferId={}, idempotencyKey={}",
+                    transferId, row.getIdempotencyKey());
             return ResponseEntity.ok(TransferValidationResponse.approved());
         }
 
+        log.info("Transfer validation REFUSED: not found transferId={}, externalReference={}",
+                transferId, externalReference);
         return ResponseEntity.ok(TransferValidationResponse.refused("Transferência não encontrada no Theron"));
     }
 
@@ -134,8 +147,11 @@ public class WebhookController {
         if (inboundTransferService.canHandle(webhookToken, payload)) {
             return false;
         }
-        String transferId = payload.getTransfer() != null ? payload.getTransfer().getId() : null;
-        platformPixService.applyWebhookStatus(transferId, payload.getEvent());
+        AsaasWebhookPayload.Transfer transfer = payload.getTransfer();
+        String transferId = transfer != null ? transfer.getId() : null;
+        String externalReference = transfer != null ? transfer.getExternalReference() : null;
+        BigDecimal value = transfer != null ? transfer.getValue() : null;
+        platformPixService.applyWebhookStatus(transferId, payload.getEvent(), externalReference, value);
         log.info("Ack Master/unbound Asaas TRANSFER webhook: event={}, transferId={}",
                 payload.getEvent(), transferId);
         return true;

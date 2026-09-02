@@ -20,6 +20,7 @@ public class AsaasPixPayQrCodeRequest {
     private QrCodePayload qrCode;
     private BigDecimal value;
     private String description;
+    private String externalReference;
 
     @Getter
     @Setter
