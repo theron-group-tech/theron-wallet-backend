@@ -9,6 +9,9 @@ import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
+import com.theron.wallet.entity.PlatformPixTransfer;
+import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.repository.PlatformPixTransferRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -34,6 +38,8 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ObjectMapper objectMapper;
+    @Autowired
+    private PlatformPixTransferRepository platformPixTransferRepository;
 
     @Test
     @DisplayName("POST /admin/platform-account/pix/qr-codes returns payload with admin token")
@@ -76,6 +82,7 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
         when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-1")))
                 .thenReturn(AsaasPixPayQrCodeResponse.builder()
                         .id("pix-tx-1")
+                        .transferId("transfer-qr-1")
                         .status("DONE")
                         .value(new BigDecimal("10.00"))
                         .description("Test pay")
@@ -83,6 +90,7 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
                                 .name("Recebedor Teste")
                                 .cpfCnpj("***.456.789-**")
                                 .ispbName("Banco Teste")
+                                .addressKey("evp-receiver-1")
                                 .build())
                         .build());
 
@@ -100,6 +108,58 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.amount").value(10.00))
                 .andExpect(jsonPath("$.recipientName").value("Recebedor Teste"));
+
+        PlatformPixTransfer persisted = platformPixTransferRepository.findByAsaasTransferId("transfer-qr-1")
+                .orElseThrow();
+        assertThat(persisted.getIdempotencyKey()).isEqualTo("idem-pay-1");
+        assertThat(persisted.getAsaasPixTransactionId()).isEqualTo("pix-tx-1");
+        assertThat(persisted.getAmount()).isEqualByComparingTo(new BigDecimal("10.00"));
+        assertThat(persisted.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(persisted.getDestinationPixKey()).isEqualTo("evp-receiver-1");
+    }
+
+    @Test
+    @DisplayName("POST /webhooks/asaas/transfer-validation approves persisted QR pay transfer")
+    void transferValidationApprovesPersistedQrPay() throws Exception {
+        when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-validation")))
+                .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                        .id("pix-tx-validation")
+                        .transferId("transfer-qr-validation")
+                        .status("AWAITING_REQUEST")
+                        .value(new BigDecimal("50.00"))
+                        .description("QR pay validation")
+                        .externalAccount(AsaasPixPayQrCodeResponse.ExternalAccount.builder()
+                                .name("Recebedor Teste")
+                                .addressKey("evp-receiver-validation")
+                                .build())
+                        .build());
+
+        mockMvc.perform(post("/api/v1/admin/platform-account/pix/qr-codes/pay")
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Idempotency-Key", "idem-pay-validation")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(CreatePlatformPixPayQrCodeRequest.builder()
+                                .payload("00020126580014br.gov.bcb.pix0136test")
+                                .amount(new BigDecimal("50.00"))
+                                .description("QR pay validation")
+                                .build())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                        .header("asaas-access-token", "test-transfer-validation-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "TRANSFER",
+                                  "transfer": {
+                                    "id": "transfer-qr-validation",
+                                    "value": 50.00,
+                                    "status": "PENDING"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
     }
 
     @Test

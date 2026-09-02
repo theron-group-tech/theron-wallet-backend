@@ -60,6 +60,9 @@ public class PlatformPixTransfer {
     @Column(name = "credit_transaction_id")
     private UUID creditTransactionId;
 
+    @Column(name = "asaas_pix_transaction_id", length = 80)
+    private String asaasPixTransactionId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();

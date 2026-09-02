@@ -36,5 +36,6 @@ public class AsaasPixPayQrCodeResponse {
         private String name;
         private String cpfCnpj;
         private String ispbName;
+        private String addressKey;
     }
 }

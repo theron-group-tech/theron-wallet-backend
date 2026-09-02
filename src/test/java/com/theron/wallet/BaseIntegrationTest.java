@@ -144,6 +144,7 @@ public abstract class BaseIntegrationTest {
         baseLedgerAccountRepository.deleteAll();
         baseApprovalActionRepository.deleteAll();
         baseApprovalRequestRepository.deleteAll();
+        jdbcTemplate.execute("DELETE FROM platform_pix_transfer");
         basePixTransactionRepository.deleteAll();
         baseTransactionRepository.deleteAll();
         baseTransactionLimitRepository.deleteAll();
