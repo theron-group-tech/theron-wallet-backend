@@ -24,6 +24,7 @@ import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AccountLimitService;
 import com.theron.wallet.service.AccountService;
+import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.LedgerService;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,7 @@ public class AccountServiceImpl implements AccountService {
     private final WalletRepository walletRepository;
     private final LedgerService ledgerService;
     private final AccountAsaasProvisioningService accountAsaasProvisioningService;
+    private final AsaasOnboardingService asaasOnboardingService;
     private final AsaasBalanceService asaasBalanceService;
     private final AccountLimitService accountLimitService;
 
@@ -98,10 +100,6 @@ public class AccountServiceImpl implements AccountService {
         walletRepository.save(wallet);
         ledgerService.provisionForAccount(account);
         accountLimitService.ensureDefaults(account.getId());
-
-        if (owner != null) {
-            accountAsaasProvisioningService.provision(account, asaasDocument);
-        }
 
         log.info("Account created: accountId={}, organizationId={}, ownerUserId={}",
                 account.getId(), organizationId, ownerUserId);
@@ -162,7 +160,16 @@ public class AccountServiceImpl implements AccountService {
 
     private AccountResponse toEnrichedResponse(Account account) {
         AsaasBindResponse bind = accountAsaasProvisioningService.currentBind(account.getId());
-        return AccountMapper.toResponse(account, bind);
+        AccountResponse response = AccountMapper.toResponse(account, bind);
+        if (account.getOwnerUser() != null) {
+            var status = asaasOnboardingService.subaccountStatus(account.getOwnerUser().getId());
+            response.setOnboardingStatus(status.getOnboardingStatus());
+            response.setFinancialResourcesEnabled(status.isFinancialResourcesEnabled());
+            if (response.getOnboardingUrl() == null) {
+                response.setOnboardingUrl(status.getOnboardingUrl());
+            }
+        }
+        return response;
     }
 
     private Account getAccountOrThrow(UUID id) {

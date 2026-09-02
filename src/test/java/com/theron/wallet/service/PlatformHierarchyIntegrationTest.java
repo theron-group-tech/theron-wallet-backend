@@ -29,6 +29,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.math.BigDecimal;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -110,14 +111,12 @@ class PlatformHierarchyIntegrationTest extends BaseIntegrationTest {
                 .andReturn();
         AccountResponse joaoAccount = objectMapper.readValue(
                 accountResult.getResponse().getContentAsString(), AccountResponse.class);
-        assertThat(capturedCreateCalls()).isGreaterThan(before);
+        assertThat(capturedCreateCalls()).isEqualTo(before);
 
-        int afterBind = capturedCreateCalls();
         mockMvc.perform(post("/api/v1/accounts/{id}/asaas-subaccount", joaoAccount.getId())
                         .header("Authorization", joaoToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ACTIVE"));
-        assertThat(capturedCreateCalls()).isEqualTo(afterBind);
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.message").value(containsString("onboarding")));
 
         MvcResult employeeResult = mockMvc.perform(post("/api/v1/organization/members")
                         .header("Authorization", joaoToken)
@@ -126,13 +125,11 @@ class PlatformHierarchyIntegrationTest extends BaseIntegrationTest {
                                 .name("Pedro")
                                 .email("pedro-hier@theron.test")
                                 .password("SenhaForte1!")
-                                .document("22233344000155")
-                                .documentType(DocumentType.CNPJ)
                                 .build())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.organizationId").value(orgA.getId().toString()))
                 .andExpect(jsonPath("$.account.ownerUserId").isString())
-                .andExpect(jsonPath("$.asaasBind.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.asaasBind.status").value("FAILED"))
                 .andReturn();
         OrganizationEmployeeResponse employee = objectMapper.readValue(
                 employeeResult.getResponse().getContentAsString(), OrganizationEmployeeResponse.class);

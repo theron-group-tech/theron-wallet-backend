@@ -201,17 +201,6 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
             throw new InvalidRequestException("Organization must be ACTIVE to create an OWNER");
         }
 
-        DocumentType documentType = request.getDocumentType() == null ? DocumentType.CNPJ : request.getDocumentType();
-        if (documentType != DocumentType.CNPJ) {
-            throw new InvalidRequestException(AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE);
-        }
-        try {
-            AsaasDocumentRules.requireCnpj(request.getDocument(), "document");
-        } catch (IllegalArgumentException ex) {
-            throw new InvalidRequestException(ex.getMessage());
-        }
-        String ownerCnpj = AsaasDocumentRules.normalize(request.getDocument());
-
         UserResponse user = userService.create(CreateUserRequest.builder()
                 .name(request.getName())
                 .email(request.getEmail())
@@ -233,7 +222,7 @@ public class AdminPlatformServiceImpl implements AdminPlatformService {
                         .type(AccountType.MAIN)
                         .build(),
                 user.getId(),
-                ownerCnpj);
+                null);
 
         AsaasBindResponse bind = provisioningService.currentBind(account.getId());
         auditLogService.recordAdmin(

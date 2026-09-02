@@ -1,7 +1,9 @@
 package com.theron.wallet;
+import com.theron.wallet.dto.asaas.AsaasAccountStatusResponse;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
+import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.dto.request.LoginRequest;
 import com.theron.wallet.integration.AsaasCustomerClient;
 import com.theron.wallet.integration.AsaasPaymentClient;
@@ -62,6 +64,8 @@ public abstract class BaseIntegrationTest {
     protected AsaasCustomerClient asaasCustomerClient;
     @MockitoBean
     protected AsaasPixClient asaasPixClient;
+    @MockitoBean
+    protected AsaasAccountStatusClient asaasAccountStatusClient;
     @MockitoBean
     protected AsaasApiKeyResolver asaasApiKeyResolver;
     @Autowired
@@ -149,6 +153,7 @@ public abstract class BaseIntegrationTest {
         baseBeneficiaryRepository.deleteAll();
         baseWalletRepository.deleteAll();
         baseSubaccountRepository.deleteAll();
+        jdbcTemplate.execute("DELETE FROM asaas_onboarding");
         baseAccountRepository.deleteAll();
         baseCustomerRepository.deleteAll();
         baseAuthSessionRepository.deleteAll();
@@ -177,6 +182,13 @@ public abstract class BaseIntegrationTest {
                     .apiKey("$aact_hmlg_test_key_" + suffix)
                     .build();
         });
+        when(asaasAccountStatusClient.getStatus(any())).thenReturn(
+                AsaasAccountStatusResponse.builder()
+                        .general("APPROVED")
+                        .commercialInfo("APPROVED")
+                        .build());
+        when(asaasAccountStatusClient.listDocuments(any())).thenReturn(java.util.Collections.emptyList());
+        when(asaasAccountStatusClient.firstOnboardingUrl(any())).thenReturn(null);
     }
 
     protected String adminAccessToken() {

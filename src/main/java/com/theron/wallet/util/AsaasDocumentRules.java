@@ -34,6 +34,26 @@ public final class AsaasDocumentRules {
         }
     }
 
+    public static void requireCpf(String document, String fieldName) {
+        String normalized = normalize(document);
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        if (normalized.length() != 11) {
+            throw new IllegalArgumentException(fieldName + " must contain exactly 11 digits (CPF)");
+        }
+    }
+
+    public static void requireCpfOrCnpj(String document, String fieldName) {
+        String normalized = normalize(document);
+        if (normalized == null || normalized.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " is required");
+        }
+        if (normalized.length() != 11 && normalized.length() != 14) {
+            throw new IllegalArgumentException(fieldName + " must be a valid CPF (11) or CNPJ (14)");
+        }
+    }
+
     public static void requireOrganizationCnpj(String document, DocumentType documentType) {
         if (documentType == DocumentType.CPF) {
             throw new IllegalArgumentException(

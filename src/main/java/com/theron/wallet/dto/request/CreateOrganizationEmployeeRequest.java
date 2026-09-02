@@ -1,6 +1,5 @@
 package com.theron.wallet.dto.request;
 
-import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.RoleCode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
@@ -16,7 +15,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Create an employee in the authenticated organization (user + membership + account + Asaas)")
+@Schema(description = "Create an employee in the authenticated organization (user + membership + account)")
 public class CreateOrganizationEmployeeRequest {
 
     @NotBlank
@@ -34,14 +33,6 @@ public class CreateOrganizationEmployeeRequest {
     @NotBlank
     @Size(min = 8, max = 100)
     private String password;
-
-    @NotBlank
-    @Schema(description = "Employee CNPJ (14 digits, MEI/filial). Required for Asaas subaccount.")
-    private String document;
-
-    @NotNull
-    @Builder.Default
-    private DocumentType documentType = DocumentType.CNPJ;
 
     @NotNull
     @Schema(description = "Product role: FINANCE or EMPLOYEE", example = "EMPLOYEE")

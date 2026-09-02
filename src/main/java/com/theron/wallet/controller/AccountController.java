@@ -12,7 +12,9 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.StatementService;
@@ -91,12 +93,12 @@ public class AccountController {
     }
 
     @PostMapping("/{accountId}/asaas-subaccount")
-    @Operation(summary = "Provision or retry Asaas subaccount bind for the caller's own account")
+    @Operation(summary = "Deprecated — use POST /api/v1/asaas/onboarding instead")
     public ResponseEntity<AsaasBindResponse> provisionAsaas(@PathVariable UUID accountId) {
         UUID actor = actorResolver.requireProductUserId();
-        // Own-account isolation: any product role may provision/repair their own Account bind.
         resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.WALLET_READ);
-        return ResponseEntity.ok(accountAsaasProvisioningService.provisionByAccountId(accountId, null));
+        throw new InvalidRequestException(
+                "Legacy Asaas provisioning is disabled. Complete financial onboarding at POST /api/v1/asaas/onboarding");
     }
 
     @GetMapping("/{id}/ledger-balance")

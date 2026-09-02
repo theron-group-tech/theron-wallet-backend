@@ -2,6 +2,8 @@
 
 Este documento é a **fonte canônica** do domínio. Substitui o modelo anterior com roles `ADMIN`/`AUDITOR`, carteira coletiva da Organization e `ApprovalPolicy` genérica para PIX pessoal.
 
+**Fluxogramas visuais:** [`FLUXOGRAMA.md`](FLUXOGRAMA.md)
+
 ## Modelo
 
 ```
@@ -48,15 +50,17 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Operações normais exigem `ACTIVE`.
 - **Não** tem Wallet/saldo coletivo.
 
-## 3.1 Asaas subconta
+## 3.1 Asaas subconta e onboarding financeiro
 
-- Subcontas Asaas exigem **CNPJ** (titular PJ). CPF é rejeitado no provision (`422`).
-- **OWNER:** CNPJ da Organization (ou informado no admin).
-- **FINANCE/EMPLOYEE:** CNPJ **próprio** (MEI/filial), distinto por Account.
-- `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; sem URL, create não registra webhooks inline. Necessário em produção para eventos de pagamento/transfer.
-- Operações PIX/deposit/withdraw exigem subconta `ACTIVE` (não `PENDING_EVALUATION`).
-- **Aprovado ≠ Aguardando ativação:** “Aguardando ativação” no painel Asaas é senha/login da UI (e-mail na conta pai no Sandbox). Não é pré-requisito para PIX via API.
-- No Sandbox o BE chama `POST /accounts/{id}/approve` e sincroniza `GET /myAccount/status` (apiKey da subconta). Se docs pendentes, `AsaasBindResponse.onboardingUrl` é exposto.
+- **Organization** continua exigindo **CNPJ** (14 dígitos) — tenant administrativo.
+- **Subconta Asaas** (titular da Account): **CPF (PF)** ou **CNPJ (PJ)**, escolhido pelo titular no wizard self-service (`POST/PUT /api/v1/asaas/onboarding/*`).
+- **Sem auto-provision:** criar Account, membro ou Owner **não** cria subconta Asaas automaticamente. Titular conclui onboarding após login.
+- `POST /api/v1/accounts/{id}/asaas-subaccount` está **descontinuado** — usar onboarding.
+- Operações PIX/transfer/PaymentOrder (origem) exigem subconta `ACTIVE` **e** onboarding `APPROVED` (`financialResourcesEnabled=true` em `AccountResponse`).
+- Subcontas legadas (auto-provisionadas antes da migration) têm `legacy_auto_provisioned=true` e seguem liberadas se `ACTIVE`.
+- `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; necessário em produção. Registrar eventos `ACCOUNT_STATUS_*` além de `PAYMENT_*` e `TRANSFER_*`.
+- No Sandbox o BE pode chamar `POST /accounts/{id}/approve` após submit; status final via webhook ou `GET /myAccount/status`.
+- Se documentação pendente, `onboardingUrl` é exposto na resposta do onboarding.
 
 ## 4. Membership
 

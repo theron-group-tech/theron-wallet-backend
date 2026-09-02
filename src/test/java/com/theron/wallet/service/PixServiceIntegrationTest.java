@@ -813,6 +813,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setStatus(SubaccountStatus.ACTIVE);
+        sub.setLegacyAutoProvisioned(true);
         sub.setEncryptedApiKey(withApiKey ? new byte[]{1, 2, 3, 4, 5, 6, 7, 8} : null);
         if (!withApiKey) {
             sub.transitionTo(SubaccountStatus.FAILED, "no api key");

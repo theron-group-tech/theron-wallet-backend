@@ -370,13 +370,13 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **DashboardResponse:** ver passo 4.
 
-**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, `ownerUserId?`, `asaasStatus` (`PENDING`|`ACTIVE`|`FAILED`), `asaasAccountId?`, `asaasWalletId?`, `asaasMessage?`, `asaasCommercialStatus?`, `asaasDocumentationStatus?`, `asaasGeneralStatus?`, `onboardingUrl?`, timestamps.
+**AccountResponse:** campos anteriores + `onboardingStatus?`, `financialResourcesEnabled?`.
 
-**Asaas bind (produto):** `POST /api/v1/accounts/{accountId}/asaas-subaccount` — provisiona/repara a subconta do **próprio** dono da Account (`wallet.read`). Resposta `AsaasBindResponse`. Após login, se `asaasStatus !== ACTIVE`, abrir Modal pedindo criação.
+**Onboarding financeiro (produto):** endpoints em `/api/v1/asaas/onboarding/*` — wizard self-service CPF ou CNPJ. Após login, se `financialResourcesEnabled !== true`, abrir `FinancialSetupModal` → `/onboarding-financeiro`. `POST /accounts/{id}/asaas-subaccount` está **descontinuado** (422).
 
-**Sandbox Asaas:** após create o BE chama `POST /v3/accounts/{id}/approve` e sincroniza `GET /myAccount/status` com a apiKey da subconta. `asaasStatus=ACTIVE` quando `general` ou `commercialInfo` = `APPROVED`. Se documentação pendente e houver `onboardingUrl`, mostre botão “Continuar onboarding Asaas”. “Aguardando ativação” no painel Asaas (e-mail/senha) **não** bloqueia PIX via API.
+**Sandbox Asaas:** após submit o BE pode aprovar sandbox e sincronizar status. PIX/transfer exigem `financialResourcesEnabled=true` (onboarding `APPROVED`). Se docs pendentes, mostrar `onboardingUrl`.
 
-**CNPJ-only (Asaas BaaS):** Organization e subconta Asaas exigem **CNPJ** (14 dígitos). CPF é rejeitado no provision (`422`). Ao criar FINANCE/EMPLOYEE, o formulário deve pedir **CNPJ próprio** do titular (MEI/filial), não CPF.
+**Criar membro:** `POST /organization/members` **sem** documento/CNPJ — titular faz onboarding após login.
 
 **Webhooks:** `ASAAS_WEBHOOK_URL` é opcional em dev/sandbox. Sem URL, a subconta é criada sem webhooks inline; configure URL + painel Asaas quando for receber eventos de pagamento/transfer.
 

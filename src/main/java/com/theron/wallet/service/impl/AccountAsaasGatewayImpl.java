@@ -12,6 +12,7 @@ import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.AccountAsaasGateway;
+import com.theron.wallet.service.AsaasOnboardingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
 
     private final AccountRepository accountRepository;
     private final SubaccountRepository subaccountRepository;
+    private final AsaasOnboardingService asaasOnboardingService;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
 
     @Override
@@ -72,6 +74,11 @@ public class AccountAsaasGatewayImpl implements AccountAsaasGateway {
             throw new AsaasErrorException(
                     "Asaas subaccount status is " + subaccount.getStatus()
                             + " — complete approval/onboarding before PIX");
+        }
+
+        if (!asaasOnboardingService.isFinancialResourcesEnabled(accountId)) {
+            throw new AsaasErrorException(
+                    "Financial onboarding is not approved — complete setup at /api/v1/asaas/onboarding");
         }
 
         log.debug("Resolved Asaas Subaccount for accountId={}, subaccountId={}",

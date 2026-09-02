@@ -36,6 +36,8 @@ public class AccountResponse {
     private String asaasDocumentationStatus;
     private String asaasGeneralStatus;
     private String onboardingUrl;
+    private com.theron.wallet.enums.AsaasOnboardingStatus onboardingStatus;
+    private Boolean financialResourcesEnabled;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

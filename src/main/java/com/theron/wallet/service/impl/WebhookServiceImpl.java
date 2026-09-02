@@ -26,6 +26,7 @@ import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
+import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.WalletService;
 import com.theron.wallet.service.WebhookService;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +68,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final AsaasPaymentClient asaasPaymentClient;
     private final AsaasTransferClient asaasTransferClient;
     private final AsaasApiKeyResolver asaasApiKeyResolver;
+    private final AsaasOnboardingService asaasOnboardingService;
 
     @Override
     @Transactional
@@ -89,7 +91,9 @@ public class WebhookServiceImpl implements WebhookService {
         }
 
         try {
-            if (payload.getEvent() != null && payload.getEvent().startsWith("TRANSFER_")) {
+            if (payload.getEvent() != null && payload.getEvent().startsWith("ACCOUNT_STATUS_")) {
+                processAccountStatusWebhook(payload);
+            } else if (payload.getEvent() != null && payload.getEvent().startsWith("TRANSFER_")) {
                 processTransferWebhook(payload);
             } else {
                 processPaymentWebhook(payload);
@@ -259,6 +263,17 @@ public class WebhookServiceImpl implements WebhookService {
         }
         log.info("Ignoring reversal for transactionId={}, status={}",
                 transaction.getId(), transaction.getStatus());
+    }
+
+    private void processAccountStatusWebhook(AsaasWebhookPayload payload) {
+        String eventName = payload.getEvent();
+        String asaasAccountId = payload.getAccount() != null ? payload.getAccount().getId() : null;
+        if (asaasAccountId == null || asaasAccountId.isBlank()) {
+            log.warn("Account status webhook without account id, event={}", eventName);
+            return;
+        }
+        log.info("Processing account status webhook: event={}, asaasAccountId={}", eventName, asaasAccountId);
+        asaasOnboardingService.applyAccountStatusWebhook(asaasAccountId, eventName);
     }
 
     @Override
