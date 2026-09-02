@@ -1,6 +1,8 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
@@ -29,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -117,10 +120,19 @@ class PlatformPixServiceImplTest {
     @Test
     void createQrCodeUsesMasterApiKeyAndReturnsPayload() {
         when(asaasProperties.getKey()).thenReturn("master-api-key");
+        when(asaasPixClient.listPixKeys("master-api-key")).thenReturn(
+                AsaasListResponse.<AsaasPixKeyResponse>builder()
+                        .data(List.of(AsaasPixKeyResponse.builder()
+                                .id("pix-key-asaas-1")
+                                .key("evp-master-key-1")
+                                .type("EVP")
+                                .status("ACTIVE")
+                                .build()))
+                        .build());
 
         when(asaasPixClient.createStaticQrCode(
                 eq("master-api-key"),
-                eq("pix-key-asaas-1"),
+                eq("evp-master-key-1"),
                 any()))
                 .thenReturn(AsaasPixStaticQrCodeResponse.builder()
                         .payload("00020126...")
@@ -139,6 +151,6 @@ class PlatformPixServiceImplTest {
         assertThat(response.getEncodedImage()).isEqualTo("data:image/png;base64,abc");
         assertThat(response.getValue()).isEqualByComparingTo(new BigDecimal("25.00"));
         assertThat(response.getDescription()).isEqualTo("Cobrança teste");
-        verify(asaasPixClient).createStaticQrCode(eq("master-api-key"), eq("pix-key-asaas-1"), any());
+        verify(asaasPixClient).createStaticQrCode(eq("master-api-key"), eq("evp-master-key-1"), any());
     }
 }

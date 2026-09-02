@@ -54,14 +54,18 @@ public class AsaasPixClient {
     }
 
     public AsaasPixStaticQrCodeResponse createStaticQrCode(
-            String apiKey, String pixKeyId, AsaasPixStaticQrCodeRequest request) {
-        log.info("Creating static PIX QR code in Asaas: pixKeyId={}", pixKeyId);
+            String apiKey, String addressKey, AsaasPixStaticQrCodeRequest request) {
+        log.info("Creating static PIX QR code in Asaas: addressKey={}", addressKey);
+        AsaasPixStaticQrCodeRequest body = request != null ? request : new AsaasPixStaticQrCodeRequest();
+        body.setAddressKey(addressKey);
+        if (body.getFormat() == null) {
+            body.setFormat("ALL");
+        }
         return asaasHttpGateway.post(
                 apiKey,
-                "/pix/addressKeys/{id}/qrCodes/static",
-                request,
-                AsaasPixStaticQrCodeResponse.class,
-                pixKeyId);
+                "/pix/qrCodes/static",
+                body,
+                AsaasPixStaticQrCodeResponse.class);
     }
 
     public void deleteStaticQrCode(String apiKey, String qrCodeId) {

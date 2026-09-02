@@ -280,11 +280,14 @@ public class PixServiceImpl implements PixService {
         if (pixKey.getProviderKeyId() == null) {
             throw new InvalidRequestException("PixKey has no provider reference");
         }
+        if (pixKey.getKey() == null || pixKey.getKey().isBlank()) {
+            throw new InvalidRequestException("PixKey has no address key value");
+        }
 
         String apiKey = accountAsaasGateway.resolveApiKey(request.getAccountId());
         AsaasPixStaticQrCodeResponse asaasResponse = asaasPixClient.createStaticQrCode(
                 apiKey,
-                pixKey.getProviderKeyId(),
+                pixKey.getKey().trim(),
                 AsaasPixStaticQrCodeRequest.builder()
                         .value(request.getValue())
                         .description(request.getDescription())

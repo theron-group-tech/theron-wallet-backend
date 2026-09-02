@@ -26,6 +26,7 @@ import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InvalidRequestException;
+import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.mapper.PixKeyLookupMapper;
@@ -131,9 +132,10 @@ public class PlatformPixServiceImpl implements PlatformPixService {
             throw new InvalidRequestException("pixKeyId is required");
         }
         String masterKey = requireMasterApiKey();
+        String addressKey = resolveAddressKey(masterKey, request.getPixKeyId().trim());
         AsaasPixStaticQrCodeResponse asaasResponse = asaasPixClient.createStaticQrCode(
                 masterKey,
-                request.getPixKeyId().trim(),
+                addressKey,
                 AsaasPixStaticQrCodeRequest.builder()
                         .value(request.getValue())
                         .description(request.getDescription())
@@ -373,6 +375,19 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 NotificationType.TRANSFER_RECEIVED,
                 transaction.getId(),
                 data);
+    }
+
+    private String resolveAddressKey(String apiKey, String asaasPixKeyId) {
+        AsaasListResponse<AsaasPixKeyResponse> response = asaasPixClient.listPixKeys(apiKey);
+        if (response == null || response.getData() == null) {
+            throw new ResourceNotFoundException("PixKey", "id", asaasPixKeyId);
+        }
+        return response.getData().stream()
+                .filter(key -> asaasPixKeyId.equals(key.getId()))
+                .map(AsaasPixKeyResponse::getKey)
+                .filter(key -> key != null && !key.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("PixKey", "id", asaasPixKeyId));
     }
 
     private String requireMasterApiKey() {

@@ -47,9 +47,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AsaasApiException.class)
     public ResponseEntity<ApiErrorResponse> handleAsaasApiException(AsaasApiException ex, HttpServletRequest request) {
         String asaasDescription = AsaasErrorBodies.extractFirstDescription(ex.getAsaasErrorBody());
-        String message = asaasDescription != null
-                ? "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription)
-                : "Payment provider error. Please try again later.";
+        String message;
+        if (asaasDescription != null) {
+            message = "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription);
+        } else if (ex.getAsaasStatusCode() == 404) {
+            message = "PIX key not found in payment provider";
+        } else {
+            message = "Payment provider error. Please try again later.";
+        }
         message = AsaasSecretRedactor.redact(message);
 
         log.error("Asaas API error: status={}, message={}, path={}",

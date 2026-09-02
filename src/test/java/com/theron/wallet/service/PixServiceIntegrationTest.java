@@ -307,7 +307,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             AccountPixKeyResponse key = objectMapper.readValue(
                     created.getResponse().getContentAsString(), AccountPixKeyResponse.class);
 
-            when(asaasPixClient.createStaticQrCode(anyString(), eq("pix_qr"), any()))
+            when(asaasPixClient.createStaticQrCode(anyString(), eq("evp-qr-key"), any()))
                     .thenReturn(AsaasPixStaticQrCodeResponse.builder()
                             .payload("00020126...")
                             .encodedImage("data:image/png;base64,xyz")

@@ -78,13 +78,14 @@ public class PixKeyServiceImpl implements PixKeyService {
         log.info("Creating static PIX QR code: subaccountId={}, pixKeyId={}", subaccountId, pixKeyId);
 
         String apiKey = resolveApiKey(subaccountId);
+        String addressKey = resolveAddressKey(apiKey, pixKeyId);
         AsaasPixStaticQrCodeRequest qrRequest = AsaasPixStaticQrCodeRequest.builder()
                 .value(request.getValue())
                 .description(request.getDescription())
                 .format("ALL")
                 .build();
 
-        AsaasPixStaticQrCodeResponse response = asaasPixClient.createStaticQrCode(apiKey, pixKeyId, qrRequest);
+        AsaasPixStaticQrCodeResponse response = asaasPixClient.createStaticQrCode(apiKey, addressKey, qrRequest);
 
         log.info("Static PIX QR code created: subaccountId={}, qrCodeId={}", subaccountId, response.getId());
         return toQrCodeResponse(response);
@@ -113,6 +114,19 @@ public class PixKeyServiceImpl implements PixKeyService {
         }
 
         return asaasApiKeyResolver.resolveForSubaccount(subaccountId);
+    }
+
+    private String resolveAddressKey(String apiKey, String asaasPixKeyId) {
+        AsaasListResponse<AsaasPixKeyResponse> response = asaasPixClient.listPixKeys(apiKey);
+        if (response == null || response.getData() == null) {
+            throw new ResourceNotFoundException("PixKey", "id", asaasPixKeyId);
+        }
+        return response.getData().stream()
+                .filter(key -> asaasPixKeyId.equals(key.getId()))
+                .map(AsaasPixKeyResponse::getKey)
+                .filter(key -> key != null && !key.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("PixKey", "id", asaasPixKeyId));
     }
 
     private PixKeyResponse toPixKeyResponse(AsaasPixKeyResponse r) {

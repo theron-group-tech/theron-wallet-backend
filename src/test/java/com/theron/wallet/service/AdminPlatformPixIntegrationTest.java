@@ -2,6 +2,8 @@ package com.theron.wallet.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
+import com.theron.wallet.dto.asaas.AsaasListResponse;
+import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -12,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -31,7 +34,16 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
     @Test
     @DisplayName("POST /admin/platform-account/pix/qr-codes returns payload with admin token")
     void createQrCodeReturnsPayload() throws Exception {
-        when(asaasPixClient.createStaticQrCode(eq("test-key"), eq("pix-key-asaas-1"), any()))
+        when(asaasPixClient.listPixKeys("test-key")).thenReturn(
+                AsaasListResponse.<AsaasPixKeyResponse>builder()
+                        .data(List.of(AsaasPixKeyResponse.builder()
+                                .id("pix-key-asaas-1")
+                                .key("evp-admin-key-1")
+                                .type("EVP")
+                                .status("ACTIVE")
+                                .build()))
+                        .build());
+        when(asaasPixClient.createStaticQrCode(eq("test-key"), eq("evp-admin-key-1"), any()))
                 .thenReturn(AsaasPixStaticQrCodeResponse.builder()
                         .payload("00020126...")
                         .encodedImage("data:image/png;base64,abc")

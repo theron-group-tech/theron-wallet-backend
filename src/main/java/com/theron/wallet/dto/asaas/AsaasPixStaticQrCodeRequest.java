@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AsaasPixStaticQrCodeRequest {
+    private String addressKey;
     private BigDecimal value;     // null = QR Code aberto (qualquer valor)
     private String description;
     private String format;         // IMAGE | PAYLOAD | ALL
