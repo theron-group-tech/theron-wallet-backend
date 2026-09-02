@@ -100,6 +100,13 @@ public class AdminPlatformPixController {
                 .body(platformPixService.payQrCode(request, idempotencyKey.trim()));
     }
 
+    @GetMapping("/transactions/{id}")
+    @Operation(summary = "Retrieve Platform Account PIX transaction status from Asaas")
+    public ResponseEntity<PlatformPixPayQrCodeResponse> getPixTransaction(@PathVariable String id) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformPixService.getPixTransaction(id));
+    }
+
     @PostMapping("/transfers")
     @Operation(
             summary = "Create Platform Account PIX transfer",

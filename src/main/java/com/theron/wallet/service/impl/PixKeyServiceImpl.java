@@ -13,6 +13,7 @@ import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.PixKeyService;
+import com.theron.wallet.util.PixEmvPayloadUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -79,16 +80,13 @@ public class PixKeyServiceImpl implements PixKeyService {
 
         String apiKey = resolveApiKey(subaccountId);
         String addressKey = resolveAddressKey(apiKey, pixKeyId);
-        AsaasPixStaticQrCodeRequest qrRequest = AsaasPixStaticQrCodeRequest.builder()
-                .value(request.getValue())
-                .description(request.getDescription())
-                .format("ALL")
-                .build();
+        AsaasPixStaticQrCodeRequest qrRequest = PixEmvPayloadUtils.buildStaticQrCodeRequest(
+                request.getValue(), request.getDescription());
 
         AsaasPixStaticQrCodeResponse response = asaasPixClient.createStaticQrCode(apiKey, addressKey, qrRequest);
 
         log.info("Static PIX QR code created: subaccountId={}, qrCodeId={}", subaccountId, response.getId());
-        return toQrCodeResponse(response);
+        return toQrCodeResponse(response, request.getValue());
     }
 
     @Override
@@ -140,7 +138,7 @@ public class PixKeyServiceImpl implements PixKeyService {
                 .build();
     }
 
-    private PixStaticQrCodeResponse toQrCodeResponse(AsaasPixStaticQrCodeResponse r) {
+    private PixStaticQrCodeResponse toQrCodeResponse(AsaasPixStaticQrCodeResponse r, java.math.BigDecimal requestValue) {
         return PixStaticQrCodeResponse.builder()
                 .id(r.getId())
                 .addressKey(r.getAddressKey())
@@ -149,7 +147,7 @@ public class PixKeyServiceImpl implements PixKeyService {
                 .encodedImage(r.getEncodedImage())
                 .expirationDate(r.getExpirationDate())
                 .allowsMultiplePayments(r.getAllowsMultiplePayments())
-                .value(r.getValue())
+                .value(PixEmvPayloadUtils.resolveQrCodeValue(r.getValue(), requestValue, r.getPayload()))
                 .build();
     }
 }

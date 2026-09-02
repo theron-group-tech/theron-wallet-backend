@@ -8,6 +8,7 @@ import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeRequest;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -79,6 +80,12 @@ public class AsaasPixClient {
                 request,
                 idempotencyKey,
                 AsaasPixPayQrCodeResponse.class);
+    }
+
+    public AsaasPixTransactionResponse retrievePixTransaction(String apiKey, String transactionId) {
+        log.info("Retrieving PIX transaction in Asaas: id={}", transactionId);
+        return asaasHttpGateway.get(
+                apiKey, "/pix/transactions/{id}", AsaasPixTransactionResponse.class, transactionId);
     }
 
     public void deleteStaticQrCode(String apiKey, String qrCodeId) {

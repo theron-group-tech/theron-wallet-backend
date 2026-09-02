@@ -11,6 +11,7 @@ import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
@@ -27,7 +28,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
-import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.util.PixEmvPayloadUtils;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
@@ -54,6 +55,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -140,17 +142,15 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         AsaasPixStaticQrCodeResponse asaasResponse = asaasPixClient.createStaticQrCode(
                 masterKey,
                 addressKey,
-                AsaasPixStaticQrCodeRequest.builder()
-                        .value(request.getValue())
-                        .description(request.getDescription())
-                        .format("ALL")
-                        .build());
+                PixEmvPayloadUtils.buildStaticQrCodeRequest(
+                        request.getValue(), request.getDescription()));
         log.info("Created Platform Account static PIX QR code: pixKeyId={}", request.getPixKeyId());
         return AccountPixQrCodeResponse.builder()
                 .payload(asaasResponse.getPayload())
                 .encodedImage(asaasResponse.getEncodedImage())
                 .expirationDate(asaasResponse.getExpirationDate())
-                .value(asaasResponse.getValue())
+                .value(PixEmvPayloadUtils.resolveQrCodeValue(
+                        asaasResponse.getValue(), request.getValue(), asaasResponse.getPayload()))
                 .description(asaasResponse.getDescription())
                 .build();
     }
@@ -169,6 +169,18 @@ public class PlatformPixServiceImpl implements PlatformPixService {
             throw new InvalidRequestException("payload must be a valid PIX copia e cola (EMV) string");
         }
 
+        BigDecimal payloadAmount = PixEmvPayloadUtils.parseTransactionAmount(payload);
+        BigDecimal payAmount = request.getAmount();
+        if (payloadAmount != null) {
+            if (payAmount != null && payAmount.compareTo(payloadAmount) != 0) {
+                throw new InvalidRequestException(
+                        "Amount must match QR code value (R$ " + payloadAmount.toPlainString() + ")");
+            }
+            payAmount = payloadAmount;
+        } else if (payAmount == null || payAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new InvalidRequestException("amount is required for open QR codes");
+        }
+
         String masterKey = requireMasterApiKey();
         String description = request.getDescription() != null && !request.getDescription().isBlank()
                 ? request.getDescription().trim()
@@ -178,7 +190,7 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .qrCode(AsaasPixPayQrCodeRequest.QrCodePayload.builder()
                         .payload(payload)
                         .build())
-                .value(request.getAmount())
+                .value(payAmount)
                 .description(description)
                 .build();
 
@@ -187,6 +199,17 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         log.info("Paid Platform Account PIX QR code in Asaas: id={}, status={}",
                 asaasResponse.getId(), asaasResponse.getStatus());
         return toPayQrCodeResponse(asaasResponse, description);
+    }
+
+    @Override
+    public PlatformPixPayQrCodeResponse getPixTransaction(String asaasPixTransactionId) {
+        if (asaasPixTransactionId == null || asaasPixTransactionId.isBlank()) {
+            throw new InvalidRequestException("transaction id is required");
+        }
+        String masterKey = requireMasterApiKey();
+        AsaasPixTransactionResponse asaas = asaasPixClient.retrievePixTransaction(
+                masterKey, asaasPixTransactionId.trim());
+        return toPixTransactionResponse(asaas);
     }
 
     @Override
@@ -453,10 +476,30 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .id(asaas.getId())
                 .amount(asaas.getValue())
                 .status(mapPixPayStatus(asaas.getStatus()))
+                .providerStatus(asaas.getStatus())
+                .transferId(asaas.getTransferId())
+                .refusalReason(asaas.getRefusalReason())
                 .recipientName(recipient != null ? recipient.getName() : null)
                 .recipientDocument(recipient != null ? recipient.getCpfCnpj() : null)
                 .institutionName(recipient != null ? recipient.getIspbName() : null)
                 .description(asaas.getDescription() != null ? asaas.getDescription() : fallbackDescription)
+                .endToEndIdentifier(asaas.getEndToEndIdentifier())
+                .build();
+    }
+
+    private PlatformPixPayQrCodeResponse toPixTransactionResponse(AsaasPixTransactionResponse asaas) {
+        AsaasPixTransactionResponse.ExternalAccount recipient = asaas.getExternalAccount();
+        return PlatformPixPayQrCodeResponse.builder()
+                .id(asaas.getId())
+                .amount(asaas.getValue())
+                .status(mapPixPayStatus(asaas.getStatus()))
+                .providerStatus(asaas.getStatus())
+                .transferId(asaas.getTransferId())
+                .refusalReason(asaas.getRefusalReason())
+                .recipientName(recipient != null ? recipient.getName() : null)
+                .recipientDocument(recipient != null ? recipient.getCpfCnpj() : null)
+                .institutionName(recipient != null ? recipient.getIspbName() : null)
+                .description(asaas.getDescription())
                 .endToEndIdentifier(asaas.getEndToEndIdentifier())
                 .build();
     }

@@ -4,6 +4,9 @@ import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
+import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.entity.Account;
@@ -23,6 +26,7 @@ import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
+import com.theron.wallet.exception.InvalidRequestException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -36,6 +40,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -152,5 +157,20 @@ class PlatformPixServiceImplTest {
         assertThat(response.getValue()).isEqualByComparingTo(new BigDecimal("25.00"));
         assertThat(response.getDescription()).isEqualTo("Cobrança teste");
         verify(asaasPixClient).createStaticQrCode(eq("master-api-key"), eq("evp-master-key-1"), any());
+    }
+
+    @Test
+    void payQrCodeRejectsMismatchedAmount() {
+        when(asaasProperties.getKey()).thenReturn("master-api-key");
+        String payload =
+                "00020126580014br.gov.bcb.pix01365d276f1d-6264-45e4-bc5b-d01a4f90d7c5520400005303986540510.005802BR5912iFriend Bank6013Medeiros Neto62290525IFRIENDB00000001770524ASA63040092";
+
+        assertThatThrownBy(() -> service.payQrCode(CreatePlatformPixPayQrCodeRequest.builder()
+                        .payload(payload)
+                        .amount(new BigDecimal("5.00"))
+                        .build(),
+                "idem-1"))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Amount must match QR code value");
     }
 }

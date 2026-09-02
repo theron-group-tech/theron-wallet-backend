@@ -29,6 +29,8 @@ public interface PlatformPixService {
 
     PlatformPixPayQrCodeResponse payQrCode(CreatePlatformPixPayQrCodeRequest request, String idempotencyKey);
 
+    PlatformPixPayQrCodeResponse getPixTransaction(String asaasPixTransactionId);
+
     PlatformPixTransferResponse createTransfer(CreatePlatformPixTransferRequest request, String idempotencyKey);
 
     Page<PlatformPixTransferResponse> listTransfers(Pageable pageable);

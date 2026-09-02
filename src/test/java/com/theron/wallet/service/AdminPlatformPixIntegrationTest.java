@@ -6,6 +6,7 @@ import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -98,5 +100,48 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.amount").value(10.00))
                 .andExpect(jsonPath("$.recipientName").value("Recebedor Teste"));
+    }
+
+    @Test
+    @DisplayName("POST /admin/platform-account/pix/qr-codes/pay rejects mismatched amount")
+    void payQrCodeRejectsMismatchedAmount() throws Exception {
+        String payload =
+                "00020126580014br.gov.bcb.pix01365d276f1d-6264-45e4-bc5b-d01a4f90d7c5520400005303986540510.005802BR5912iFriend Bank6013Medeiros Neto62290525IFRIENDB00000001770524ASA63040092";
+
+        mockMvc.perform(post("/api/v1/admin/platform-account/pix/qr-codes/pay")
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Idempotency-Key", "idem-pay-mismatch")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(CreatePlatformPixPayQrCodeRequest.builder()
+                                .payload(payload)
+                                .amount(new BigDecimal("5.00"))
+                                .description("Mismatch")
+                                .build())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString(
+                        "Amount must match QR code value")));
+    }
+
+    @Test
+    @DisplayName("GET /admin/platform-account/pix/transactions/{id} returns PIX transaction status")
+    void getPixTransactionReturnsStatus() throws Exception {
+        when(asaasPixClient.retrievePixTransaction(eq("test-key"), eq("pix-tx-awaiting")))
+                .thenReturn(AsaasPixTransactionResponse.builder()
+                        .id("pix-tx-awaiting")
+                        .status("AWAITING_REQUEST")
+                        .value(new BigDecimal("10.00"))
+                        .transferId("transfer-1")
+                        .externalAccount(AsaasPixTransactionResponse.ExternalAccount.builder()
+                                .name("Recebedor Teste")
+                                .build())
+                        .build());
+
+        mockMvc.perform(get("/api/v1/admin/platform-account/pix/transactions/pix-tx-awaiting")
+                        .header("Authorization", "Bearer " + adminAccessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value("pix-tx-awaiting"))
+                .andExpect(jsonPath("$.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.providerStatus").value("AWAITING_REQUEST"))
+                .andExpect(jsonPath("$.transferId").value("transfer-1"));
     }
 }

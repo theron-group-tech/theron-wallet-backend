@@ -21,6 +21,9 @@ public class PlatformPixPayQrCodeResponse {
     private String id;
     private BigDecimal amount;
     private TransactionStatus status;
+    private String providerStatus;
+    private String transferId;
+    private String refusalReason;
     private String recipientName;
     private String recipientDocument;
     private String institutionName;

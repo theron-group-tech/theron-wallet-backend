@@ -16,4 +16,5 @@ public class AsaasPixStaticQrCodeRequest {
     private String description;
     private String format;         // IMAGE | PAYLOAD | ALL
     private Integer expirationSeconds;
+    private Boolean allowsMultiplePayments;
 }

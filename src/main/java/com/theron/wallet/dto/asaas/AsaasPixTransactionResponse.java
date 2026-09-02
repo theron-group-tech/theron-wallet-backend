@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class AsaasPixPayQrCodeResponse {
+public class AsaasPixTransactionResponse {
 
     private String id;
     private String status;

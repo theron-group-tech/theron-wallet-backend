@@ -45,7 +45,7 @@ import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
-import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.util.PixEmvPayloadUtils;
 import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AccountLimitService;
@@ -288,18 +288,16 @@ public class PixServiceImpl implements PixService {
         AsaasPixStaticQrCodeResponse asaasResponse = asaasPixClient.createStaticQrCode(
                 apiKey,
                 pixKey.getKey().trim(),
-                AsaasPixStaticQrCodeRequest.builder()
-                        .value(request.getValue())
-                        .description(request.getDescription())
-                        .format("ALL")
-                        .build());
+                PixEmvPayloadUtils.buildStaticQrCodeRequest(
+                        request.getValue(), request.getDescription()));
 
         return AccountPixQrCodeResponse.builder()
                 .pixKeyId(pixKey.getId())
                 .payload(asaasResponse.getPayload())
                 .encodedImage(asaasResponse.getEncodedImage())
                 .expirationDate(asaasResponse.getExpirationDate())
-                .value(asaasResponse.getValue())
+                .value(PixEmvPayloadUtils.resolveQrCodeValue(
+                        asaasResponse.getValue(), request.getValue(), asaasResponse.getPayload()))
                 .description(asaasResponse.getDescription())
                 .build();
     }
