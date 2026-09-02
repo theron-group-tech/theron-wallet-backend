@@ -21,6 +21,7 @@ import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
 import com.theron.wallet.service.AsaasBalanceService;
+import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.MeService;
 import com.theron.wallet.service.MobileScopeService;
 import com.theron.wallet.service.NotificationService;
@@ -67,6 +68,7 @@ public class MeServiceImpl implements MeService {
     private final NotificationService notificationService;
     private final AccountAsaasProvisioningService accountAsaasProvisioningService;
     private final AsaasBalanceService asaasBalanceService;
+    private final AsaasOnboardingService asaasOnboardingService;
 
     @Override
     @Transactional(readOnly = true)
@@ -154,7 +156,9 @@ public class MeServiceImpl implements MeService {
 
     private AccountResponse toEnrichedAccountResponse(Account account) {
         AsaasBindResponse bind = accountAsaasProvisioningService.currentBind(account.getId());
-        return AccountMapper.toResponse(account, bind);
+        AccountResponse response = AccountMapper.toResponse(account, bind);
+        asaasOnboardingService.enrichAccountResponse(response, account.getId());
+        return response;
     }
 
     @Override

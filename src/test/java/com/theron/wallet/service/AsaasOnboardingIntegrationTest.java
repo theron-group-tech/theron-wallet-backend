@@ -222,6 +222,10 @@ class AsaasOnboardingIntegrationTest extends BaseIntegrationTest {
                 .build());
 
         assertThat(asaasOnboardingService.isFinancialResourcesEnabled(account.getId())).isTrue();
+        mockMvc.perform(get("/api/v1/me/accounts")
+                        .header("Authorization", ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].financialResourcesEnabled").value(true));
         mockMvc.perform(get("/api/v1/asaas/subaccount/status")
                         .header("Authorization", ownerToken))
                 .andExpect(status().isOk())

@@ -5,6 +5,7 @@ import com.theron.wallet.dto.request.onboarding.OnboardingAddressRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingBusinessRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingFinancialRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingPersonalRequest;
+import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.AsaasOnboardingResponse;
 import com.theron.wallet.dto.response.AsaasSubaccountStatusResponse;
 
@@ -31,6 +32,8 @@ public interface AsaasOnboardingService {
     AsaasSubaccountStatusResponse subaccountStatus(UUID actorUserId);
 
     boolean isFinancialResourcesEnabled(UUID accountId);
+
+    void enrichAccountResponse(AccountResponse response, UUID accountId);
 
     void applyAccountStatusWebhook(String asaasAccountId, String eventName);
 }

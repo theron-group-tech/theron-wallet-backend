@@ -13,6 +13,7 @@ import com.theron.wallet.dto.request.onboarding.OnboardingAddressRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingBusinessRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingFinancialRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingPersonalRequest;
+import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.AsaasOnboardingResponse;
 import com.theron.wallet.dto.response.AsaasSubaccountStatusResponse;
 import com.theron.wallet.entity.Account;
@@ -296,6 +297,7 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             onboarding.setCurrentStep(AsaasOnboardingStep.SUBMITTED);
             onboarding.setStatus(AsaasOnboardingStatus.SUBACCOUNT_CREATED);
             syncAfterCreate(subaccount, onboarding);
+            subaccount = subaccountRepository.save(subaccount);
             onboarding = onboardingRepository.save(onboarding);
 
             auditLogService.record(
@@ -362,6 +364,22 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return subaccount.getStatus() == SubaccountStatus.ACTIVE
                 && onboarding != null
                 && onboarding.getStatus() == AsaasOnboardingStatus.APPROVED;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void enrichAccountResponse(AccountResponse response, UUID accountId) {
+        if (response == null || accountId == null) {
+            return;
+        }
+        response.setFinancialResourcesEnabled(isFinancialResourcesEnabled(accountId));
+        AsaasOnboarding onboarding = onboardingRepository.findByAccountId(accountId).orElse(null);
+        if (onboarding != null) {
+            response.setOnboardingStatus(onboarding.getStatus());
+            if (response.getOnboardingUrl() == null) {
+                response.setOnboardingUrl(onboarding.getOnboardingUrl());
+            }
+        }
     }
 
     @Override

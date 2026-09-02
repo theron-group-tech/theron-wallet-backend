@@ -161,14 +161,7 @@ public class AccountServiceImpl implements AccountService {
     private AccountResponse toEnrichedResponse(Account account) {
         AsaasBindResponse bind = accountAsaasProvisioningService.currentBind(account.getId());
         AccountResponse response = AccountMapper.toResponse(account, bind);
-        if (account.getOwnerUser() != null) {
-            var status = asaasOnboardingService.subaccountStatus(account.getOwnerUser().getId());
-            response.setOnboardingStatus(status.getOnboardingStatus());
-            response.setFinancialResourcesEnabled(status.isFinancialResourcesEnabled());
-            if (response.getOnboardingUrl() == null) {
-                response.setOnboardingUrl(status.getOnboardingUrl());
-            }
-        }
+        asaasOnboardingService.enrichAccountResponse(response, account.getId());
         return response;
     }
 
