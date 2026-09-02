@@ -46,6 +46,7 @@ import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.util.PixEmvPayloadUtils;
+import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountAsaasGateway;
 import com.theron.wallet.service.AccountLimitService;
