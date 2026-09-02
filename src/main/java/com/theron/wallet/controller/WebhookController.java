@@ -79,8 +79,29 @@ public class WebhookController {
             log.warn("Transfer validation rejected: invalid token");
             return ResponseEntity.status(401).build();
         }
-        if (payload == null || !"TRANSFER".equalsIgnoreCase(payload.getType()) || payload.getTransfer() == null) {
-            log.info("Transfer validation REFUSED: invalid payload type");
+        if (payload == null || payload.getType() == null || payload.getType().isBlank()) {
+            log.info("Transfer validation REFUSED: missing payload type");
+            return ResponseEntity.ok(TransferValidationResponse.refused("Operação de transferência inválida"));
+        }
+
+        String type = payload.getType().trim().toUpperCase();
+        log.info("Transfer validation request: type={}", type);
+
+        if ("TRANSFER".equals(type)) {
+            return validateTransferType(payload);
+        }
+        if ("PIX_QR_CODE".equals(type)) {
+            return validatePixQrCodeType(payload);
+        }
+
+        log.info("Transfer validation REFUSED: unsupported type={}", type);
+        return ResponseEntity.ok(TransferValidationResponse.refused("Tipo de operação não suportado"));
+    }
+
+    private ResponseEntity<TransferValidationResponse> validateTransferType(
+            AsaasTransferValidationRequest payload) {
+        if (payload.getTransfer() == null) {
+            log.info("Transfer validation REFUSED: missing transfer object");
             return ResponseEntity.ok(TransferValidationResponse.refused("Operação de transferência inválida"));
         }
 
@@ -92,7 +113,7 @@ public class WebhookController {
 
         BigDecimal providerValue = payload.getTransfer().getValue();
         String externalReference = payload.getTransfer().getExternalReference();
-        log.info("Transfer validation request: transferId={}, externalReference={}, value={}",
+        log.info("Transfer validation TRANSFER: transferId={}, externalReference={}, value={}",
                 transferId, externalReference, providerValue);
 
         var transaction = transactionRepository.findByAsaasPaymentId(transferId);
@@ -115,25 +136,63 @@ public class WebhookController {
         Optional<PlatformPixTransfer> platformTransfer = platformPixService
                 .bindAndFindPlatformTransferForValidation(transferId, externalReference, providerValue);
         if (platformTransfer.isPresent()) {
-            PlatformPixTransfer row = platformTransfer.get();
-            if (providerValue == null || row.getAmount() == null || row.getAmount().compareTo(providerValue) != 0) {
-                log.info("Transfer validation REFUSED: master amount mismatch transferId={}", transferId);
-                return ResponseEntity.ok(TransferValidationResponse.refused(
-                        "Valor da transferência Master não corresponde ao registrado no Theron"));
-            }
-            if (row.getStatus() != TransactionStatus.PROCESSING && row.getStatus() != TransactionStatus.PENDING) {
-                log.info("Transfer validation REFUSED: master invalid status transferId={}", transferId);
-                return ResponseEntity.ok(TransferValidationResponse.refused(
-                        "Transferência Master não está em estado elegível para autorização"));
-            }
-            log.info("Transfer validation APPROVED: master transferId={}, idempotencyKey={}",
-                    transferId, row.getIdempotencyKey());
-            return ResponseEntity.ok(TransferValidationResponse.approved());
+            return approvePlatformMasterTransfer(
+                    platformTransfer.get(),
+                    providerValue,
+                    "transferId=" + transferId + ", idempotencyKey=" + platformTransfer.get().getIdempotencyKey());
         }
 
         log.info("Transfer validation REFUSED: not found transferId={}, externalReference={}",
                 transferId, externalReference);
         return ResponseEntity.ok(TransferValidationResponse.refused("Transferência não encontrada no Theron"));
+    }
+
+    private ResponseEntity<TransferValidationResponse> validatePixQrCodeType(
+            AsaasTransferValidationRequest payload) {
+        AsaasTransferValidationRequest.PixQrCode pixQrCode = payload.getPixQrCode();
+        if (pixQrCode == null) {
+            log.info("Transfer validation REFUSED: missing pixQrCode object");
+            return ResponseEntity.ok(TransferValidationResponse.refused("Operação de QR Code Pix inválida"));
+        }
+
+        String pixTransactionId = pixQrCode.getId();
+        if (pixTransactionId == null || pixTransactionId.isBlank()) {
+            log.info("Transfer validation REFUSED: missing pixQrCode id");
+            return ResponseEntity.ok(TransferValidationResponse.refused("QR Code Pix sem ID"));
+        }
+
+        BigDecimal providerValue = pixQrCode.getValue();
+        log.info("Transfer validation PIX_QR_CODE: pixTransactionId={}, value={}",
+                pixTransactionId, providerValue);
+
+        Optional<PlatformPixTransfer> platformTransfer = platformPixService
+                .findPlatformPixQrPayForValidation(pixTransactionId, providerValue);
+        if (platformTransfer.isPresent()) {
+            return approvePlatformMasterTransfer(
+                    platformTransfer.get(),
+                    providerValue,
+                    "pixTransactionId=" + pixTransactionId
+                            + ", idempotencyKey=" + platformTransfer.get().getIdempotencyKey());
+        }
+
+        log.info("Transfer validation REFUSED: QR pay not found pixTransactionId={}", pixTransactionId);
+        return ResponseEntity.ok(TransferValidationResponse.refused("Pagamento QR Code Pix não encontrado no Theron"));
+    }
+
+    private ResponseEntity<TransferValidationResponse> approvePlatformMasterTransfer(
+            PlatformPixTransfer row, BigDecimal providerValue, String logContext) {
+        if (providerValue == null || row.getAmount() == null || row.getAmount().compareTo(providerValue) != 0) {
+            log.info("Transfer validation REFUSED: master amount mismatch {}", logContext);
+            return ResponseEntity.ok(TransferValidationResponse.refused(
+                    "Valor da transferência Master não corresponde ao registrado no Theron"));
+        }
+        if (row.getStatus() != TransactionStatus.PROCESSING && row.getStatus() != TransactionStatus.PENDING) {
+            log.info("Transfer validation REFUSED: master invalid status {}", logContext);
+            return ResponseEntity.ok(TransferValidationResponse.refused(
+                    "Transferência Master não está em estado elegível para autorização"));
+        }
+        log.info("Transfer validation APPROVED: master {}", logContext);
+        return ResponseEntity.ok(TransferValidationResponse.approved());
     }
 
     /**

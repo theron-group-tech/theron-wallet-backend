@@ -304,6 +304,30 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         return Optional.empty();
     }
 
+    @Override
+    public Optional<PlatformPixTransfer> findPlatformPixQrPayForValidation(
+            String pixTransactionId, BigDecimal amount) {
+        if (pixTransactionId != null && !pixTransactionId.isBlank()) {
+            Optional<PlatformPixTransfer> byPixTx =
+                    platformPixTransferRepository.findByAsaasPixTransactionId(pixTransactionId.trim());
+            if (byPixTx.isPresent()) {
+                return byPixTx;
+            }
+        }
+        if (amount != null) {
+            LocalDateTime since = LocalDateTime.now().minusMinutes(QR_PAY_BIND_WINDOW_MINUTES);
+            List<PlatformPixTransfer> pending = platformPixTransferRepository.findPendingQrPayForBind(
+                    QR_PAY_DESTINATION_FALLBACK,
+                    List.of(TransactionStatus.PROCESSING, TransactionStatus.PENDING),
+                    amount,
+                    since);
+            if (!pending.isEmpty()) {
+                return Optional.of(pending.getFirst());
+            }
+        }
+        return Optional.empty();
+    }
+
     private PlatformPixTransfer bindTransferId(PlatformPixTransfer row, String transferId) {
         if (row.getAsaasTransferId() == null || row.getAsaasTransferId().isBlank()) {
             row.setAsaasTransferId(transferId);

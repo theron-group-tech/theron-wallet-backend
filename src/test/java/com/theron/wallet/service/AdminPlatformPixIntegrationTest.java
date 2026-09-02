@@ -119,6 +119,51 @@ class AdminPlatformPixIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("transfer-validation approves QR pay via PIX_QR_CODE payload from Asaas")
+    void transferValidationApprovesPixQrCodePayload() throws Exception {
+        when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-pix-qr-code")))
+                .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                        .id("pix-tx-qr-code-validation")
+                        .transferId("transfer-qr-code-validation")
+                        .status("AWAITING_REQUEST")
+                        .value(new BigDecimal("50.00"))
+                        .description("QR pay PIX_QR_CODE validation")
+                        .build());
+
+        mockMvc.perform(post("/api/v1/admin/platform-account/pix/qr-codes/pay")
+                        .header("Authorization", "Bearer " + adminAccessToken())
+                        .header("Idempotency-Key", "idem-pay-pix-qr-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(CreatePlatformPixPayQrCodeRequest.builder()
+                                .payload("00020126580014br.gov.bcb.pix0136test")
+                                .amount(new BigDecimal("50.00"))
+                                .description("QR pay PIX_QR_CODE validation")
+                                .build())))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                        .header("asaas-access-token", "test-transfer-validation-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "type": "PIX_QR_CODE",
+                                  "pixQrCode": {
+                                    "id": "pix-tx-qr-code-validation",
+                                    "value": 50.00,
+                                    "status": "AWAITING_REQUEST"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPROVED"));
+
+        PlatformPixTransfer persisted = platformPixTransferRepository
+                .findByAsaasPixTransactionId("pix-tx-qr-code-validation")
+                .orElseThrow();
+        assertThat(persisted.getIdempotencyKey()).isEqualTo("idem-pay-pix-qr-code");
+    }
+
+    @Test
     @DisplayName("POST /webhooks/asaas/transfer-validation approves persisted QR pay transfer")
     void transferValidationApprovesPersistedQrPay() throws Exception {
         when(asaasPixClient.payQrCode(eq("test-key"), any(), eq("idem-pay-validation")))

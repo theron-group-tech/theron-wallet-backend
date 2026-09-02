@@ -30,6 +30,8 @@ public interface PlatformPixTransferRepository extends JpaRepository<PlatformPix
 
     Optional<PlatformPixTransfer> findByIdempotencyKey(String idempotencyKey);
 
+    Optional<PlatformPixTransfer> findByAsaasPixTransactionId(String asaasPixTransactionId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<PlatformPixTransfer> findByStatusAndCreditTransactionIdIsNull(TransactionStatus status);
 

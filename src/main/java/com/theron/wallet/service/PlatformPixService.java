@@ -41,6 +41,9 @@ public interface PlatformPixService {
     Optional<PlatformPixTransfer> bindAndFindPlatformTransferForValidation(
             String transferId, String externalReference, BigDecimal amount);
 
+    Optional<PlatformPixTransfer> findPlatformPixQrPayForValidation(
+            String pixTransactionId, BigDecimal amount);
+
     void applyWebhookStatus(
             String asaasTransferId, String event, String externalReference, BigDecimal value);
 
