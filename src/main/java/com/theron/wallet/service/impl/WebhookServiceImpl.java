@@ -77,8 +77,8 @@ public class WebhookServiceImpl implements WebhookService {
             throw new UnauthorizedException("Invalid webhook token");
         }
 
-        if (!isGlobalWebhookToken(token) && !tokenMatchesOwnerTransaction(token, payload)) {
-            log.warn("Webhook token does not belong to the transaction owner; ignoring event={}",
+        if (!isGlobalWebhookToken(token) && !tokenMatchesEventContext(token, payload)) {
+            log.warn("Webhook token does not belong to the event context; ignoring event={}",
                     payload != null ? payload.getEvent() : null);
             return;
         }
@@ -118,6 +118,24 @@ public class WebhookServiceImpl implements WebhookService {
                 && MessageDigest.isEqual(
                 expectedToken.getBytes(StandardCharsets.UTF_8),
                 token.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private boolean tokenMatchesEventContext(String token, AsaasWebhookPayload payload) {
+        if (payload != null
+                && payload.getEvent() != null
+                && payload.getEvent().startsWith("ACCOUNT_STATUS_")) {
+            return tokenMatchesSubaccountAccountStatus(token, payload);
+        }
+        return tokenMatchesOwnerTransaction(token, payload);
+    }
+
+    private boolean tokenMatchesSubaccountAccountStatus(String token, AsaasWebhookPayload payload) {
+        return subaccountRepository.findByWebhookToken(token)
+                .filter(subaccount -> {
+                    String asaasAccountId = payload.getAccount() != null ? payload.getAccount().getId() : null;
+                    return asaasAccountId == null || asaasAccountId.equals(subaccount.getAsaasAccountId());
+                })
+                .isPresent();
     }
 
     private boolean tokenMatchesOwnerTransaction(String token, AsaasWebhookPayload payload) {

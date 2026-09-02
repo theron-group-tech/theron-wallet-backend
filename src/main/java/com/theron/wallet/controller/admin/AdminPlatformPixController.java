@@ -1,7 +1,9 @@
 package com.theron.wallet.controller.admin;
 
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
@@ -71,6 +73,14 @@ public class AdminPlatformPixController {
         actorResolver.requireAdmin();
         platformPixService.deleteKey(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/qr-codes")
+    @Operation(summary = "Create static PIX QR code for a Platform Account key")
+    public ResponseEntity<AccountPixQrCodeResponse> createQrCode(
+            @Valid @RequestBody CreatePlatformPixQrCodeRequest request) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformPixService.createQrCode(request));
     }
 
     @PostMapping("/transfers")

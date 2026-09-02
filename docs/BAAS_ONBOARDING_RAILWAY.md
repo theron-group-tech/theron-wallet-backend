@@ -19,11 +19,11 @@ Branch de deploy: **`refactor/baas-onboarding`** (não mergear em `master` até 
 No painel Asaas (conta pai), registrar URL acima com eventos:
 
 - `PAYMENT_*`, `TRANSFER_*` (existentes)
-- **`ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED`**
-- **`ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED`**
-- **`ACCOUNT_STATUS_DOCUMENT_APPROVED`**
-- **`ACCOUNT_STATUS_DOCUMENT_REJECTED`**
-- **`ACCOUNT_STATUS_AWAITING_APPROVAL`**
+- Todos os eventos de **Situação da conta** (`ACCOUNT_STATUS_*`), conforme painel Asaas:
+  - `ACCOUNT_STATUS_BANK_ACCOUNT_INFO_*`
+  - `ACCOUNT_STATUS_COMMERCIAL_INFO_*`
+  - `ACCOUNT_STATUS_DOCUMENT_*`
+  - `ACCOUNT_STATUS_GENERAL_APPROVAL_*`
 
 Header/token conforme `ASAAS_WEBHOOK_TOKEN`.
 

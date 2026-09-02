@@ -1,7 +1,9 @@
 package com.theron.wallet.service;
 
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
@@ -20,6 +22,8 @@ public interface PlatformPixService {
     void deleteKey(String asaasPixKeyId);
 
     PixKeyLookupResponse checkKey(PixKeyType type, String key);
+
+    AccountPixQrCodeResponse createQrCode(CreatePlatformPixQrCodeRequest request);
 
     PlatformPixTransferResponse createTransfer(CreatePlatformPixTransferRequest request, String idempotencyKey);
 

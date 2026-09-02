@@ -1,6 +1,9 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.PixKey;
@@ -109,5 +112,33 @@ class PlatformPixServiceImplTest {
         verify(walletService, times(1)).credit(walletId, new BigDecimal("42.50"));
         verify(notificationService, times(1)).notifyUsersWithPermission(
                 eq(organizationId), any(), any(), any(), eq(transactionId), any());
+    }
+
+    @Test
+    void createQrCodeUsesMasterApiKeyAndReturnsPayload() {
+        when(asaasProperties.getKey()).thenReturn("master-api-key");
+
+        when(asaasPixClient.createStaticQrCode(
+                eq("master-api-key"),
+                eq("pix-key-asaas-1"),
+                any()))
+                .thenReturn(AsaasPixStaticQrCodeResponse.builder()
+                        .payload("00020126...")
+                        .encodedImage("data:image/png;base64,abc")
+                        .value(new BigDecimal("25.00"))
+                        .description("Cobrança teste")
+                        .build());
+
+        AccountPixQrCodeResponse response = service.createQrCode(CreatePlatformPixQrCodeRequest.builder()
+                .pixKeyId("pix-key-asaas-1")
+                .value(new BigDecimal("25.00"))
+                .description("Cobrança teste")
+                .build());
+
+        assertThat(response.getPayload()).isEqualTo("00020126...");
+        assertThat(response.getEncodedImage()).isEqualTo("data:image/png;base64,abc");
+        assertThat(response.getValue()).isEqualByComparingTo(new BigDecimal("25.00"));
+        assertThat(response.getDescription()).isEqualTo("Cobrança teste");
+        verify(asaasPixClient).createStaticQrCode(eq("master-api-key"), eq("pix-key-asaas-1"), any());
     }
 }

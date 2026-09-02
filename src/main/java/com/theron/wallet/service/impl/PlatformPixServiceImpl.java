@@ -4,11 +4,15 @@ import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
@@ -119,6 +123,30 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         AsaasPixExternalKeyResponse asaas = asaasPixClient.lookupExternalKey(
                 masterKey, type.name(), key.trim());
         return PixKeyLookupMapper.toResponse(asaas);
+    }
+
+    @Override
+    public AccountPixQrCodeResponse createQrCode(CreatePlatformPixQrCodeRequest request) {
+        if (request.getPixKeyId() == null || request.getPixKeyId().isBlank()) {
+            throw new InvalidRequestException("pixKeyId is required");
+        }
+        String masterKey = requireMasterApiKey();
+        AsaasPixStaticQrCodeResponse asaasResponse = asaasPixClient.createStaticQrCode(
+                masterKey,
+                request.getPixKeyId().trim(),
+                AsaasPixStaticQrCodeRequest.builder()
+                        .value(request.getValue())
+                        .description(request.getDescription())
+                        .format("ALL")
+                        .build());
+        log.info("Created Platform Account static PIX QR code: pixKeyId={}", request.getPixKeyId());
+        return AccountPixQrCodeResponse.builder()
+                .payload(asaasResponse.getPayload())
+                .encodedImage(asaasResponse.getEncodedImage())
+                .expirationDate(asaasResponse.getExpirationDate())
+                .value(asaasResponse.getValue())
+                .description(asaasResponse.getDescription())
+                .build();
     }
 
     @Override

@@ -53,6 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -61,23 +62,40 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
 
     private static final AtomicBoolean WEBHOOK_SKIP_LOGGED = new AtomicBoolean(false);
 
-    private static final List<String> WEBHOOK_EVENTS = List.of(
-            "PAYMENT_CONFIRMED",
-            "PAYMENT_RECEIVED",
-            "PAYMENT_OVERDUE",
-            "PAYMENT_DELETED",
-            "PAYMENT_REFUNDED",
-            "PAYMENT_UPDATED",
-            "TRANSFER_CREATED",
-            "TRANSFER_PENDING",
-            "TRANSFER_DONE",
-            "TRANSFER_FAILED",
-            "TRANSFER_CANCELLED",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED",
+    private static final List<String> ACCOUNT_STATUS_WEBHOOK_EVENTS = List.of(
+            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_APPROVED",
+            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_AWAITING_APPROVAL",
+            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_PENDING",
+            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_REJECTED",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_APPROVED",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_AWAITING_APPROVAL",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRED",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRING_SOON",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_PENDING",
+            "ACCOUNT_STATUS_COMMERCIAL_INFO_REJECTED",
             "ACCOUNT_STATUS_DOCUMENT_APPROVED",
+            "ACCOUNT_STATUS_DOCUMENT_AWAITING_APPROVAL",
+            "ACCOUNT_STATUS_DOCUMENT_PENDING",
             "ACCOUNT_STATUS_DOCUMENT_REJECTED",
-            "ACCOUNT_STATUS_AWAITING_APPROVAL");
+            "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED",
+            "ACCOUNT_STATUS_GENERAL_APPROVAL_AWAITING_APPROVAL",
+            "ACCOUNT_STATUS_GENERAL_APPROVAL_PENDING",
+            "ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED");
+
+    private static final List<String> WEBHOOK_EVENTS = Stream.concat(
+            Stream.of(
+                    "PAYMENT_CONFIRMED",
+                    "PAYMENT_RECEIVED",
+                    "PAYMENT_OVERDUE",
+                    "PAYMENT_DELETED",
+                    "PAYMENT_REFUNDED",
+                    "PAYMENT_UPDATED",
+                    "TRANSFER_CREATED",
+                    "TRANSFER_PENDING",
+                    "TRANSFER_DONE",
+                    "TRANSFER_FAILED",
+                    "TRANSFER_CANCELLED"),
+            ACCOUNT_STATUS_WEBHOOK_EVENTS.stream()).toList();
 
     private final OrganizationContextResolver organizationContextResolver;
     private final AccountRepository accountRepository;
@@ -365,20 +383,32 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
     }
 
     private void mapAccountEvent(AsaasOnboarding onboarding, Subaccount subaccount, String eventName) {
-        switch (eventName) {
-            case "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED", "ACCOUNT_STATUS_DOCUMENT_APPROVED" -> {
-                subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved via Asaas webhook");
-                onboarding.setStatus(AsaasOnboardingStatus.APPROVED);
-                onboarding.setCurrentStep(AsaasOnboardingStep.COMPLETED);
-            }
-            case "ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED", "ACCOUNT_STATUS_DOCUMENT_REJECTED" -> {
-                onboarding.setStatus(AsaasOnboardingStatus.REJECTED);
-                subaccount.transitionTo(SubaccountStatus.FAILED, "Rejected via Asaas webhook");
-            }
-            case "ACCOUNT_STATUS_AWAITING_APPROVAL" -> {
-                onboarding.setStatus(AsaasOnboardingStatus.UNDER_ANALYSIS);
-            }
-            default -> onboarding.setStatus(AsaasOnboardingStatus.PENDING_DOCUMENTS);
+        if (eventName == null || !eventName.startsWith("ACCOUNT_STATUS_")) {
+            return;
+        }
+        if ("ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED".equals(eventName)) {
+            subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved via Asaas webhook");
+            onboarding.setStatus(AsaasOnboardingStatus.APPROVED);
+            onboarding.setCurrentStep(AsaasOnboardingStep.COMPLETED);
+            return;
+        }
+        if (eventName.endsWith("_REJECTED")) {
+            onboarding.setStatus(AsaasOnboardingStatus.REJECTED);
+            subaccount.transitionTo(SubaccountStatus.FAILED, "Rejected via Asaas webhook");
+            return;
+        }
+        if (eventName.endsWith("_AWAITING_APPROVAL")) {
+            onboarding.setStatus(AsaasOnboardingStatus.UNDER_ANALYSIS);
+            return;
+        }
+        if (eventName.endsWith("_PENDING")
+                || eventName.endsWith("_EXPIRED")
+                || eventName.endsWith("_EXPIRING_SOON")) {
+            onboarding.setStatus(AsaasOnboardingStatus.PENDING_DOCUMENTS);
+            return;
+        }
+        if (eventName.endsWith("_APPROVED")) {
+            onboarding.setStatus(AsaasOnboardingStatus.UNDER_ANALYSIS);
         }
     }
 
