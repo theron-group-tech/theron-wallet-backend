@@ -28,6 +28,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
+import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.util.PixEmvPayloadUtils;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InvalidRequestException;
