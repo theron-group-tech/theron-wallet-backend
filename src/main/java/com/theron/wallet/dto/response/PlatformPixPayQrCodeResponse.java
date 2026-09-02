@@ -1,0 +1,29 @@
+package com.theron.wallet.dto.response;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.theron.wallet.enums.TransactionStatus;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class PlatformPixPayQrCodeResponse {
+
+    private String id;
+    private BigDecimal amount;
+    private TransactionStatus status;
+    private String recipientName;
+    private String recipientDocument;
+    private String institutionName;
+    private String description;
+    private String endToEndIdentifier;
+}

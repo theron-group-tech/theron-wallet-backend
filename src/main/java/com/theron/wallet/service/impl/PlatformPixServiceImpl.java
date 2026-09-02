@@ -9,11 +9,15 @@ import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
+import com.theron.wallet.dto.response.PlatformPixPayQrCodeResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
 import com.theron.wallet.entity.PixKey;
@@ -149,6 +153,40 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .value(asaasResponse.getValue())
                 .description(asaasResponse.getDescription())
                 .build();
+    }
+
+    @Override
+    public PlatformPixPayQrCodeResponse payQrCode(
+            CreatePlatformPixPayQrCodeRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for Platform PIX QR payments");
+        }
+        String payload = request.getPayload() != null ? request.getPayload().trim() : "";
+        if (payload.isEmpty()) {
+            throw new InvalidRequestException("payload is required");
+        }
+        if (!payload.startsWith("000201")) {
+            throw new InvalidRequestException("payload must be a valid PIX copia e cola (EMV) string");
+        }
+
+        String masterKey = requireMasterApiKey();
+        String description = request.getDescription() != null && !request.getDescription().isBlank()
+                ? request.getDescription().trim()
+                : "Platform PIX QR payment";
+
+        AsaasPixPayQrCodeRequest asaasRequest = AsaasPixPayQrCodeRequest.builder()
+                .qrCode(AsaasPixPayQrCodeRequest.QrCodePayload.builder()
+                        .payload(payload)
+                        .build())
+                .value(request.getAmount())
+                .description(description)
+                .build();
+
+        AsaasPixPayQrCodeResponse asaasResponse = asaasPixClient.payQrCode(
+                masterKey, asaasRequest, idempotencyKey.trim());
+        log.info("Paid Platform Account PIX QR code in Asaas: id={}, status={}",
+                asaasResponse.getId(), asaasResponse.getStatus());
+        return toPayQrCodeResponse(asaasResponse, description);
     }
 
     @Override
@@ -408,6 +446,21 @@ public class PlatformPixServiceImpl implements PlatformPixService {
                 .build();
     }
 
+    private PlatformPixPayQrCodeResponse toPayQrCodeResponse(
+            AsaasPixPayQrCodeResponse asaas, String fallbackDescription) {
+        AsaasPixPayQrCodeResponse.ExternalAccount recipient = asaas.getExternalAccount();
+        return PlatformPixPayQrCodeResponse.builder()
+                .id(asaas.getId())
+                .amount(asaas.getValue())
+                .status(mapPixPayStatus(asaas.getStatus()))
+                .recipientName(recipient != null ? recipient.getName() : null)
+                .recipientDocument(recipient != null ? recipient.getCpfCnpj() : null)
+                .institutionName(recipient != null ? recipient.getIspbName() : null)
+                .description(asaas.getDescription() != null ? asaas.getDescription() : fallbackDescription)
+                .endToEndIdentifier(asaas.getEndToEndIdentifier())
+                .build();
+    }
+
     private PlatformPixTransferResponse toTransferResponse(PlatformPixTransfer row) {
         return PlatformPixTransferResponse.builder()
                 .id(row.getAsaasTransferId())
@@ -462,6 +515,20 @@ public class PlatformPixServiceImpl implements PlatformPixService {
         }
         if (PROCESSING_REMOTE.contains(status)) {
             return TransactionStatus.PROCESSING;
+        }
+        return TransactionStatus.PROCESSING;
+    }
+
+    static TransactionStatus mapPixPayStatus(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return TransactionStatus.PROCESSING;
+        }
+        String status = raw.trim().toUpperCase(Locale.ROOT);
+        if ("DONE".equals(status)) {
+            return TransactionStatus.COMPLETED;
+        }
+        if ("REFUSED".equals(status) || "CANCELLED".equals(status)) {
+            return "CANCELLED".equals(status) ? TransactionStatus.CANCELLED : TransactionStatus.FAILED;
         }
         return TransactionStatus.PROCESSING;
     }

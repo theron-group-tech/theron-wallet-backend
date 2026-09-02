@@ -1,5 +1,7 @@
 package com.theron.wallet.integration;
 
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
@@ -66,6 +68,17 @@ public class AsaasPixClient {
                 "/pix/qrCodes/static",
                 body,
                 AsaasPixStaticQrCodeResponse.class);
+    }
+
+    public AsaasPixPayQrCodeResponse payQrCode(
+            String apiKey, AsaasPixPayQrCodeRequest request, String idempotencyKey) {
+        log.info("Paying PIX QR code in Asaas: value={}", request != null ? request.getValue() : null);
+        return asaasHttpGateway.postFinancial(
+                apiKey,
+                "/pix/qrCodes/pay",
+                request,
+                idempotencyKey,
+                AsaasPixPayQrCodeResponse.class);
     }
 
     public void deleteStaticQrCode(String apiKey, String qrCodeId) {
