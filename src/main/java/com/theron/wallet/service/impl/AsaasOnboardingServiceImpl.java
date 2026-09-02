@@ -330,9 +330,10 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public AsaasSubaccountStatusResponse subaccountStatus(UUID actorUserId) {
         Account account = requireOwnAccount(actorUserId);
+        refreshOperationalStatusFromAsaas(account.getId());
         Subaccount subaccount = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
         AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId()).orElse(null);
         boolean enabled = isFinancialResourcesEnabled(account.getId());
@@ -432,6 +433,30 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
 
     private void syncAfterCreate(Subaccount subaccount, AsaasOnboarding onboarding) {
         trySandboxApprove(subaccount);
+        applyOperationalStatusFromAsaas(subaccount, onboarding);
+    }
+
+    private void refreshOperationalStatusFromAsaas(UUID accountId) {
+        Subaccount subaccount = subaccountRepository.findByAccount_Id(accountId).orElse(null);
+        if (subaccount == null
+                || subaccount.getEncryptedApiKey() == null
+                || subaccount.isLegacyAutoProvisioned()) {
+            return;
+        }
+        AsaasOnboarding onboarding = onboardingRepository.findByAccountId(accountId).orElse(null);
+        if (onboarding == null) {
+            return;
+        }
+        if (subaccount.getStatus() == SubaccountStatus.ACTIVE
+                && onboarding.getStatus() == AsaasOnboardingStatus.APPROVED) {
+            return;
+        }
+        applyOperationalStatusFromAsaas(subaccount, onboarding);
+        subaccountRepository.save(subaccount);
+        onboardingRepository.save(onboarding);
+    }
+
+    private void applyOperationalStatusFromAsaas(Subaccount subaccount, AsaasOnboarding onboarding) {
         if (subaccount.getEncryptedApiKey() == null) {
             return;
         }
@@ -444,17 +469,21 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             if (!approved) {
                 String onboardingUrl = asaasAccountStatusClient.firstOnboardingUrl(apiKey);
                 onboarding.setOnboardingUrl(onboardingUrl);
-                onboarding.setStatus(AsaasOnboardingStatus.PENDING_DOCUMENTS);
-                onboarding.setCurrentStep(AsaasOnboardingStep.DOCUMENTATION);
+                if (onboarding.getStatus() != AsaasOnboardingStatus.REJECTED) {
+                    onboarding.setStatus(AsaasOnboardingStatus.PENDING_DOCUMENTS);
+                    onboarding.setCurrentStep(AsaasOnboardingStep.DOCUMENTATION);
+                }
             } else {
-                subaccount.transitionTo(SubaccountStatus.ACTIVE, "Approved after onboarding submit");
+                subaccount.transitionTo(SubaccountStatus.ACTIVE, "Synced from Asaas account status");
                 onboarding.setStatus(AsaasOnboardingStatus.APPROVED);
                 onboarding.setCurrentStep(AsaasOnboardingStep.COMPLETED);
             }
         } catch (Exception ex) {
-            log.warn("Post-submit status sync failed: accountId={}, error={}",
+            log.warn("Asaas operational status sync failed: accountId={}, error={}",
                     subaccount.getAccount().getId(), ex.getMessage());
-            onboarding.setStatus(AsaasOnboardingStatus.UNDER_ANALYSIS);
+            if (onboarding.getStatus() == AsaasOnboardingStatus.SUBACCOUNT_CREATED) {
+                onboarding.setStatus(AsaasOnboardingStatus.UNDER_ANALYSIS);
+            }
         }
     }
 

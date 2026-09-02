@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
+import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
@@ -65,6 +67,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -286,6 +289,44 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                             .header("Authorization", bearer(tokenOwnerA)))
                     .andExpect(status().isNoContent());
             verify(asaasPixClient).deletePixKey(anyString(), org.mockito.ArgumentMatchers.eq("prov_1"));
+        }
+
+        @Test
+        @DisplayName("POST /pix/qr-codes returns payload when subaccount active and key exists")
+        void createQrCodeHappyPath() throws Exception {
+            stubCreatePixKey("pix_qr", "evp-qr-key");
+            MvcResult created = mockMvc.perform(post("/api/v1/pix/keys")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .type(PixKeyType.EVP)
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            AccountPixKeyResponse key = objectMapper.readValue(
+                    created.getResponse().getContentAsString(), AccountPixKeyResponse.class);
+
+            when(asaasPixClient.createStaticQrCode(anyString(), eq("pix_qr"), any()))
+                    .thenReturn(AsaasPixStaticQrCodeResponse.builder()
+                            .payload("00020126...")
+                            .encodedImage("data:image/png;base64,xyz")
+                            .value(new BigDecimal("10.00"))
+                            .description("Cobrança dashboard")
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreateAccountPixQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .pixKeyId(key.getId())
+                                    .value(new BigDecimal("10.00"))
+                                    .description("Cobrança dashboard")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.payload").value("00020126..."))
+                    .andExpect(jsonPath("$.pixKeyId").value(key.getId().toString()));
         }
 
         @Test

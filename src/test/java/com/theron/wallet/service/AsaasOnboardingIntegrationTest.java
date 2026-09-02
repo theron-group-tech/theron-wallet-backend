@@ -234,6 +234,43 @@ class AsaasOnboardingIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /asaas/subaccount/status syncs stale DB when Asaas already approved")
+    void subaccountStatusRefreshesFromAsaas() throws Exception {
+        when(asaasAccountStatusClient.getStatus(any())).thenReturn(
+                AsaasAccountStatusResponse.builder()
+                        .general("PENDING")
+                        .commercialInfo("PENDING")
+                        .build());
+        when(asaasAccountStatusClient.firstOnboardingUrl(any())).thenReturn("https://sandbox.asaas.com/onboarding/test");
+
+        completeCpfFlowBeforeSubmit();
+        mockMvc.perform(post("/api/v1/asaas/onboarding/submit")
+                        .header("Authorization", ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.financialResourcesEnabled").value(false));
+
+        Subaccount subaccount = subaccountRepository.findByAccount_Id(account.getId()).orElseThrow();
+        AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId()).orElseThrow();
+        subaccount.transitionTo(SubaccountStatus.PENDING_EVALUATION, "stale for test");
+        onboarding.setStatus(AsaasOnboardingStatus.PENDING_DOCUMENTS);
+        subaccountRepository.save(subaccount);
+        onboardingRepository.save(onboarding);
+
+        when(asaasAccountStatusClient.getStatus(any())).thenReturn(
+                AsaasAccountStatusResponse.builder()
+                        .general("APPROVED")
+                        .commercialInfo("APPROVED")
+                        .build());
+
+        mockMvc.perform(get("/api/v1/asaas/subaccount/status")
+                        .header("Authorization", ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.financialResourcesEnabled").value(true))
+                .andExpect(jsonPath("$.onboardingStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.subaccountStatus").value("ACTIVE"));
+    }
+
+    @Test
     @DisplayName("User without own account cannot start onboarding")
     void securityNoOwnAccount() throws Exception {
         UserResponse outsider = userService.create(CreateUserRequest.builder()
