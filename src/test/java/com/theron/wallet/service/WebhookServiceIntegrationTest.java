@@ -8,6 +8,7 @@ import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -42,9 +43,14 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
     private Transaction savedTransaction;
     private String asaasPaymentId;
 
+    private String asaasAccountId;
+
     @BeforeEach
     void setUp() {
-        Subaccount subaccount = subaccountRepository.save(TestFixtures.aSubaccount(SubaccountStatus.ACTIVE));
+        Subaccount subaccount = TestFixtures.aSubaccount(SubaccountStatus.ACTIVE);
+        asaasAccountId = "acc_" + UUID.randomUUID().toString().substring(0, 16);
+        subaccount.setAsaasAccountId(asaasAccountId);
+        subaccount = subaccountRepository.save(subaccount);
         savedWallet = walletRepository.save(TestFixtures.aWalletWithBalance(subaccount, BigDecimal.ZERO));
 
         asaasPaymentId = "pay_" + UUID.randomUUID().toString().substring(0, 16);
@@ -217,6 +223,58 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             Transaction updated = transactionRepository.findById(savedTransaction.getId()).orElseThrow();
             assertThat(updated.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
         }
+    }
+
+    @Nested
+    @DisplayName("Inbound PIX on subaccount without local charge")
+    class InboundPixWithoutLocalChargeTests {
+
+        @Test
+        @DisplayName("PAYMENT_RECEIVED without local tx credits wallet via TRANSFER_IN")
+        void shouldCreditWalletOnInboundPixReceived() {
+            String inboundPaymentId = "pay_in_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = buildInboundPixPayload("PAYMENT_RECEIVED", inboundPaymentId, "100.00");
+
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
+            assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+
+            Transaction inbound = transactionRepository.findByAsaasPaymentId(inboundPaymentId).orElseThrow();
+            assertThat(inbound.getType()).isEqualTo(TransactionType.TRANSFER_IN);
+            assertThat(inbound.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+            assertThat(inbound.getAmount()).isEqualByComparingTo(new BigDecimal("100.00"));
+            assertThat(inbound.getIdempotencyKey()).isEqualTo("asaas:pix:in:" + inboundPaymentId);
+        }
+
+        @Test
+        @DisplayName("second PAYMENT_RECEIVED for the same inbound payment must not double-credit")
+        void shouldNotDoubleCreditInboundPix() {
+            String inboundPaymentId = "pay_in_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = buildInboundPixPayload("PAYMENT_RECEIVED", inboundPaymentId, "100.00");
+
+            webhookService.processPaymentWebhook(payload);
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
+            assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+            assertThat(transactionRepository.findByAsaasPaymentId(inboundPaymentId)).isPresent();
+        }
+    }
+
+    private AsaasWebhookPayload buildInboundPixPayload(String event, String paymentId, String value) {
+        return AsaasWebhookPayload.builder()
+                .event(event)
+                .account(AsaasWebhookPayload.Account.builder().id(asaasAccountId).build())
+                .payment(AsaasWebhookPayload.Payment.builder()
+                        .id(paymentId)
+                        .value(new BigDecimal(value))
+                        .status("RECEIVED")
+                        .billingType("PIX")
+                        .pixQrCodeId("qr_" + paymentId)
+                        .pixTransaction("pix_" + paymentId)
+                        .build())
+                .build();
     }
 
     private AsaasWebhookPayload buildPayload(String event, String paymentId) {

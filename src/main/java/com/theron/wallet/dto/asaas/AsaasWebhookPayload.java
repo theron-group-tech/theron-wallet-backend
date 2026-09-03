@@ -51,6 +51,8 @@ public class AsaasWebhookPayload {
         private String paymentDate;
         private String externalReference;
         private String description;
+        private String pixQrCodeId;
+        private Object pixTransaction;
     }
 
     @Getter

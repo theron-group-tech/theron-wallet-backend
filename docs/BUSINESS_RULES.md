@@ -38,7 +38,7 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Configura split; administra Platform Account (Master Asaas).
 - PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup`, `POST /admin/platform-account/pix/qr-codes`, `POST /admin/platform-account/pix/qr-codes/pay` (copia e cola) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers por chave e pay QR exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` para autorização externa Asaas — ver **§2.1**. Webhooks `TRANSFER_*` da Master usam `ASAAS_WEBHOOK_TOKEN`; destino chave Theron ACTIVE credita `TRANSFER_IN` + wallet local. Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
 - PIX produto: `GET /pix/keys/lookup?accountId&type&key` consulta destino com a apiKey da subconta no modal de envio (exige bind ACTIVE + `pix.transfer`).
-- **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). `wallet.balance` / ledger permanecem espelho interno; dashboard inclui `ledgerBalance` para auditoria.
+- **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). `wallet.balance` / ledger permanecem espelho interno; dashboard inclui `ledgerBalance` para auditoria. PIX recebido na subconta (QR estático ou chave) credita o ledger local via webhook `PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED` sem cobrança Theron prévia (`TRANSFER_IN` COMPLETED, idempotency `asaas:pix:in:{paymentId}`); reenvio não duplica.
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
 
@@ -114,7 +114,7 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 - Requer bind Asaas utilizável, saldo, limites, Idempotency-Key em transfer.
 - Sem bind / status ≠ `ACTIVE` / sem apiKey → **422** `ASAAS_ERROR` com mensagem distinta.
 - Criação de chave (`POST /api/v1/pix/keys`): somente `type=EVP` (chave aleatória). A API Asaas não cria CPF, CNPJ, e-mail ou telefone. Outros tipos → **422**. Destino de transferência / beneficiário continua com `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`.
-- Pay copia e cola (`POST /api/v1/pix/qr-codes/pay`): body `accountId`, `payload`, `amount?`, `description?` + `Idempotency-Key`. Roles com `pix.transfer` (**OWNER, FINANCE, EMPLOYEE**) na **própria Account** — mesma UX em `/transferencias` (colar EMV no campo de chave troca para copia e cola). Pré-registra `Transaction` + `PixTransaction` antes do Asaas; validação externa usa `type=PIX_QR_CODE` (ver **§2.1**). Poll: `GET /api/v1/pix/transactions/{asaasPixTransactionId}?accountId=`.
+- Pay copia e cola (`POST /api/v1/pix/qr-codes/pay`): body `accountId`, `payload`, `amount?`, `description?` + `Idempotency-Key`. Roles com `pix.transfer` (**OWNER, FINANCE, EMPLOYEE**) na **própria Account** — mesma UX em `/transferencias` (colar EMV no campo de chave troca para copia e cola). Pré-registra `Transaction` + `PixTransaction` antes do Asaas; validação externa usa `type=PIX_QR_CODE` (ver **§2.1**). Poll: `GET /api/v1/pix/transactions/{asaasPixTransactionId}?accountId=`. O débito é na origem; o crédito no destino (QR/chave da subconta) chega pelo webhook `PAYMENT_RECEIVED` da cobrança auto-criada no Asaas e vira `TRANSFER_IN` + ledger local.
 
 ## 9. Payment Order
 
