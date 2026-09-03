@@ -2,10 +2,12 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
 import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
+import com.theron.wallet.dto.request.CreatePixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
+import com.theron.wallet.dto.response.PixPayQrCodeResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.exception.InvalidRequestException;
@@ -114,5 +116,30 @@ public class PixController {
             @Valid @RequestBody CreateAccountPixQrCodeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(pixService.createQrCode(actorResolver.requireProductUserId(), request));
+    }
+
+    @PostMapping("/qr-codes/pay")
+    @Operation(
+            summary = "Pay a PIX QR code (copia e cola)",
+            description = "Uses Asaas POST /pix/qrCodes/pay on the Account subaccount. "
+                    + "Idempotency-Key header is mandatory.")
+    public ResponseEntity<PixPayQrCodeResponse> payQrCode(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody CreatePixPayQrCodeRequest request) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for PIX QR payments");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(pixService.payQrCode(
+                        actorResolver.requireProductUserId(), request, idempotencyKey.trim()));
+    }
+
+    @GetMapping("/transactions/{id}")
+    @Operation(summary = "Poll PIX transaction status after QR pay (Asaas id)")
+    public ResponseEntity<PixPayQrCodeResponse> getPixTransaction(
+            @RequestParam UUID accountId,
+            @PathVariable String id) {
+        return ResponseEntity.ok(pixService.getPixTransaction(
+                actorResolver.requireProductUserId(), accountId, id));
     }
 }

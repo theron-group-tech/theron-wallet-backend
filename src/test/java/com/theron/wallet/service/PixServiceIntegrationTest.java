@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
@@ -12,6 +13,7 @@ import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
 import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreatePixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
@@ -768,6 +770,56 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(walletAfter).isEqualByComparingTo(before.subtract(new BigDecimal("55.00")));
             assertThat(ledgerService.getBalance(accountA.getId()).getBalance())
                     .isEqualByComparingTo(walletAfter);
+        }
+    }
+
+    @Nested
+    @DisplayName("QR pay (copia e cola)")
+    class QrPayTests {
+
+        @Test
+        @DisplayName("POST /pix/qr-codes/pay + transfer-validation PIX_QR_CODE APPROVED")
+        void payQrCodeAndTransferValidation() throws Exception {
+            when(asaasPixClient.payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-prod-qr-pay")))
+                    .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                            .id("pix-tx-prod-qr")
+                            .transferId("transfer-prod-qr")
+                            .status("AWAITING_REQUEST")
+                            .value(new BigDecimal("25.00"))
+                            .description("QR pay produto")
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes/pay")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .header(IDEMPOTENCY, "idem-prod-qr-pay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreatePixPayQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .payload("00020126580014br.gov.bcb.pix0136test")
+                                    .amount(new BigDecimal("25.00"))
+                                    .description("QR pay produto")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.id").value("pix-tx-prod-qr"))
+                    .andExpect(jsonPath("$.status").value("PROCESSING"));
+
+            mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                            .header("asaas-access-token", "test-transfer-validation-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "type": "PIX_QR_CODE",
+                                      "pixQrCode": {
+                                        "id": "pix-tx-prod-qr",
+                                        "value": 25.00,
+                                        "status": "AWAITING_REQUEST"
+                                      }
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("APPROVED"));
+
+            verify(asaasPixClient).payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-prod-qr-pay"));
         }
     }
 

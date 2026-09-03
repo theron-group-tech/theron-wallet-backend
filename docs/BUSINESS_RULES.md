@@ -36,11 +36,27 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
 - Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`). Divergências Asaas vs ledger local: `GET /admin/platform-account/balance-divergences`.
 - Configura split; administra Platform Account (Master Asaas).
-- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup` (lookup de destino via Asaas `/pix/addressKeys/external`, usado no modal de confirmação de envio), `POST /admin/platform-account/pix/qr-codes`, `POST /admin/platform-account/pix/qr-codes/pay` (copia e cola) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. **Transfers por chave e pay QR copia e cola** exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / `ASAAS_TRANSFER_VALIDATION_URL`). O pay QR **pré-registra** a linha (`status=PROCESSING`, `asaas_transfer_id` null) **antes** da chamada Asaas; após o pay atualiza `asaas_pix_transaction_id` e, quando disponível, `asaas_transfer_id`. A validação Asaas do pay QR usa `type=PIX_QR_CODE` e `pixQrCode.id` (= `asaas_pix_transaction_id`); transfers por chave usam `type=TRANSFER` e `transfer.id`. Fallbacks: `externalReference` (= idempotency) ou pending QR pay recente (valor + janela de 10 min). Sem registro prévio, o Asaas recusa com *"Autorização externa foi recusada"*. **Ops:** confirmar no painel Asaas Master que a URL de validação aponta para `{BACKEND}/api/v1/webhooks/asaas/transfer-validation` e que o token coincide com `ASAAS_TRANSFER_VALIDATION_TOKEN` no Railway. Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status; se o destino for chave PIX Theron ACTIVE, creditam `TRANSFER_IN` + wallet local (`credit_transaction_id`). Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup`, `POST /admin/platform-account/pix/qr-codes`, `POST /admin/platform-account/pix/qr-codes/pay` (copia e cola) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers por chave e pay QR exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` para autorização externa Asaas — ver **§2.1**. Webhooks `TRANSFER_*` da Master usam `ASAAS_WEBHOOK_TOKEN`; destino chave Theron ACTIVE credita `TRANSFER_IN` + wallet local. Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
 - PIX produto: `GET /pix/keys/lookup?accountId&type&key` consulta destino com a apiKey da subconta no modal de envio (exige bind ACTIVE + `pix.transfer`).
 - **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). `wallet.balance` / ledger permanecem espelho interno; dashboard inclui `ledgerBalance` para auditoria.
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
+
+### 2.1 Autorização externa Asaas (`transfer-validation`)
+
+Saídas PIX da Master exigem aprovação via `POST /webhooks/asaas/transfer-validation` (token `ASAAS_TRANSFER_VALIDATION_TOKEN`; URL `ASAAS_TRANSFER_VALIDATION_URL` no painel Asaas Master).
+
+| Operação | `type` | Objeto | Campo chave |
+|----------|--------|--------|-------------|
+| Transfer por chave (Master) | `TRANSFER` | `transfer` | `transfer.id` → `asaas_transfer_id` |
+| Pay QR copia e cola (Master) | `PIX_QR_CODE` | `pixQrCode` | `pixQrCode.id` → `asaas_pix_transaction_id` |
+| Pay QR copia e cola (subconta) | `PIX_QR_CODE` | `pixQrCode` | `pixQrCode.id` → `pix_transaction.asaas_pix_transaction_id` |
+
+**Sequência pay QR:** pré-registro em `platform_pix_transfer` (`status=PROCESSING`, `asaas_transfer_id` null) → chamada Asaas `POST /pix/qrCodes/pay` → atualiza `asaas_pix_transaction_id` (+ `asaas_transfer_id` se disponível) → Asaas chama `transfer-validation` com `type=PIX_QR_CODE` → `APPROVED` → webhook `TRANSFER_*` confirma.
+
+**Fallbacks de lookup:** `externalReference` (= idempotency key) ou pending QR pay recente (valor + janela de 10 min). Sem registro prévio, o Asaas recusa com *"Autorização externa foi recusada"*.
+
+**Ops:** URL de validação = `{BACKEND}/api/v1/webhooks/asaas/transfer-validation`; token = `ASAAS_TRANSFER_VALIDATION_TOKEN` no Railway.
 
 ## 3. Organization
 
@@ -98,6 +114,7 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 - Requer bind Asaas utilizável, saldo, limites, Idempotency-Key em transfer.
 - Sem bind / status ≠ `ACTIVE` / sem apiKey → **422** `ASAAS_ERROR` com mensagem distinta.
 - Criação de chave (`POST /api/v1/pix/keys`): somente `type=EVP` (chave aleatória). A API Asaas não cria CPF, CNPJ, e-mail ou telefone. Outros tipos → **422**. Destino de transferência / beneficiário continua com `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`.
+- Pay copia e cola (`POST /api/v1/pix/qr-codes/pay`): body `accountId`, `payload`, `amount?`, `description?` + `Idempotency-Key`. Roles com `pix.transfer` (OWNER, FINANCE, EMPLOYEE) na **própria Account**. Pré-registra `Transaction` + `PixTransaction` antes do Asaas; validação externa usa `type=PIX_QR_CODE` (ver **§2.1**). Poll: `GET /api/v1/pix/transactions/{asaasPixTransactionId}?accountId=`.
 
 ## 9. Payment Order
 

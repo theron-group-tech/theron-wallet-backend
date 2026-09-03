@@ -181,11 +181,17 @@ Crédito local do destinatário vinculado via `externalReference = senderTx.id`.
 ```mermaid
 flowchart TD
   ADMIN[PlatformOwner] --> KEYS[GET/POST platform-account/pix/keys EVP]
+  ADMIN --> QRGEN[POST platform-account/pix/qr-codes]
+  ADMIN --> QRPAY[POST platform-account/pix/qr-codes/pay]
   ADMIN --> SEND[POST platform-account/pix/transfers]
+  QRPAY --> PREREG[Pre-registro platform_pix_transfer]
   SEND --> PERSIST[platform_pix_transfer]
-  PERSIST --> VALID[Webhook transfer-validation Asaas]
-  VALID -->|aprovado| ASAAS_M[Asaas Master executa PIX]
-  ASAAS_M --> WH[Webhook TRANSFER_*]
+  PREREG --> ASAAS_PAY[Asaas pay QR]
+  PERSIST --> ASAAS_TRF[Asaas transfer chave]
+  ASAAS_PAY --> VAL_QR["transfer-validation PIX_QR_CODE"]
+  ASAAS_TRF --> VAL_TRF["transfer-validation TRANSFER"]
+  VAL_QR -->|APPROVED| WH[Webhook TRANSFER_*]
+  VAL_TRF -->|APPROVED| WH
   WH -->|destino chave Theron| CREDIT[TRANSFER_IN local + wallet]
   WH --> RECON[POST reconcile-credits backfill]
 ```
@@ -205,7 +211,13 @@ flowchart TD
   PO -->|sim PROCESSING| SYNC[Atualiza PaymentOrder COMPLETED/FAILED]
   PO -->|nao| STD[Fluxo padrao transfer]
 
-  TYPE -->|transfer-validation| VAL[Autoriza PIX Master pendente]
+  TYPE -->|transfer-validation| VAL_TYPE{Tipo payload}
+  VAL_TYPE -->|TRANSFER| VAL_TRF[Lookup transfer.id em platform_pix_transfer]
+  VAL_TYPE -->|PIX_QR_CODE| VAL_QR[Lookup pixQrCode.id em platform_pix_transfer]
+  VAL_TRF --> DECIDE{Registro pendente?}
+  VAL_QR --> DECIDE
+  DECIDE -->|sim| APPROVED[APPROVED]
+  DECIDE -->|nao| REFUSED[REFUSED]
 ```
 
 ---

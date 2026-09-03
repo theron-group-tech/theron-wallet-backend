@@ -63,3 +63,4 @@ Dois cliques em Submit (ou retry com mesmo `Idempotency-Key`) não devem criar d
 - [ ] `apiKey` ausente em responses e logs
 - [ ] Legacy `POST /accounts/{id}/asaas-subaccount` retorna 422
 - [ ] Gates PIX bloqueiam até `APPROVED`
+- [ ] Pay QR copia e cola Master aprovado via `transfer-validation` (`PIX_QR_CODE`)

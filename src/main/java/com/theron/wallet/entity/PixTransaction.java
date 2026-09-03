@@ -63,6 +63,9 @@ public class PixTransaction {
     @Column(name = "provider_reference", length = 50)
     private String providerReference;
 
+    @Column(name = "asaas_pix_transaction_id", length = 80)
+    private String asaasPixTransactionId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TransactionStatus status;

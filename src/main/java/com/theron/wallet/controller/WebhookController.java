@@ -4,7 +4,10 @@ import com.theron.wallet.config.AsaasProperties;
 import com.theron.wallet.dto.asaas.AsaasTransferValidationRequest;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.PlatformPixTransfer;
+import com.theron.wallet.entity.PixTransaction;
+import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.service.InboundTransferService;
 import com.theron.wallet.service.PlatformPixService;
@@ -25,6 +28,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -35,10 +40,12 @@ import java.util.Optional;
 public class WebhookController {
 
     private static final String ASAAS_ACCESS_TOKEN_HEADER = "asaas-access-token";
+    private static final String QR_PAY_DESTINATION_FALLBACK = "QR_CODE_PAY";
 
     private final WebhookService webhookService;
     private final InboundTransferService inboundTransferService;
     private final TransactionRepository transactionRepository;
+    private final PixTransactionRepository pixTransactionRepository;
     private final PlatformPixService platformPixService;
     private final AsaasProperties asaasProperties;
 
@@ -66,7 +73,12 @@ public class WebhookController {
     }
 
     @PostMapping("/asaas/transfer-validation")
-    @Operation(summary = "Validate an Asaas outgoing transfer")
+    @Operation(
+            summary = "Validate an Asaas outgoing transfer",
+            description = "Asaas calls this before executing Master PIX outflows. "
+                    + "Supported types: TRANSFER (key transfer, lookup by transfer.id) "
+                    + "and PIX_QR_CODE (QR copia e cola pay, lookup by pixQrCode.id). "
+                    + "Returns APPROVED or REFUSED.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "APPROVED or REFUSED decision returned to Asaas"),
             @ApiResponse(responseCode = "401", description = "Invalid validation webhook token")
@@ -175,6 +187,16 @@ public class WebhookController {
                             + ", idempotencyKey=" + platformTransfer.get().getIdempotencyKey());
         }
 
+        Optional<PixTransaction> subaccountPix = findSubaccountQrPayForValidation(
+                pixTransactionId, providerValue);
+        if (subaccountPix.isPresent()) {
+            return approveSubaccountQrPay(
+                    subaccountPix.get(),
+                    providerValue,
+                    "pixTransactionId=" + pixTransactionId
+                            + ", transactionId=" + subaccountPix.get().getTransaction().getId());
+        }
+
         log.info("Transfer validation REFUSED: QR pay not found pixTransactionId={}", pixTransactionId);
         return ResponseEntity.ok(TransferValidationResponse.refused("Pagamento QR Code Pix não encontrado no Theron"));
     }
@@ -192,6 +214,48 @@ public class WebhookController {
                     "Transferência Master não está em estado elegível para autorização"));
         }
         log.info("Transfer validation APPROVED: master {}", logContext);
+        return ResponseEntity.ok(TransferValidationResponse.approved());
+    }
+
+    private Optional<PixTransaction> findSubaccountQrPayForValidation(
+            String pixTransactionId, BigDecimal amount) {
+        if (pixTransactionId != null && !pixTransactionId.isBlank()) {
+            Optional<PixTransaction> byPixTx =
+                    pixTransactionRepository.findByAsaasPixTransactionIdWithTransaction(pixTransactionId.trim());
+            if (byPixTx.isPresent()) {
+                return byPixTx;
+            }
+        }
+        if (amount != null) {
+            LocalDateTime since = LocalDateTime.now().minusMinutes(10);
+            List<PixTransaction> pending = pixTransactionRepository.findPendingQrPayForBind(
+                    QR_PAY_DESTINATION_FALLBACK,
+                    List.of(TransactionStatus.PROCESSING, TransactionStatus.PENDING),
+                    amount,
+                    since);
+            if (!pending.isEmpty()) {
+                return Optional.of(pending.getFirst());
+            }
+        }
+        return Optional.empty();
+    }
+
+    private ResponseEntity<TransferValidationResponse> approveSubaccountQrPay(
+            PixTransaction pixTransaction, BigDecimal providerValue, String logContext) {
+        Transaction transaction = pixTransaction.getTransaction();
+        if (providerValue == null || transaction.getAmount() == null
+                || transaction.getAmount().compareTo(providerValue) != 0) {
+            log.info("Transfer validation REFUSED: subaccount QR amount mismatch {}", logContext);
+            return ResponseEntity.ok(TransferValidationResponse.refused(
+                    "Valor do QR Code Pix não corresponde ao registrado no Theron"));
+        }
+        if (transaction.getStatus() != TransactionStatus.PROCESSING
+                && transaction.getStatus() != TransactionStatus.PENDING) {
+            log.info("Transfer validation REFUSED: subaccount QR invalid status {}", logContext);
+            return ResponseEntity.ok(TransferValidationResponse.refused(
+                    "Pagamento QR Code Pix não está em estado elegível para autorização"));
+        }
+        log.info("Transfer validation APPROVED: subaccount {}", logContext);
         return ResponseEntity.ok(TransferValidationResponse.approved());
     }
 

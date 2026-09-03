@@ -103,7 +103,7 @@ O cliente chama **sempre** `/api/v1/...` (same-origin). Base URL pública do bac
 - `Content-Type: application/json`.
 - `Authorization: Bearer <accessToken>`.
 - `X-Correlation-Id`: UUID por request (aparece como `traceId` no erro).
-- Header **`Idempotency-Key`**: UUID **obrigatório** em `POST /deposits`, `POST /withdraws`, `POST /pix/transfers`. Opcional em `POST /transfers/internal` e approve/reject/cancel.
+- Header **`Idempotency-Key`**: UUID **obrigatório** em `POST /deposits`, `POST /withdraws`, `POST /pix/transfers`, `POST /pix/qr-codes/pay`. Opcional em `POST /transfers/internal` e approve/reject/cancel.
 - Em **401** (exceto login): tentar `POST /auth/refresh` com o `refreshToken`; se falhar, logout e ir para login.
 - Rate limit: login/refresh podem devolver **429** `RATE_LIMITED` (20 tentativas / 300s por IP).
 
@@ -199,6 +199,7 @@ Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`)
 - A chamada Asaas é `POST /v3/pix/addressKeys` com a **API key da subconta** da Account — **não** com a Master (`ASAAS_API_KEY`). No console Asaas, abra a **subconta** (não a conta raiz Theron) para ver a chave.
 - `DELETE /api/v1/pix/keys/{id}` → 204
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
+- `POST /api/v1/pix/qr-codes/pay` `{ "accountId", "payload", "amount?", "description?" }` + **Idempotency-Key** (`pix.transfer`). Pay copia e cola na subconta; poll `GET /pix/transactions/{asaasId}?accountId=`.
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
   Body: `{ "accountId", "amount", "beneficiaryId" }` **ou** `{ "destinationPixKey", "destinationPixKeyType" }`  
   Perm `pix.transfer`. 201 com `status` tipicamente `PROCESSING` (PIX pessoal **não** vai para ApprovalPolicy).  
@@ -334,6 +335,8 @@ Query padrão: `page`, `size` (default 20, max 100), `sort=createdAt,desc`.
 | GET | `/api/v1/pix/transfers/{id}` | | pix.read |
 | GET | `/api/v1/pix/transfers?accountId=` | | pix.read |
 | POST | `/api/v1/pix/qr-codes` | | pix.create |
+| POST | `/api/v1/pix/qr-codes/pay` | **Idempotency-Key** | pix.transfer — pay copia e cola subconta. Body: `accountId`, `payload`, `amount?`, `description?`. Resposta: `id` (Asaas pix tx), `transactionId`, `pixTransactionId`, `status`, destinatário |
+| GET | `/api/v1/pix/transactions/{id}?accountId=` | | pix.read — poll após pay QR |
 
 ### Beneficiários / aprovações / limites / notificações / audit
 
@@ -489,10 +492,11 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | GET/POST/DELETE | `/api/v1/admin/platform-account/pix/keys` | Chaves PIX Master (`ASAAS_API_KEY`). POST só `{ "type": "EVP" }`. Resposta: `id` (Asaas string), `type`, `key`, `status` — sem `accountId` |
 | GET | `/api/v1/admin/platform-account/pix/keys/lookup?type&key` | Lookup automático no modal de envio PIX Master (Asaas external): `ownerName`, `ownerCpfCnpj`, `institutionName`, `institutionCode`, `ispb` — sem passo separado no formulário |
 | POST | `/api/v1/admin/platform-account/pix/qr-codes` | QR estático Master (cobrança). Body: `pixKeyId`, `value` (obrigatório), `description?` |
-| POST | `/api/v1/admin/platform-account/pix/qr-codes/pay` | Pay copia e cola Master. Body: `payload`, `amount`, `description?` + `Idempotency-Key`. **Pré-registra** em `platform_pix_transfer` antes do Asaas (`transfer-validation`); sem registro → Asaas `REFUSED` / *Autorização externa foi recusada*. Resposta: `id`, `amount`, `status`, `providerStatus`, `transferId`, `refusalReason`, destinatário |
+| POST | `/api/v1/admin/platform-account/pix/qr-codes/pay` | Pay copia e cola Master. Body: `payload`, `amount`, `description?` + `Idempotency-Key`. **Pré-registra** em `platform_pix_transfer` antes do Asaas. Asaas valida com `type=PIX_QR_CODE` e `pixQrCode.id` = `id` da resposta (pix transaction id, **não** `transferId`). Sem registro → Asaas `REFUSED` / *Autorização externa foi recusada*. Resposta: `id`, `amount`, `status`, `providerStatus`, `transferId`, `refusalReason`, destinatário |
 | GET | `/api/v1/admin/platform-account/pix/transactions/{id}` | Poll status PIX Asaas após pay (`PROCESSING` → `COMPLETED`) |
 | GET | `/api/v1/pix/keys/lookup?accountId&type&key` | Idem no produto (modal de envio; apiKey da subconta; `pix.transfer` + bind ACTIVE) |
-| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master por chave. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local |
+| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master por chave. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer`; Asaas valida com `type=TRANSFER` + `transfer.id`. GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local |
+| POST | `/api/v1/webhooks/asaas/transfer-validation` | **Interno (Asaas → BE, não consumido pelo FE).** Token `ASAAS_TRANSFER_VALIDATION_TOKEN`. Tipos: `TRANSFER` (transfer por chave) ou `PIX_QR_CODE` (pay QR copia e cola). Resposta: `{ "status": "APPROVED" \| "REFUSED", "refuseReason"?: string }` |
 | POST | `/api/v1/admin/platform-account/pix/reconcile-credits` | Backfill créditos locais de transfers Master COMPLETED sem `credit_transaction_id` → `{ credited }` |
 | POST | `/api/v1/admin/payment-orders/{id}/sync` | Reconciliar ordem `PROCESSING` com `GET /transfers/{id}` Asaas; 404 → `FAILED` (sem auto-reverter ledger) |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |

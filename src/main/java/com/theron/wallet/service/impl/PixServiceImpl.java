@@ -7,12 +7,17 @@ import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
 import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
+import com.theron.wallet.dto.request.CreatePixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
+import com.theron.wallet.dto.response.PixPayQrCodeResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Beneficiary;
@@ -69,15 +74,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.TransactionDefinition;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PixServiceImpl implements PixService {
+
+    private static final int QR_PAY_BIND_WINDOW_MINUTES = 10;
 
     private final ResourceAuthorization resourceAuthorization;
     private final AuditLogService auditLogService;
@@ -231,6 +242,45 @@ public class PixServiceImpl implements PixService {
     }
 
     @Override
+    public PixPayQrCodeResponse payQrCode(
+            UUID actorUserId, CreatePixPayQrCodeRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for PIX QR payments");
+        }
+
+        Account account = accountRepository.findByIdWithOrganization(request.getAccountId())
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", request.getAccountId()));
+        resourceAuthorization.requireAccount(actorUserId, account.getId(), PermissionCodes.PIX_TRANSFER);
+        accountAsaasGateway.requireConfiguredSubaccount(request.getAccountId());
+
+        String payload = request.getPayload() != null ? request.getPayload().trim() : "";
+        BigDecimal payAmount = resolveQrPayAmount(payload, request.getAmount());
+
+        String normalizedKey = idempotencyService.resolveKey(null, idempotencyKey.trim());
+        String requestHash = qrPayHash(request.getAccountId(), payAmount, payload);
+
+        return idempotencyService.findExisting(normalizedKey, requestHash)
+                .map(existing -> toPayQrCodeResponseFromTransaction(existing, request.getAccountId()))
+                .orElseGet(() -> createNewQrPay(
+                        actorUserId, request, account, payload, payAmount, normalizedKey, requestHash));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PixPayQrCodeResponse getPixTransaction(
+            UUID actorUserId, UUID accountId, String asaasPixTransactionId) {
+        if (asaasPixTransactionId == null || asaasPixTransactionId.isBlank()) {
+            throw new InvalidRequestException("transaction id is required");
+        }
+        resourceAuthorization.requireAccount(actorUserId, accountId, PermissionCodes.PIX_READ);
+        accountAsaasGateway.requireConfiguredSubaccount(accountId);
+        String apiKey = accountAsaasGateway.resolveApiKey(accountId);
+        AsaasPixTransactionResponse asaas = asaasPixClient.retrievePixTransaction(
+                apiKey, asaasPixTransactionId.trim());
+        return toPixTransactionPollResponse(accountId, asaas);
+    }
+
+    @Override
     public PixTransferResponse executeApprovedTransfer(UUID transactionId) {
         Transaction processing = debitHeldTransfer(transactionId);
         PixTransaction pixTransaction = pixTransactionRepository.findByTransactionId(processing.getId())
@@ -301,6 +351,259 @@ public class PixServiceImpl implements PixService {
                         asaasResponse.getValue(), request.getValue(), asaasResponse.getPayload()))
                 .description(asaasResponse.getDescription())
                 .build();
+    }
+
+    private PixPayQrCodeResponse createNewQrPay(
+            UUID actorUserId,
+            CreatePixPayQrCodeRequest request,
+            Account account,
+            String payload,
+            BigDecimal payAmount,
+            String idempotencyKey,
+            String requestHash) {
+        String description = request.getDescription() != null && !request.getDescription().isBlank()
+                ? request.getDescription().trim()
+                : "PIX QR payment";
+
+        Transaction persisted;
+        try {
+            persisted = persistQrPay(
+                    actorUserId, account, payAmount, idempotencyKey, requestHash, description);
+        } catch (RuntimeException ex) {
+            if (!ProviderCall.isUniqueConstraint(ex)) {
+                throw ex;
+            }
+            persisted = idempotencyService.requireExisting(idempotencyKey, requestHash);
+            return toPayQrCodeResponseFromTransaction(persisted, account.getId());
+        }
+
+        AsaasPixPayQrCodeRequest asaasRequest = AsaasPixPayQrCodeRequest.builder()
+                .qrCode(AsaasPixPayQrCodeRequest.QrCodePayload.builder()
+                        .payload(payload)
+                        .build())
+                .value(payAmount)
+                .description(description)
+                .externalReference(idempotencyKey)
+                .build();
+
+        String apiKey = accountAsaasGateway.resolveApiKey(account.getId());
+        try {
+            AsaasPixPayQrCodeResponse asaasResponse = asaasPixClient.payQrCode(
+                    apiKey, asaasRequest, idempotencyKey);
+            log.info("Paid PIX QR code in Asaas: accountId={}, id={}, status={}, transferId={}",
+                    account.getId(), asaasResponse.getId(), asaasResponse.getStatus(),
+                    asaasResponse.getTransferId());
+            PixTransaction updated = completeQrPay(persisted.getId(), asaasResponse, payAmount, description);
+            return toPayQrCodeResponse(asaasResponse, updated, description);
+        } catch (RuntimeException ex) {
+            if (!ProviderCall.isTimeout(ex)) {
+                markTransferFailed(persisted.getId());
+            }
+            throw ex;
+        }
+    }
+
+    private Transaction persistQrPay(
+            UUID actorUserId,
+            Account account,
+            BigDecimal payAmount,
+            String idempotencyKey,
+            String requestHash,
+            String description) {
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return requiresNew.execute(status -> {
+            Account managedAccount = accountRepository.findByIdWithOrganization(account.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Account", "id", account.getId()));
+
+            accountLimitService.assertWithinLimits(managedAccount.getId(), payAmount);
+            assertHierarchicalPixLimits(managedAccount, actorUserId, payAmount, null);
+
+            Wallet wallet = walletRepository.findByAccountIdWithLock(managedAccount.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", managedAccount.getId()));
+            assertSufficientSpendBalance(managedAccount.getId(), wallet, payAmount);
+            accountAsaasGateway.requireConfiguredSubaccount(managedAccount.getId());
+
+            User actor = userRepository.findById(actorUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User", "id", actorUserId));
+
+            wallet.debit(payAmount);
+            walletRepository.save(wallet);
+
+            Transaction transaction = transactionRepository.save(Transaction.builder()
+                    .wallet(wallet)
+                    .type(TransactionType.PIX)
+                    .status(TransactionStatus.PROCESSING)
+                    .amount(payAmount)
+                    .description(description)
+                    .reference(ProviderCall.referenceOf(description))
+                    .idempotencyKey(idempotencyKey)
+                    .requestHash(requestHash)
+                    .createdBy(actor)
+                    .build());
+
+            pixTransactionRepository.save(PixTransaction.builder()
+                    .transaction(transaction)
+                    .account(managedAccount)
+                    .destinationPixKey(PlatformPixServiceImpl.QR_PAY_DESTINATION_FALLBACK)
+                    .destinationPixKeyType(PixKeyType.EVP)
+                    .status(TransactionStatus.PROCESSING)
+                    .build());
+
+            ledgerService.postDebit(
+                    managedAccount.getId(),
+                    payAmount,
+                    "ledger:pix:" + idempotencyKey,
+                    transaction.getId().toString());
+
+            auditLogService.record(
+                    AuditAction.TRANSFER_CREATED,
+                    managedAccount.getOrganization().getId(),
+                    actorUserId,
+                    "Transaction",
+                    transaction.getId(),
+                    Map.of(
+                            "accountId", managedAccount.getId().toString(),
+                            "amount", payAmount.toPlainString(),
+                            "mode", "QR_PAY",
+                            "status", TransactionStatus.PROCESSING.name()));
+            return transaction;
+        });
+    }
+
+    private PixTransaction completeQrPay(
+            UUID transactionId,
+            AsaasPixPayQrCodeResponse asaasResponse,
+            BigDecimal payAmount,
+            String description) {
+        TransactionStatus status = PlatformPixServiceImpl.mapPixPayStatus(asaasResponse.getStatus());
+        String destinationKey = resolveQrPayDestinationKey(asaasResponse);
+        TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return requiresNew.execute(statusTx -> {
+            Transaction transaction = transactionRepository.findByIdForUpdate(transactionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
+            PixTransaction pixTransaction = pixTransactionRepository.findByTransactionIdForUpdate(transactionId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "PixTransaction", "transactionId", transactionId));
+
+            if (asaasResponse.getId() != null && !asaasResponse.getId().isBlank()) {
+                pixTransaction.setAsaasPixTransactionId(asaasResponse.getId());
+            }
+            if (asaasResponse.getTransferId() != null && !asaasResponse.getTransferId().isBlank()) {
+                transaction.setAsaasPaymentId(asaasResponse.getTransferId());
+                transaction.setExternalReference(asaasResponse.getTransferId());
+                pixTransaction.setProviderReference(asaasResponse.getTransferId());
+            }
+            BigDecimal resolvedAmount = asaasResponse.getValue() != null ? asaasResponse.getValue() : payAmount;
+            transaction.setAmount(resolvedAmount);
+            transactionLifecycleService.transition(transaction, status);
+            pixTransaction.setDestinationPixKey(destinationKey);
+            pixTransaction.setStatus(status);
+            transactionRepository.save(transaction);
+            return pixTransactionRepository.save(pixTransaction);
+        });
+    }
+
+    private static BigDecimal resolveQrPayAmount(String payload, BigDecimal requestAmount) {
+        if (payload.isEmpty()) {
+            throw new InvalidRequestException("payload is required");
+        }
+        if (!payload.startsWith("000201")) {
+            throw new InvalidRequestException("payload must be a valid PIX copia e cola (EMV) string");
+        }
+        BigDecimal payloadAmount = PixEmvPayloadUtils.parseTransactionAmount(payload);
+        if (payloadAmount != null) {
+            if (requestAmount != null && requestAmount.compareTo(payloadAmount) != 0) {
+                throw new InvalidRequestException(
+                        "Amount must match QR code value (R$ " + payloadAmount.toPlainString() + ")");
+            }
+            return payloadAmount;
+        }
+        if (requestAmount == null || requestAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new InvalidRequestException("amount is required for open QR codes");
+        }
+        return requestAmount;
+    }
+
+    private String qrPayHash(UUID accountId, BigDecimal amount, String payload) {
+        String payloadPart = payload.length() > 64 ? payload.substring(0, 64) : payload;
+        return idempotencyService.hash(
+                TransactionType.PIX.name(),
+                "QR",
+                accountId.toString(),
+                idempotencyService.amountPart(amount),
+                payloadPart,
+                "BRL");
+    }
+
+    private PixPayQrCodeResponse toPayQrCodeResponseFromTransaction(
+            Transaction transaction, UUID accountId) {
+        PixTransaction pixTransaction = pixTransactionRepository.findByTransactionId(transaction.getId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "PixTransaction", "transactionId", transaction.getId()));
+        return PixPayQrCodeResponse.builder()
+                .id(pixTransaction.getAsaasPixTransactionId())
+                .accountId(accountId)
+                .transactionId(transaction.getId())
+                .pixTransactionId(pixTransaction.getId())
+                .amount(transaction.getAmount())
+                .status(transaction.getStatus())
+                .transferId(transaction.getAsaasPaymentId())
+                .description(transaction.getDescription())
+                .build();
+    }
+
+    private PixPayQrCodeResponse toPayQrCodeResponse(
+            AsaasPixPayQrCodeResponse asaas,
+            PixTransaction pixTransaction,
+            String fallbackDescription) {
+        AsaasPixPayQrCodeResponse.ExternalAccount recipient = asaas.getExternalAccount();
+        Transaction transaction = pixTransaction.getTransaction();
+        return PixPayQrCodeResponse.builder()
+                .id(asaas.getId())
+                .accountId(pixTransaction.getAccount().getId())
+                .transactionId(transaction.getId())
+                .pixTransactionId(pixTransaction.getId())
+                .amount(asaas.getValue() != null ? asaas.getValue() : transaction.getAmount())
+                .status(pixTransaction.getStatus())
+                .providerStatus(asaas.getStatus())
+                .transferId(asaas.getTransferId())
+                .refusalReason(asaas.getRefusalReason())
+                .recipientName(recipient != null ? recipient.getName() : null)
+                .recipientDocument(recipient != null ? recipient.getCpfCnpj() : null)
+                .institutionName(recipient != null ? recipient.getIspbName() : null)
+                .description(asaas.getDescription() != null ? asaas.getDescription() : fallbackDescription)
+                .endToEndIdentifier(asaas.getEndToEndIdentifier())
+                .build();
+    }
+
+    private PixPayQrCodeResponse toPixTransactionPollResponse(
+            UUID accountId, AsaasPixTransactionResponse asaas) {
+        AsaasPixTransactionResponse.ExternalAccount recipient = asaas.getExternalAccount();
+        return PixPayQrCodeResponse.builder()
+                .id(asaas.getId())
+                .accountId(accountId)
+                .amount(asaas.getValue())
+                .status(PlatformPixServiceImpl.mapPixPayStatus(asaas.getStatus()))
+                .providerStatus(asaas.getStatus())
+                .transferId(asaas.getTransferId())
+                .refusalReason(asaas.getRefusalReason())
+                .recipientName(recipient != null ? recipient.getName() : null)
+                .recipientDocument(recipient != null ? recipient.getCpfCnpj() : null)
+                .institutionName(recipient != null ? recipient.getIspbName() : null)
+                .description(asaas.getDescription())
+                .endToEndIdentifier(asaas.getEndToEndIdentifier())
+                .build();
+    }
+
+    private static String resolveQrPayDestinationKey(AsaasPixPayQrCodeResponse asaasResponse) {
+        if (asaasResponse.getExternalAccount() != null
+                && asaasResponse.getExternalAccount().getAddressKey() != null
+                && !asaasResponse.getExternalAccount().getAddressKey().isBlank()) {
+            return asaasResponse.getExternalAccount().getAddressKey().trim();
+        }
+        return PlatformPixServiceImpl.QR_PAY_DESTINATION_FALLBACK;
     }
 
     private PixTransferResponse createNewTransfer(
