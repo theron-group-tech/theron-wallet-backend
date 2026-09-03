@@ -122,6 +122,7 @@ public class PixController {
     @Operation(
             summary = "Pay a PIX QR code (copia e cola)",
             description = "Uses Asaas POST /pix/qrCodes/pay on the Account subaccount. "
+                    + "Requires pix.transfer on the actor's own Account (OWNER, FINANCE or EMPLOYEE). "
                     + "Idempotency-Key header is mandatory.")
     public ResponseEntity<PixPayQrCodeResponse> payQrCode(
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,

@@ -199,7 +199,7 @@ Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`)
 - A chamada Asaas é `POST /v3/pix/addressKeys` com a **API key da subconta** da Account — **não** com a Master (`ASAAS_API_KEY`). No console Asaas, abra a **subconta** (não a conta raiz Theron) para ver a chave.
 - `DELETE /api/v1/pix/keys/{id}` → 204
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
-- `POST /api/v1/pix/qr-codes/pay` `{ "accountId", "payload", "amount?", "description?" }` + **Idempotency-Key** (`pix.transfer`). Pay copia e cola na subconta; poll `GET /pix/transactions/{asaasId}?accountId=`.
+- `POST /api/v1/pix/qr-codes/pay` `{ "accountId", "payload", "amount?", "description?" }` + **Idempotency-Key** (`pix.transfer`). Pay copia e cola na subconta para **OWNER, FINANCE e EMPLOYEE** (Account própria). Em `/transferencias`, colar EMV (`000201…`) no campo de chave **troca automaticamente** para modo copia e cola e preenche o valor se o QR tiver tag 54. Poll: `GET /pix/transactions/{asaasId}?accountId=`.
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
   Body: `{ "accountId", "amount", "beneficiaryId" }` **ou** `{ "destinationPixKey", "destinationPixKeyType" }`  
   Perm `pix.transfer`. 201 com `status` tipicamente `PROCESSING` (PIX pessoal **não** vai para ApprovalPolicy).  
@@ -335,7 +335,7 @@ Query padrão: `page`, `size` (default 20, max 100), `sort=createdAt,desc`.
 | GET | `/api/v1/pix/transfers/{id}` | | pix.read |
 | GET | `/api/v1/pix/transfers?accountId=` | | pix.read |
 | POST | `/api/v1/pix/qr-codes` | | pix.create |
-| POST | `/api/v1/pix/qr-codes/pay` | **Idempotency-Key** | pix.transfer — pay copia e cola subconta. Body: `accountId`, `payload`, `amount?`, `description?`. Resposta: `id` (Asaas pix tx), `transactionId`, `pixTransactionId`, `status`, destinatário |
+| POST | `/api/v1/pix/qr-codes/pay` | **Idempotency-Key** | pix.transfer — pay copia e cola da subconta (OWNER, FINANCE, EMPLOYEE, Account própria). Body: `accountId`, `payload`, `amount?`, `description?`. UI `/transferencias` detecta EMV colado na chave. Resposta: `id` (Asaas pix tx), `transactionId`, `pixTransactionId`, `status`, destinatário |
 | GET | `/api/v1/pix/transactions/{id}?accountId=` | | pix.read — poll após pay QR |
 
 ### Beneficiários / aprovações / limites / notificações / audit
@@ -524,6 +524,7 @@ Logo: `public/brand/theron-mark.png` no `LogoMark`. Timestamps do extrato admin:
 - Login/signup/refresh/logout funcionam contra o backend local via rewrite.
 - Dashboard mostra saldo real de `GET /me/dashboard` da Account própria.
 - Enviar PIX usa `Idempotency-Key` e **não** espera `PENDING_APPROVAL` por policy.
+- Copia e cola em `/transferencias` funciona para OWNER, FINANCE e EMPLOYEE (não só Admin Master): colar EMV reconhece o payload e chama `POST /pix/qr-codes/pay`.
 - Maria (outra org) não vê contas de João (403 tratado).
 - EMPLOYEE envia PIX da própria Account; não vê PaymentOrders.
 - FINANCE cria PaymentOrder; OWNER aprova; FINANCE não aprova.
