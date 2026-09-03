@@ -33,6 +33,7 @@ import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
+import com.theron.wallet.integration.AsaasWebhookConfigFactory;
 import com.theron.wallet.mapper.SubaccountMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.AsaasOnboardingRepository;
@@ -53,50 +54,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Stream;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
-
-    private static final AtomicBoolean WEBHOOK_SKIP_LOGGED = new AtomicBoolean(false);
-
-    private static final List<String> ACCOUNT_STATUS_WEBHOOK_EVENTS = List.of(
-            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_APPROVED",
-            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_AWAITING_APPROVAL",
-            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_PENDING",
-            "ACCOUNT_STATUS_BANK_ACCOUNT_INFO_REJECTED",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_APPROVED",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_AWAITING_APPROVAL",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRED",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_EXPIRING_SOON",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_PENDING",
-            "ACCOUNT_STATUS_COMMERCIAL_INFO_REJECTED",
-            "ACCOUNT_STATUS_DOCUMENT_APPROVED",
-            "ACCOUNT_STATUS_DOCUMENT_AWAITING_APPROVAL",
-            "ACCOUNT_STATUS_DOCUMENT_PENDING",
-            "ACCOUNT_STATUS_DOCUMENT_REJECTED",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_APPROVED",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_AWAITING_APPROVAL",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_PENDING",
-            "ACCOUNT_STATUS_GENERAL_APPROVAL_REJECTED");
-
-    private static final List<String> WEBHOOK_EVENTS = Stream.concat(
-            Stream.of(
-                    "PAYMENT_CONFIRMED",
-                    "PAYMENT_RECEIVED",
-                    "PAYMENT_OVERDUE",
-                    "PAYMENT_DELETED",
-                    "PAYMENT_REFUNDED",
-                    "PAYMENT_UPDATED",
-                    "TRANSFER_CREATED",
-                    "TRANSFER_PENDING",
-                    "TRANSFER_DONE",
-                    "TRANSFER_FAILED",
-                    "TRANSFER_CANCELLED"),
-            ACCOUNT_STATUS_WEBHOOK_EVENTS.stream()).toList();
 
     private final OrganizationContextResolver organizationContextResolver;
     private final AccountRepository accountRepository;
@@ -108,6 +70,7 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
     private final ApiKeyEncryptionService encryptionService;
     private final WebhookTokenGenerator webhookTokenGenerator;
     private final AsaasProperties asaasProperties;
+    private final AsaasWebhookConfigFactory asaasWebhookConfigFactory;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
 
@@ -269,7 +232,8 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         subaccount = subaccountRepository.save(subaccount);
 
         try {
-            List<AsaasWebhookConfigRequest> webhooks = buildWebhookConfig(subaccount.getWebhookToken());
+            List<AsaasWebhookConfigRequest> webhooks =
+                    asaasWebhookConfigFactory.buildInlineConfigs(subaccount.getWebhookToken());
             AsaasSubaccountRequest asaasRequest = SubaccountMapper.toAsaasRequest(subaccount, webhooks);
             if (onboarding.getPersonType() == AsaasPersonType.INDIVIDUAL) {
                 asaasRequest.setBirthDate(payload.getBirthDate());
@@ -663,26 +627,5 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             return onboarding.getLastErrorMessage();
         }
         return "Financial account setup in progress";
-    }
-
-    private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
-        String webhookUrl = asaasProperties.getWebhookUrl();
-        if (webhookUrl == null || webhookUrl.isBlank()) {
-            if (WEBHOOK_SKIP_LOGGED.compareAndSet(false, true)) {
-                log.info("ASAAS_WEBHOOK_URL not set — onboarding subaccounts created without inline webhooks");
-            }
-            return null;
-        }
-        return List.of(AsaasWebhookConfigRequest.builder()
-                .name("Theron Wallet")
-                .url(webhookUrl)
-                .email("webhooks@theron.internal")
-                .enabled(true)
-                .interrupted(false)
-                .apiVersion("3")
-                .authToken(webhookToken)
-                .sendType("SEQUENTIALLY")
-                .events(WEBHOOK_EVENTS)
-                .build());
     }
 }

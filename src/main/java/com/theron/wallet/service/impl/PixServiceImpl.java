@@ -47,6 +47,7 @@ import com.theron.wallet.repository.BeneficiaryRepository;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.UserRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -59,6 +60,7 @@ import com.theron.wallet.service.ApprovalWorkflowService;
 import com.theron.wallet.service.AsaasBalanceService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.IdempotencyService;
+import com.theron.wallet.service.InboundPixCreditService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.LimitContext;
 import com.theron.wallet.service.PixService;
@@ -102,10 +104,12 @@ public class PixServiceImpl implements PixService {
     private final WalletRepository walletRepository;
     private final BeneficiaryRepository beneficiaryRepository;
     private final AccountRepository accountRepository;
+    private final SubaccountRepository subaccountRepository;
     private final UserRepository userRepository;
     private final AsaasPixClient asaasPixClient;
     private final AsaasTransferClient asaasTransferClient;
     private final IdempotencyService idempotencyService;
+    private final InboundPixCreditService inboundPixCreditService;
     private final LedgerService ledgerService;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
@@ -394,6 +398,7 @@ public class PixServiceImpl implements PixService {
                     account.getId(), asaasResponse.getId(), asaasResponse.getStatus(),
                     asaasResponse.getTransferId());
             PixTransaction updated = completeQrPay(persisted.getId(), asaasResponse, payAmount, description);
+            maybeCreditTheronDestination(account, asaasResponse, updated, description);
             return toPayQrCodeResponse(asaasResponse, updated, description);
         } catch (RuntimeException ex) {
             if (!ProviderCall.isTimeout(ex)) {
@@ -504,6 +509,72 @@ public class PixServiceImpl implements PixService {
             transactionRepository.save(transaction);
             return pixTransactionRepository.save(pixTransaction);
         });
+    }
+
+    /**
+     * Theron→Theron QR pay: credit destination Account wallet without waiting for PAYMENT_RECEIVED.
+     * Uses the Asaas PIX transaction id (same family as webhook cross-check on pixTransaction).
+     */
+    private void maybeCreditTheronDestination(
+            Account payerAccount,
+            AsaasPixPayQrCodeResponse asaasResponse,
+            PixTransaction pixTransaction,
+            String description) {
+        if (pixTransaction.getStatus() != TransactionStatus.COMPLETED) {
+            return;
+        }
+        String destinationKey = resolveQrPayDestinationKey(asaasResponse);
+        if (destinationKey == null
+                || destinationKey.isBlank()
+                || PlatformPixServiceImpl.QR_PAY_DESTINATION_FALLBACK.equals(destinationKey)) {
+            return;
+        }
+
+        Optional<PixKey> destinationKeyOpt =
+                pixKeyRepository.findByKeyAndStatus(destinationKey, PixKeyStatus.ACTIVE);
+        if (destinationKeyOpt.isEmpty()) {
+            return;
+        }
+        PixKey destinationPixKey = destinationKeyOpt.get();
+        Account destinationAccount = destinationPixKey.getAccount();
+        if (destinationAccount == null || destinationAccount.getId().equals(payerAccount.getId())) {
+            return;
+        }
+
+        Optional<Subaccount> destinationSubaccount =
+                subaccountRepository.findByAccount_Id(destinationAccount.getId());
+        if (destinationSubaccount.isEmpty()) {
+            log.warn("Theron destination PIX key has no subaccount: accountId={}, key={}",
+                    destinationAccount.getId(), destinationKey);
+            return;
+        }
+
+        String resourceId = asaasResponse.getId() != null && !asaasResponse.getId().isBlank()
+                ? asaasResponse.getId()
+                : asaasResponse.getTransferId();
+        if (resourceId == null || resourceId.isBlank()) {
+            log.warn("Cannot credit Theron destination without Asaas resource id: payerAccountId={}",
+                    payerAccount.getId());
+            return;
+        }
+
+        BigDecimal amount = asaasResponse.getValue() != null
+                ? asaasResponse.getValue()
+                : pixTransaction.getTransaction().getAmount();
+        try {
+            inboundPixCreditService.credit(
+                    destinationSubaccount.get(),
+                    resourceId,
+                    amount,
+                    description != null ? description : "PIX recebido (Theron)",
+                    asaasResponse.getEndToEndIdentifier());
+            log.info("Credited Theron destination on QR pay: payerAccountId={}, destinationAccountId={}, resourceId={}",
+                    payerAccount.getId(), destinationAccount.getId(), resourceId);
+        } catch (RuntimeException ex) {
+            log.error("Failed to credit Theron destination on QR pay: payerAccountId={}, destinationAccountId={}, error={}",
+                    payerAccount.getId(), destinationAccount.getId(), ex.getMessage());
+            throw ex;
+        }
     }
 
     private static BigDecimal resolveQrPayAmount(String payload, BigDecimal requestAmount) {

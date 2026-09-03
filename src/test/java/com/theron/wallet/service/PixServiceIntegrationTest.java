@@ -24,6 +24,7 @@ import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.AccountLimit;
 import com.theron.wallet.entity.ApprovalPolicy;
+import com.theron.wallet.entity.PixKey;
 import com.theron.wallet.entity.PixTransaction;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
@@ -31,6 +32,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.ApprovalPolicyStatus;
 import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
@@ -39,6 +41,7 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.AccountLimitRepository;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.ApprovalPolicyRepository;
+import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -103,6 +106,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired private WalletRepository walletRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private PixTransactionRepository pixTransactionRepository;
+    @Autowired private PixKeyRepository pixKeyRepository;
     @Autowired private MockMvc mockMvc;
     @Autowired private PixService pixService;
     @Autowired private WalletService walletService;
@@ -820,6 +824,61 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .andExpect(jsonPath("$.status").value("APPROVED"));
 
             verify(asaasPixClient).payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-prod-qr-pay"));
+        }
+
+        @Test
+        @DisplayName("pay QR to ACTIVE Theron key of another Account credits destination TRANSFER_IN")
+        void payQrToTheronDestinationCreditsLedger() throws Exception {
+            String destinationKey = "theron-dest-" + UUID.randomUUID().toString().substring(0, 8);
+            var destAccount = accountRepository.findByIdWithOrganization(accountB.getId()).orElseThrow();
+            pixKeyRepository.saveAndFlush(PixKey.builder()
+                    .account(destAccount)
+                    .organization(destAccount.getOrganization())
+                    .type(PixKeyType.EVP)
+                    .key(destinationKey)
+                    .status(PixKeyStatus.ACTIVE)
+                    .providerKeyId("pk_" + destinationKey)
+                    .build());
+
+            Wallet destWalletBefore = walletRepository.findByAccountId(accountB.getId()).orElseThrow();
+            BigDecimal destBalanceBefore = destWalletBefore.getBalance();
+
+            when(asaasPixClient.payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-theron-qr-pay")))
+                    .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                            .id("pix-tx-theron-qr")
+                            .transferId("transfer-theron-qr")
+                            .status("DONE")
+                            .value(new BigDecimal("40.00"))
+                            .description("Theron QR pay")
+                            .endToEndIdentifier("E2E_THERON_QR")
+                            .externalAccount(AsaasPixPayQrCodeResponse.ExternalAccount.builder()
+                                    .addressKey(destinationKey)
+                                    .name("Destino B")
+                                    .build())
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes/pay")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .header(IDEMPOTENCY, "idem-theron-qr-pay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreatePixPayQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .payload("00020126580014br.gov.bcb.pix0136test")
+                                    .amount(new BigDecimal("40.00"))
+                                    .description("Theron QR pay")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+            Wallet destWalletAfter = walletRepository.findByAccountId(accountB.getId()).orElseThrow();
+            assertThat(destWalletAfter.getBalance())
+                    .isEqualByComparingTo(destBalanceBefore.add(new BigDecimal("40.00")));
+
+            Transaction inbound = transactionRepository.findByAsaasPaymentId("pix-tx-theron-qr").orElseThrow();
+            assertThat(inbound.getType()).isEqualTo(TransactionType.TRANSFER_IN);
+            assertThat(inbound.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+            assertThat(inbound.getIdempotencyKey()).isEqualTo("asaas:pix:in:pix-tx-theron-qr");
+            assertThat(inbound.getAccount().getId()).isEqualTo(accountB.getId());
         }
     }
 

@@ -10,12 +10,14 @@ import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountStatus;
 import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.AccountRepository;
+import com.theron.wallet.repository.AsaasWebhookEventRepository;
 import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -30,6 +32,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -52,6 +55,9 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private AccountRepository accountRepository;
+
+    @Autowired
+    private AsaasWebhookEventRepository asaasWebhookEventRepository;
 
     private Wallet savedWallet;
     private Transaction savedTransaction;
@@ -391,6 +397,40 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
                 return digits.substring(0, length);
             }
             return digits + "0".repeat(length - digits.length());
+        }
+    }
+
+    @Nested
+    @DisplayName("Inbound PIX without resolvable subaccount")
+    class InboundPixUnresolvedSubaccountTests {
+
+        @Test
+        @DisplayName("PAYMENT_RECEIVED without subaccount must not mark PROCESSED")
+        void shouldFailWhenSubaccountCannotBeResolved() {
+            String inboundPaymentId = "pay_orphan_" + UUID.randomUUID().toString().substring(0, 12);
+            String eventId = "evt_orphan_" + UUID.randomUUID();
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .id(eventId)
+                    .event("PAYMENT_RECEIVED")
+                    .account(AsaasWebhookPayload.Account.builder()
+                            .id("acc_unknown_" + UUID.randomUUID().toString().substring(0, 8))
+                            .build())
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(inboundPaymentId)
+                            .value(new BigDecimal("50.00"))
+                            .status("RECEIVED")
+                            .billingType("PIX")
+                            .build())
+                    .build();
+
+            assertThatThrownBy(() -> webhookService.receive("test-webhook-token", payload))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("subaccount not resolved");
+
+            assertThat(asaasWebhookEventRepository.findByAsaasEventId(eventId))
+                    .hasValueSatisfying(event ->
+                            assertThat(event.getStatus()).isEqualTo(AsaasWebhookEventStatus.FAILED));
+            assertThat(transactionRepository.findByAsaasPaymentId(inboundPaymentId)).isEmpty();
         }
     }
 

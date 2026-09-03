@@ -24,6 +24,7 @@ import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
+import com.theron.wallet.service.InboundPixCreditService;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.AsaasOnboardingService;
@@ -53,7 +54,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final TransactionRepository transactionRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
-    private final InboundWalletResolver inboundWalletResolver;
+    private final InboundPixCreditService inboundPixCreditService;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
@@ -233,56 +234,47 @@ public class WebhookServiceImpl implements WebhookService {
             AsaasWebhookPayload payload, AsaasWebhookPayload.Payment payment, String webhookToken) {
         Subaccount subaccount = resolveInboundSubaccount(payload, webhookToken);
         if (subaccount == null) {
-            log.warn("No transaction found for asaasPaymentId={}, ignoring webhook", payment.getId());
+            log.error("Inbound PIX confirmation without resolvable subaccount: paymentId={}, event={}, hasAccountId={}",
+                    payment.getId(),
+                    payload.getEvent(),
+                    payload.getAccount() != null && payload.getAccount().getId() != null);
+            throw new IllegalStateException(
+                    "Cannot credit inbound PIX: subaccount not resolved for paymentId=" + payment.getId());
+        }
+
+        if (alreadyCreditedViaRelatedId(payment)) {
+            log.info("Inbound PIX already credited via related resource id: paymentId={}", payment.getId());
             return;
         }
 
         BigDecimal amount = payment.getValue() != null ? payment.getValue() : payment.getNetValue();
-        if (amount == null || amount.signum() <= 0) {
-            log.warn("Ignoring inbound PIX payment without positive value: paymentId={}", payment.getId());
-            return;
+        inboundPixCreditService.credit(
+                subaccount,
+                payment.getId(),
+                amount,
+                inboundPixDescription(payment),
+                inboundPixReference(payment));
+    }
+
+    private boolean alreadyCreditedViaRelatedId(AsaasWebhookPayload.Payment payment) {
+        String pixTxId = extractPixTransactionId(payment.getPixTransaction());
+        if (pixTxId == null || pixTxId.isBlank() || pixTxId.equals(payment.getId())) {
+            return false;
         }
+        return transactionRepository.findByAsaasPaymentId(pixTxId).isPresent()
+                || transactionRepository.findByIdempotencyKey(
+                        InboundPixCreditService.idempotencyKey(pixTxId)).isPresent();
+    }
 
-        String idempotencyKey = "asaas:pix:in:" + payment.getId();
-        Optional<Transaction> existing = transactionRepository.findByIdempotencyKeyForUpdate(idempotencyKey);
-        if (existing.isPresent()) {
-            Transaction transaction = existing.get();
-            if (transaction.getStatus() == TransactionStatus.COMPLETED) {
-                log.info("Inbound PIX payment already credited: paymentId={}, transactionId={}",
-                        payment.getId(), transaction.getId());
-                return;
-            }
-            if (awaitsProvider(transaction)) {
-                transactionLifecycleService.transition(transaction, TransactionStatus.COMPLETED);
-                walletService.credit(transaction.getWallet().getId(), transaction.getAmount());
-                notifyInboundPix(transaction);
-            }
-            return;
+    private static String extractPixTransactionId(Object pixTransaction) {
+        if (pixTransaction instanceof String id && !id.isBlank()) {
+            return id;
         }
-
-        Wallet wallet = inboundWalletResolver.resolveAndLink(subaccount);
-
-        Transaction transaction = Transaction.builder()
-                .wallet(wallet)
-                .account(subaccount.getAccount())
-                .organization(subaccount.getAccount() != null ? subaccount.getAccount().getOrganization() : null)
-                .type(TransactionType.TRANSFER_IN)
-                .status(TransactionStatus.COMPLETED)
-                .amount(amount)
-                .currency("BRL")
-                .description(inboundPixDescription(payment))
-                .reference(inboundPixReference(payment))
-                .asaasPaymentId(payment.getId())
-                .externalReference(payment.getExternalReference())
-                .idempotencyKey(idempotencyKey)
-                .completedAt(LocalDateTime.now())
-                .build();
-        transactionRepository.save(transaction);
-        walletService.credit(wallet.getId(), amount);
-        notifyInboundPix(transaction);
-
-        log.info("Inbound PIX credited: transactionId={}, walletId={}, amount={}, paymentId={}",
-                transaction.getId(), wallet.getId(), amount, payment.getId());
+        if (pixTransaction instanceof Map<?, ?> map && map.get("id") != null) {
+            String id = String.valueOf(map.get("id"));
+            return id.isBlank() ? null : id;
+        }
+        return null;
     }
 
     private Subaccount resolveInboundSubaccount(AsaasWebhookPayload payload, String webhookToken) {
@@ -299,20 +291,6 @@ public class WebhookServiceImpl implements WebhookService {
         return null;
     }
 
-    private void notifyInboundPix(Transaction transaction) {
-        UUID orgId = resolveOrganizationId(transaction);
-        if (orgId == null) {
-            return;
-        }
-        notificationService.notifyUsersWithPermission(
-                orgId,
-                PermissionCodes.WALLET_READ,
-                null,
-                NotificationType.PIX_RECEIVED,
-                transaction.getId(),
-                amountData(transaction));
-    }
-
     private static String inboundPixDescription(AsaasWebhookPayload.Payment payment) {
         if (payment.getDescription() != null && !payment.getDescription().isBlank()) {
             return payment.getDescription();
@@ -321,15 +299,12 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private static String inboundPixReference(AsaasWebhookPayload.Payment payment) {
+        String pixTxId = extractPixTransactionId(payment.getPixTransaction());
+        if (pixTxId != null) {
+            return pixTxId;
+        }
         if (payment.getPixQrCodeId() != null && !payment.getPixQrCodeId().isBlank()) {
             return payment.getPixQrCodeId();
-        }
-        Object pixTransaction = payment.getPixTransaction();
-        if (pixTransaction instanceof String id && !id.isBlank()) {
-            return id;
-        }
-        if (pixTransaction instanceof Map<?, ?> map && map.get("id") != null) {
-            return String.valueOf(map.get("id"));
         }
         return null;
     }
