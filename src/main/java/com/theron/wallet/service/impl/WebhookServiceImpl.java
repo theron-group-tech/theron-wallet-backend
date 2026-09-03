@@ -22,7 +22,6 @@ import com.theron.wallet.repository.PaymentOrderRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
-import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.NotificationService;
@@ -54,7 +53,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final TransactionRepository transactionRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
-    private final WalletRepository walletRepository;
+    private final InboundWalletResolver inboundWalletResolver;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
@@ -99,7 +98,7 @@ public class WebhookServiceImpl implements WebhookService {
             } else if (payload.getEvent() != null && payload.getEvent().startsWith("TRANSFER_")) {
                 processTransferWebhook(payload);
             } else {
-                processPaymentWebhook(payload);
+                processPaymentWebhook(payload, token);
             }
             asaasWebhookEventPersister.mark(stored.get(), AsaasWebhookEventStatus.PROCESSED);
         } catch (RuntimeException ex) {
@@ -124,32 +123,17 @@ public class WebhookServiceImpl implements WebhookService {
     }
 
     private boolean tokenMatchesEventContext(String token, AsaasWebhookPayload payload) {
-        if (payload != null
-                && payload.getEvent() != null
-                && payload.getEvent().startsWith("ACCOUNT_STATUS_")) {
-            return tokenMatchesSubaccountAccountStatus(token, payload);
-        }
-        if (tokenMatchesSubaccountByAccountId(token, payload)) {
+        if (tokenMatchesSubaccountAccountStatus(token, payload)) {
             return true;
         }
         return tokenMatchesOwnerTransaction(token, payload);
     }
 
-    private boolean tokenMatchesSubaccountByAccountId(String token, AsaasWebhookPayload payload) {
-        String asaasAccountId = payload != null && payload.getAccount() != null
-                ? payload.getAccount().getId() : null;
-        if (asaasAccountId == null || asaasAccountId.isBlank()) {
-            return false;
-        }
-        return subaccountRepository.findByWebhookToken(token)
-                .filter(subaccount -> asaasAccountId.equals(subaccount.getAsaasAccountId()))
-                .isPresent();
-    }
-
     private boolean tokenMatchesSubaccountAccountStatus(String token, AsaasWebhookPayload payload) {
         return subaccountRepository.findByWebhookToken(token)
                 .filter(subaccount -> {
-                    String asaasAccountId = payload.getAccount() != null ? payload.getAccount().getId() : null;
+                    String asaasAccountId = payload != null && payload.getAccount() != null
+                            ? payload.getAccount().getId() : null;
                     return asaasAccountId == null || asaasAccountId.equals(subaccount.getAsaasAccountId());
                 })
                 .isPresent();
@@ -198,6 +182,10 @@ public class WebhookServiceImpl implements WebhookService {
     @Override
     @Transactional
     public void processPaymentWebhook(AsaasWebhookPayload payload) {
+        processPaymentWebhook(payload, null);
+    }
+
+    private void processPaymentWebhook(AsaasWebhookPayload payload, String webhookToken) {
         String eventName = payload.getEvent();
         AsaasWebhookPayload.Payment payment = payload.getPayment();
 
@@ -220,7 +208,7 @@ public class WebhookServiceImpl implements WebhookService {
 
         if (transactionOpt.isEmpty()) {
             if (event.isConfirmation()) {
-                creditInboundPixPayment(payload, payment);
+                creditInboundPixPayment(payload, payment, webhookToken);
             } else {
                 log.warn("No transaction found for asaasPaymentId={}, ignoring webhook", payment.getId());
             }
@@ -241,17 +229,11 @@ public class WebhookServiceImpl implements WebhookService {
         }
     }
 
-    private void creditInboundPixPayment(AsaasWebhookPayload payload, AsaasWebhookPayload.Payment payment) {
-        String asaasAccountId = payload.getAccount() != null ? payload.getAccount().getId() : null;
-        if (asaasAccountId == null || asaasAccountId.isBlank()) {
-            log.warn("No transaction found for asaasPaymentId={}, ignoring webhook", payment.getId());
-            return;
-        }
-
-        Subaccount subaccount = subaccountRepository.findByAsaasAccountId(asaasAccountId).orElse(null);
+    private void creditInboundPixPayment(
+            AsaasWebhookPayload payload, AsaasWebhookPayload.Payment payment, String webhookToken) {
+        Subaccount subaccount = resolveInboundSubaccount(payload, webhookToken);
         if (subaccount == null) {
-            log.warn("No subaccount for Asaas account {}, ignoring inbound PIX payment {}",
-                    asaasAccountId, payment.getId());
+            log.warn("No transaction found for asaasPaymentId={}, ignoring webhook", payment.getId());
             return;
         }
 
@@ -278,8 +260,7 @@ public class WebhookServiceImpl implements WebhookService {
             return;
         }
 
-        Wallet wallet = walletRepository.findBySubaccountIdWithLock(subaccount.getId())
-                .orElseThrow(() -> new IllegalStateException("Wallet not found for Asaas subaccount"));
+        Wallet wallet = inboundWalletResolver.resolveAndLink(subaccount);
 
         Transaction transaction = Transaction.builder()
                 .wallet(wallet)
@@ -302,6 +283,20 @@ public class WebhookServiceImpl implements WebhookService {
 
         log.info("Inbound PIX credited: transactionId={}, walletId={}, amount={}, paymentId={}",
                 transaction.getId(), wallet.getId(), amount, payment.getId());
+    }
+
+    private Subaccount resolveInboundSubaccount(AsaasWebhookPayload payload, String webhookToken) {
+        String asaasAccountId = payload.getAccount() != null ? payload.getAccount().getId() : null;
+        if (asaasAccountId != null && !asaasAccountId.isBlank()) {
+            Subaccount byAccount = subaccountRepository.findByAsaasAccountId(asaasAccountId).orElse(null);
+            if (byAccount != null) {
+                return byAccount;
+            }
+        }
+        if (webhookToken != null && !webhookToken.isBlank()) {
+            return subaccountRepository.findByWebhookToken(webhookToken).orElse(null);
+        }
+        return null;
     }
 
     private void notifyInboundPix(Transaction transaction) {

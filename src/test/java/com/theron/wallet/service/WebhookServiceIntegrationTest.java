@@ -3,12 +3,20 @@ package com.theron.wallet.service;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
+import com.theron.wallet.entity.Account;
+import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
+import com.theron.wallet.enums.AccountStatus;
+import com.theron.wallet.enums.AccountType;
+import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.OrganizationStatus;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
+import com.theron.wallet.repository.AccountRepository;
+import com.theron.wallet.repository.OrganizationRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -38,6 +46,12 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private TransactionRepository transactionRepository;
+
+    @Autowired
+    private OrganizationRepository organizationRepository;
+
+    @Autowired
+    private AccountRepository accountRepository;
 
     private Wallet savedWallet;
     private Transaction savedTransaction;
@@ -259,6 +273,124 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             Wallet updatedWallet = walletRepository.findById(savedWallet.getId()).orElseThrow();
             assertThat(updatedWallet.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
             assertThat(transactionRepository.findByAsaasPaymentId(inboundPaymentId)).isPresent();
+        }
+    }
+
+    @Nested
+    @DisplayName("Inbound PIX credits Account wallet used by the dashboard")
+    class InboundPixAccountWalletTests {
+
+        private Account account;
+        private Wallet accountWallet;
+        private Subaccount accountSubaccount;
+        private String inboundAsaasAccountId;
+
+        @BeforeEach
+        void setUpAccountWalletWithoutSubaccountLink() {
+            Organization organization = organizationRepository.save(Organization.builder()
+                    .legalName("Inbound PIX Org")
+                    .document(uniqueDigits(14))
+                    .documentType(DocumentType.CNPJ)
+                    .status(OrganizationStatus.ACTIVE)
+                    .build());
+            account = accountRepository.save(Account.builder()
+                    .organization(organization)
+                    .name("Marcelo Ifriend")
+                    .type(AccountType.EMPLOYEE)
+                    .status(AccountStatus.ACTIVE)
+                    .currency("BRL")
+                    .build());
+            accountWallet = walletRepository.save(Wallet.builder()
+                    .account(account)
+                    .balance(BigDecimal.ZERO)
+                    .currency("BRL")
+                    .active(true)
+                    .build());
+            inboundAsaasAccountId = "acc_" + UUID.randomUUID().toString().substring(0, 16);
+            accountSubaccount = TestFixtures.aSubaccount(uniqueDigits(14), SubaccountStatus.ACTIVE);
+            accountSubaccount.setAsaasAccountId(inboundAsaasAccountId);
+            accountSubaccount.setAccount(account);
+            accountSubaccount = subaccountRepository.save(accountSubaccount);
+        }
+
+        @Test
+        @DisplayName("PAYMENT_RECEIVED credits Account wallet without subaccount_id and links it")
+        void shouldCreditAccountWalletAndLinkSubaccount() {
+            String inboundPaymentId = "pay_in_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .event("PAYMENT_RECEIVED")
+                    .account(AsaasWebhookPayload.Account.builder().id(inboundAsaasAccountId).build())
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(inboundPaymentId)
+                            .value(new BigDecimal("100.00"))
+                            .status("RECEIVED")
+                            .billingType("PIX")
+                            .build())
+                    .build();
+
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updated = walletRepository.findById(accountWallet.getId()).orElseThrow();
+            assertThat(updated.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+            assertThat(walletRepository.findBySubaccountId(accountSubaccount.getId()))
+                    .hasValueSatisfying(linked -> assertThat(linked.getId()).isEqualTo(accountWallet.getId()));
+
+            Transaction inbound = transactionRepository.findByAsaasPaymentId(inboundPaymentId).orElseThrow();
+            assertThat(inbound.getType()).isEqualTo(TransactionType.TRANSFER_IN);
+            assertThat(inbound.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+            assertThat(inbound.getAccount()).isNotNull();
+            assertThat(inbound.getAccount().getId()).isEqualTo(account.getId());
+        }
+
+        @Test
+        @DisplayName("second PAYMENT_RECEIVED on Account wallet must not double-credit")
+        void shouldNotDoubleCreditAccountWallet() {
+            String inboundPaymentId = "pay_in_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .event("PAYMENT_RECEIVED")
+                    .account(AsaasWebhookPayload.Account.builder().id(inboundAsaasAccountId).build())
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(inboundPaymentId)
+                            .value(new BigDecimal("100.00"))
+                            .status("RECEIVED")
+                            .build())
+                    .build();
+
+            webhookService.processPaymentWebhook(payload);
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updated = walletRepository.findById(accountWallet.getId()).orElseThrow();
+            assertThat(updated.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+        }
+
+        @Test
+        @DisplayName("PAYMENT_RECEIVED without payload.account.id still credits using subaccount webhook token")
+        void shouldCreditUsingSubaccountWebhookTokenWhenAccountIdMissing() {
+            String inboundPaymentId = "pay_in_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .id("evt_" + UUID.randomUUID())
+                    .event("PAYMENT_RECEIVED")
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(inboundPaymentId)
+                            .value(new BigDecimal("100.00"))
+                            .status("RECEIVED")
+                            .billingType("PIX")
+                            .build())
+                    .build();
+
+            webhookService.receive(accountSubaccount.getWebhookToken(), payload);
+
+            Wallet updated = walletRepository.findById(accountWallet.getId()).orElseThrow();
+            assertThat(updated.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+            assertThat(transactionRepository.findByAsaasPaymentId(inboundPaymentId)).isPresent();
+        }
+
+        private String uniqueDigits(int length) {
+            String digits = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
+            if (digits.length() >= length) {
+                return digits.substring(0, length);
+            }
+            return digits + "0".repeat(length - digits.length());
         }
     }
 

@@ -430,7 +430,7 @@ public class PixServiceImpl implements PixService {
             wallet.debit(payAmount);
             walletRepository.save(wallet);
 
-            Transaction transaction = transactionRepository.save(Transaction.builder()
+            Transaction.TransactionBuilder builder = Transaction.builder()
                     .wallet(wallet)
                     .type(TransactionType.PIX)
                     .status(TransactionStatus.PROCESSING)
@@ -439,8 +439,9 @@ public class PixServiceImpl implements PixService {
                     .reference(ProviderCall.referenceOf(description))
                     .idempotencyKey(idempotencyKey)
                     .requestHash(requestHash)
-                    .createdBy(actor)
-                    .build());
+                    .createdBy(actor);
+            idempotencyService.applyOwner(builder, wallet);
+            Transaction transaction = transactionRepository.save(builder.build());
 
             pixTransactionRepository.save(PixTransaction.builder()
                     .transaction(transaction)

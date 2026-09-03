@@ -186,7 +186,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 - `POST /api/v1/organizations/{organizationId}/accounts` `{ "name", "type": "MAIN"|"EMPLOYEE"|"RESERVE" }` (perm `organization.update`).
 - `GET /api/v1/accounts/{id}`  
 - `GET /api/v1/accounts/{id}/wallet` → `balance` da **Account** (é este o saldo do dashboard/PIX).  
-- `GET /api/v1/accounts/{id}/ledger-balance` → conferência. PIX recebido em QR/chave da subconta credita `ledgerBalance` via webhook `PAYMENT_RECEIVED` (`TRANSFER_IN`); a UI só lê o saldo, não credita localmente.
+- `GET /api/v1/accounts/{id}/ledger-balance` → conferência do livro (`ledger_entry`). O **Ledger local** do dashboard é `wallet.balance` da Account. PIX recebido em QR estático (Cobrar) ou chave credita essa wallet via webhook `PAYMENT_RECEIVED` (`TRANSFER_IN`); a UI só lê o saldo, não credita localmente.
 
 **Não** use `POST /deposits` para encher este saldo. Depósito credita wallet de **subconta**, outro trilho.
 
