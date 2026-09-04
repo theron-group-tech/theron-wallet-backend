@@ -547,6 +547,40 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
             assertThat(transactionRepository.findByAsaasPaymentId(paymentId)).isEmpty();
         }
 
+        @Test
+        @DisplayName("PAYMENT_RECEIVED during race (COMPLETED without creditTransactionId) must not double-credit")
+        void shouldNotDoubleCreditWhenPlatformCompletedButCreditIdNotYetPersisted() {
+            platformPixTransferRepository.findAll().forEach(row -> {
+                row.setCreditTransactionId(null);
+                platformPixTransferRepository.save(row);
+            });
+            // Simulate Platform credit already applied to ledger (TRANSFER_DONE mid-flight).
+            accountWallet.setBalance(new BigDecimal("200.00"));
+            walletRepository.save(accountWallet);
+
+            String paymentId = "pay_race_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .event("PAYMENT_RECEIVED")
+                    .account(AsaasWebhookPayload.Account.builder().id(inboundAsaasAccountId).build())
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(paymentId)
+                            .value(new BigDecimal("100.00"))
+                            .status("RECEIVED")
+                            .billingType("PIX")
+                            .description(
+                                    "Cobrança gerada automaticamente a partir de Pix recebido. Mensagem: Platform PIX transfer")
+                            // Unrelated / missing link — race relies on key+amount + platform-pix:in
+                            .pixTransaction("pix_unrelated_" + UUID.randomUUID().toString().substring(0, 8))
+                            .build())
+                    .build();
+
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updated = walletRepository.findById(accountWallet.getId()).orElseThrow();
+            assertThat(updated.getBalance()).isEqualByComparingTo(new BigDecimal("200.00"));
+            assertThat(transactionRepository.findByAsaasPaymentId(paymentId)).isEmpty();
+        }
+
         private String uniqueDigits(int length) {
             String digits = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
             if (digits.length() >= length) {

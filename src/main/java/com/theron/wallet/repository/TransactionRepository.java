@@ -189,4 +189,22 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
             @Param("type") TransactionType type,
             @Param("status") TransactionStatus status,
             @Param("idempotencyPrefix") String idempotencyPrefix);
+
+    @Query("""
+            SELECT t FROM Transaction t
+            WHERE t.account.id = :accountId
+              AND t.type = :type
+              AND t.status = :status
+              AND t.amount = :amount
+              AND t.idempotencyKey LIKE :idempotencyPrefix
+              AND t.createdAt >= :since
+            ORDER BY t.createdAt DESC
+            """)
+    List<Transaction> findRecentByAccountTypeStatusAmountAndIdempotencyPrefix(
+            @Param("accountId") UUID accountId,
+            @Param("type") TransactionType type,
+            @Param("status") TransactionStatus status,
+            @Param("amount") BigDecimal amount,
+            @Param("idempotencyPrefix") String idempotencyPrefix,
+            @Param("since") LocalDateTime since);
 }

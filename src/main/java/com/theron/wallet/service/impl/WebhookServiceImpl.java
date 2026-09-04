@@ -22,6 +22,7 @@ import com.theron.wallet.repository.PaymentOrderRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.InboundPixCreditService;
@@ -54,6 +55,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final TransactionRepository transactionRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
+    private final WalletRepository walletRepository;
     private final InboundPixCreditService inboundPixCreditService;
     private final PlatformPixInboundDedupe platformPixInboundDedupe;
     private final WalletService walletService;
@@ -253,6 +255,15 @@ public class WebhookServiceImpl implements WebhookService {
         if (platformPixInboundDedupe.alreadyCreditedByPlatform(
                 subaccount, amount, relatedId, payment.getDescription())) {
             return;
+        }
+
+        // Serialize with Platform PIX credit on the same wallet (TRANSFER_DONE race).
+        if (subaccount.getAccount() != null && subaccount.getAccount().getId() != null) {
+            walletRepository.findByAccountIdWithLock(subaccount.getAccount().getId());
+            if (platformPixInboundDedupe.alreadyCreditedByPlatform(
+                    subaccount, amount, relatedId, payment.getDescription())) {
+                return;
+            }
         }
 
         inboundPixCreditService.credit(

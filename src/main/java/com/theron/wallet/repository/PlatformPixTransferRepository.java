@@ -50,6 +50,24 @@ public interface PlatformPixTransferRepository extends JpaRepository<PlatformPix
             @Param("status") TransactionStatus status,
             @Param("since") LocalDateTime since);
 
+    /**
+     * Race-safe lookup: COMPLETED Master PIX may already have credited the wallet
+     * before {@code creditTransactionId} is persisted.
+     */
+    @Query("""
+            SELECT p FROM PlatformPixTransfer p
+            WHERE p.destinationPixKey = :destinationKey
+              AND p.amount = :amount
+              AND p.status = :status
+              AND p.createdAt >= :since
+            ORDER BY p.createdAt DESC
+            """)
+    List<PlatformPixTransfer> findByDestinationKeyAndAmountSince(
+            @Param("destinationKey") String destinationKey,
+            @Param("amount") BigDecimal amount,
+            @Param("status") TransactionStatus status,
+            @Param("since") LocalDateTime since);
+
     @Query("""
             SELECT p FROM PlatformPixTransfer p
             WHERE p.destinationPixKey IN :destinationKeys

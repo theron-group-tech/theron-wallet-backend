@@ -5,6 +5,7 @@ import com.theron.wallet.entity.PixKey;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.TransactionStatus;
+import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -28,6 +29,7 @@ import java.util.UUID;
 class PlatformPixInboundDedupe {
 
     static final int LOOKBACK_HOURS = 24;
+    private static final String PLATFORM_PIX_IN_PREFIX = "asaas:platform-pix:in:%";
 
     private final PlatformPixTransferRepository platformPixTransferRepository;
     private final PixKeyRepository pixKeyRepository;
@@ -47,8 +49,8 @@ class PlatformPixInboundDedupe {
         }
 
         if (relatedResourceId != null && !relatedResourceId.isBlank()) {
-            if (creditedViaPixTransactionId(relatedResourceId)
-                    || creditedViaTransferId(relatedResourceId)
+            if (matchedViaPixTransactionId(relatedResourceId)
+                    || matchedViaTransferId(relatedResourceId)
                     || creditedViaPlatformIdempotency(relatedResourceId)) {
                 log.info("Inbound PIX skipped: already credited via platform_pix_transfer resourceId={}",
                         relatedResourceId);
@@ -63,14 +65,23 @@ class PlatformPixInboundDedupe {
             return false;
         }
         UUID accountId = destination.getAccount().getId();
-        List<PixKey> keys = pixKeyRepository.findByAccountIdOrderByCreatedAtDesc(accountId);
         LocalDateTime since = LocalDateTime.now().minusHours(LOOKBACK_HOURS);
+
+        if (hasRecentPlatformPixCredit(accountId, amount, since)) {
+            log.info(
+                    "Inbound PIX skipped: already credited via asaas:platform-pix:in amount={} accountId={}",
+                    amount, accountId);
+            return true;
+        }
+
+        List<PixKey> keys = pixKeyRepository.findByAccountIdOrderByCreatedAtDesc(accountId);
         for (PixKey key : keys) {
             if (key.getStatus() != PixKeyStatus.ACTIVE || key.getKey() == null || key.getKey().isBlank()) {
                 continue;
             }
+            // COMPLETED without creditTransactionId still means Master credit is in flight / done
             List<PlatformPixTransfer> matches = platformPixTransferRepository
-                    .findCreditedByDestinationKeyAndAmount(
+                    .findByDestinationKeyAndAmountSince(
                             key.getKey(), amount, TransactionStatus.COMPLETED, since);
             if (!matches.isEmpty()) {
                 log.info(
@@ -92,15 +103,31 @@ class PlatformPixInboundDedupe {
                 || normalized.contains("platform pix");
     }
 
-    private boolean creditedViaPixTransactionId(String pixTxId) {
+    private boolean hasRecentPlatformPixCredit(UUID accountId, BigDecimal amount, LocalDateTime since) {
+        return !transactionRepository.findRecentByAccountTypeStatusAmountAndIdempotencyPrefix(
+                accountId,
+                TransactionType.TRANSFER_IN,
+                TransactionStatus.COMPLETED,
+                amount,
+                PLATFORM_PIX_IN_PREFIX,
+                since).isEmpty();
+    }
+
+    /** COMPLETED (even mid-persist of creditTransactionId) or already linked credit. */
+    private boolean isPlatformCreditInEffect(PlatformPixTransfer row) {
+        return row.getCreditTransactionId() != null
+                || row.getStatus() == TransactionStatus.COMPLETED;
+    }
+
+    private boolean matchedViaPixTransactionId(String pixTxId) {
         return platformPixTransferRepository.findByAsaasPixTransactionId(pixTxId)
-                .filter(row -> row.getCreditTransactionId() != null)
+                .filter(this::isPlatformCreditInEffect)
                 .isPresent();
     }
 
-    private boolean creditedViaTransferId(String transferId) {
+    private boolean matchedViaTransferId(String transferId) {
         return platformPixTransferRepository.findByAsaasTransferId(transferId)
-                .filter(row -> row.getCreditTransactionId() != null)
+                .filter(this::isPlatformCreditInEffect)
                 .isPresent();
     }
 
