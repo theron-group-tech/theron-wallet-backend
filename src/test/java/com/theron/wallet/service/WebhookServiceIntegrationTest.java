@@ -5,6 +5,8 @@ import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
+import com.theron.wallet.entity.PixKey;
+import com.theron.wallet.entity.PlatformPixTransfer;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
 import com.theron.wallet.entity.Wallet;
@@ -13,12 +15,16 @@ import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.OrganizationStatus;
+import com.theron.wallet.enums.PixKeyStatus;
+import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.AsaasWebhookEventRepository;
 import com.theron.wallet.repository.OrganizationRepository;
+import com.theron.wallet.repository.PixKeyRepository;
+import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -58,6 +64,12 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
 
     @Autowired
     private AsaasWebhookEventRepository asaasWebhookEventRepository;
+
+    @Autowired
+    private PixKeyRepository pixKeyRepository;
+
+    @Autowired
+    private PlatformPixTransferRepository platformPixTransferRepository;
 
     private Wallet savedWallet;
     private Transaction savedTransaction;
@@ -431,6 +443,116 @@ class WebhookServiceIntegrationTest extends BaseIntegrationTest {
                     .hasValueSatisfying(event ->
                             assertThat(event.getStatus()).isEqualTo(AsaasWebhookEventStatus.FAILED));
             assertThat(transactionRepository.findByAsaasPaymentId(inboundPaymentId)).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("Master→Theron must not double-credit on PAYMENT_RECEIVED")
+    class MasterToTheronDedupeTests {
+
+        private Account account;
+        private Wallet accountWallet;
+        private Subaccount accountSubaccount;
+        private String inboundAsaasAccountId;
+        private String destinationKey;
+        private String platformPixTxId;
+
+        @BeforeEach
+        void setUpDestinationAlreadyCreditedByPlatform() {
+            Organization organization = organizationRepository.save(Organization.builder()
+                    .legalName("Dedupe Org")
+                    .document(uniqueDigits(14))
+                    .documentType(DocumentType.CNPJ)
+                    .status(OrganizationStatus.ACTIVE)
+                    .build());
+            account = accountRepository.save(Account.builder()
+                    .organization(organization)
+                    .name("Marcelo Dest")
+                    .type(AccountType.EMPLOYEE)
+                    .status(AccountStatus.ACTIVE)
+                    .currency("BRL")
+                    .build());
+            accountWallet = walletRepository.save(Wallet.builder()
+                    .account(account)
+                    .balance(new BigDecimal("100.00"))
+                    .currency("BRL")
+                    .active(true)
+                    .build());
+            inboundAsaasAccountId = "acc_" + UUID.randomUUID().toString().substring(0, 16);
+            accountSubaccount = TestFixtures.aSubaccount(uniqueDigits(14), SubaccountStatus.ACTIVE);
+            accountSubaccount.setAsaasAccountId(inboundAsaasAccountId);
+            accountSubaccount.setAccount(account);
+            accountSubaccount = subaccountRepository.save(accountSubaccount);
+
+            destinationKey = "evp-dedupe-" + UUID.randomUUID().toString().substring(0, 8);
+            pixKeyRepository.save(PixKey.builder()
+                    .account(account)
+                    .organization(organization)
+                    .type(PixKeyType.EVP)
+                    .key(destinationKey)
+                    .status(PixKeyStatus.ACTIVE)
+                    .providerKeyId("pk_" + destinationKey)
+                    .build());
+
+            String transferId = "tr_master_" + UUID.randomUUID().toString().substring(0, 12);
+            platformPixTxId = "pix_tx_" + UUID.randomUUID().toString().substring(0, 12);
+            Transaction platformCredit = transactionRepository.save(Transaction.builder()
+                    .wallet(accountWallet)
+                    .account(account)
+                    .organization(organization)
+                    .type(TransactionType.TRANSFER_IN)
+                    .status(TransactionStatus.COMPLETED)
+                    .amount(new BigDecimal("100.00"))
+                    .currency("BRL")
+                    .description("Platform PIX transfer")
+                    .asaasPaymentId(transferId)
+                    .idempotencyKey("asaas:platform-pix:in:" + transferId)
+                    .completedAt(java.time.LocalDateTime.now())
+                    .build());
+            platformPixTransferRepository.save(PlatformPixTransfer.builder()
+                    .asaasTransferId(transferId)
+                    .asaasPixTransactionId(platformPixTxId)
+                    .amount(new BigDecimal("100.00"))
+                    .status(TransactionStatus.COMPLETED)
+                    .destinationPixKey(destinationKey)
+                    .destinationPixKeyType(PixKeyType.EVP)
+                    .description("Platform PIX transfer")
+                    .idempotencyKey("idem-master-" + UUID.randomUUID())
+                    .creditTransactionId(platformCredit.getId())
+                    .build());
+        }
+
+        @Test
+        @DisplayName("PAYMENT_RECEIVED after Platform credit must not increase ledger again")
+        void shouldNotDoubleCreditWhenPlatformAlreadyCredited() {
+            String paymentId = "pay_dup_" + UUID.randomUUID().toString().substring(0, 12);
+            AsaasWebhookPayload payload = AsaasWebhookPayload.builder()
+                    .event("PAYMENT_RECEIVED")
+                    .account(AsaasWebhookPayload.Account.builder().id(inboundAsaasAccountId).build())
+                    .payment(AsaasWebhookPayload.Payment.builder()
+                            .id(paymentId)
+                            .value(new BigDecimal("100.00"))
+                            .status("RECEIVED")
+                            .billingType("PIX")
+                            .description(
+                                    "Cobrança gerada automaticamente a partir de Pix recebido. Mensagem: Platform PIX transfer")
+                            .pixTransaction(platformPixTxId)
+                            .build())
+                    .build();
+
+            webhookService.processPaymentWebhook(payload);
+
+            Wallet updated = walletRepository.findById(accountWallet.getId()).orElseThrow();
+            assertThat(updated.getBalance()).isEqualByComparingTo(new BigDecimal("100.00"));
+            assertThat(transactionRepository.findByAsaasPaymentId(paymentId)).isEmpty();
+        }
+
+        private String uniqueDigits(int length) {
+            String digits = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
+            if (digits.length() >= length) {
+                return digits.substring(0, length);
+            }
+            return digits + "0".repeat(length - digits.length());
         }
     }
 

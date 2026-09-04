@@ -40,6 +40,7 @@ public class InboundPixReconcileServiceImpl implements InboundPixReconcileServic
     private final AsaasApiKeyResolver asaasApiKeyResolver;
     private final AsaasPaymentClient asaasPaymentClient;
     private final InboundPixCreditService inboundPixCreditService;
+    private final PlatformPixInboundDedupe platformPixInboundDedupe;
 
     @Override
     @Transactional
@@ -130,6 +131,16 @@ public class InboundPixReconcileServiceImpl implements InboundPixReconcileServic
         boolean already = transactionRepository.findByAsaasPaymentId(payment.getId()).isPresent()
                 || transactionRepository.findByIdempotencyKey(
                         InboundPixCreditService.idempotencyKey(payment.getId())).isPresent();
+
+        if (platformPixInboundDedupe.alreadyCreditedByPlatform(
+                subaccount, amount, null, payment.getDescription())) {
+            return InboundReconcileResponse.Item.builder()
+                    .asaasPaymentId(payment.getId())
+                    .amount(amount)
+                    .status("SKIPPED")
+                    .message("Already credited via platform_pix_transfer")
+                    .build();
+        }
 
         Optional<Transaction> credited = inboundPixCreditService.credit(
                 subaccount,

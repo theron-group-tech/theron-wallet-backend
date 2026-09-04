@@ -55,6 +55,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
     private final InboundPixCreditService inboundPixCreditService;
+    private final PlatformPixInboundDedupe platformPixInboundDedupe;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
@@ -248,6 +249,12 @@ public class WebhookServiceImpl implements WebhookService {
         }
 
         BigDecimal amount = payment.getValue() != null ? payment.getValue() : payment.getNetValue();
+        String relatedId = extractPixTransactionId(payment.getPixTransaction());
+        if (platformPixInboundDedupe.alreadyCreditedByPlatform(
+                subaccount, amount, relatedId, payment.getDescription())) {
+            return;
+        }
+
         inboundPixCreditService.credit(
                 subaccount,
                 payment.getId(),
@@ -261,9 +268,12 @@ public class WebhookServiceImpl implements WebhookService {
         if (pixTxId == null || pixTxId.isBlank() || pixTxId.equals(payment.getId())) {
             return false;
         }
-        return transactionRepository.findByAsaasPaymentId(pixTxId).isPresent()
+        if (transactionRepository.findByAsaasPaymentId(pixTxId).isPresent()
                 || transactionRepository.findByIdempotencyKey(
-                        InboundPixCreditService.idempotencyKey(pixTxId)).isPresent();
+                        InboundPixCreditService.idempotencyKey(pixTxId)).isPresent()) {
+            return true;
+        }
+        return transactionRepository.findByIdempotencyKey("asaas:platform-pix:in:" + pixTxId).isPresent();
     }
 
     private static String extractPixTransactionId(Object pixTransaction) {

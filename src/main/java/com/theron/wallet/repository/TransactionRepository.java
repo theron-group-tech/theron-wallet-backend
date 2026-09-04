@@ -16,6 +16,7 @@ import org.springframework.stereotype.Repository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -174,4 +175,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
             @Param("accountIds") Collection<UUID> accountIds,
             @Param("type") TransactionType type,
             @Param("status") TransactionStatus status);
+
+    @Query("""
+            SELECT t FROM Transaction t
+            WHERE t.account.id = :accountId
+              AND t.type = :type
+              AND t.status = :status
+              AND t.idempotencyKey LIKE :idempotencyPrefix
+            ORDER BY t.createdAt ASC
+            """)
+    List<Transaction> findByAccountTypeStatusAndIdempotencyPrefix(
+            @Param("accountId") UUID accountId,
+            @Param("type") TransactionType type,
+            @Param("status") TransactionStatus status,
+            @Param("idempotencyPrefix") String idempotencyPrefix);
 }

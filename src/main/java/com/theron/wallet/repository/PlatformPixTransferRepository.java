@@ -37,6 +37,32 @@ public interface PlatformPixTransferRepository extends JpaRepository<PlatformPix
 
     @Query("""
             SELECT p FROM PlatformPixTransfer p
+            WHERE p.destinationPixKey = :destinationKey
+              AND p.amount = :amount
+              AND p.status = :status
+              AND p.creditTransactionId IS NOT NULL
+              AND p.createdAt >= :since
+            ORDER BY p.createdAt DESC
+            """)
+    List<PlatformPixTransfer> findCreditedByDestinationKeyAndAmount(
+            @Param("destinationKey") String destinationKey,
+            @Param("amount") BigDecimal amount,
+            @Param("status") TransactionStatus status,
+            @Param("since") LocalDateTime since);
+
+    @Query("""
+            SELECT p FROM PlatformPixTransfer p
+            WHERE p.destinationPixKey IN :destinationKeys
+              AND p.status = :status
+              AND p.creditTransactionId IS NOT NULL
+            ORDER BY p.createdAt ASC
+            """)
+    List<PlatformPixTransfer> findCreditedByDestinationKeys(
+            @Param("destinationKeys") Collection<String> destinationKeys,
+            @Param("status") TransactionStatus status);
+
+    @Query("""
+            SELECT p FROM PlatformPixTransfer p
             WHERE p.asaasTransferId IS NULL
               AND p.destinationPixKey = :destinationKey
               AND p.status IN :statuses

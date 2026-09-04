@@ -11,6 +11,7 @@ import com.theron.wallet.dto.response.AdminOwnerResponse;
 import com.theron.wallet.dto.response.AdminTransactionResponse;
 import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.BalanceDivergenceResponse;
+import com.theron.wallet.dto.response.InboundDedupeResponse;
 import com.theron.wallet.dto.response.InboundReconcileResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
@@ -25,6 +26,7 @@ import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.UserPrincipal;
 import com.theron.wallet.service.AdminPlatformService;
 import com.theron.wallet.service.AsaasSubaccountWebhookService;
+import com.theron.wallet.service.InboundPixDedupeService;
 import com.theron.wallet.service.InboundPixReconcileService;
 import com.theron.wallet.service.PlatformAccountService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -60,6 +62,7 @@ public class AdminPlatformController {
     private final PlatformAccountService platformAccountService;
     private final AsaasSubaccountWebhookService asaasSubaccountWebhookService;
     private final InboundPixReconcileService inboundPixReconcileService;
+    private final InboundPixDedupeService inboundPixDedupeService;
 
     @GetMapping("/me")
     @Operation(summary = "Platform admin identity")
@@ -220,5 +223,12 @@ public class AdminPlatformController {
     public ResponseEntity<InboundReconcileResponse> reconcileInboundPix(@PathVariable UUID accountId) {
         actorResolver.requireAdmin();
         return ResponseEntity.ok(inboundPixReconcileService.reconcileAccount(accountId));
+    }
+
+    @PostMapping("/accounts/{accountId}/inbound-dedupe")
+    @Operation(summary = "Reverse duplicate Master→Theron inbound credits (pay_* when platform_pix already credited)")
+    public ResponseEntity<InboundDedupeResponse> dedupeInboundPix(@PathVariable UUID accountId) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(inboundPixDedupeService.dedupeAccount(accountId));
     }
 }
