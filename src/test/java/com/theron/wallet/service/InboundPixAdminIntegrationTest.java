@@ -249,6 +249,74 @@ class InboundPixAdminIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("dedupe reverses orphan when platform COMPLETED without creditTransactionId")
+    void dedupeReversesWhenPlatformCompletedWithoutCreditId() {
+        String destinationKey = "evp-dedupe-race-" + UUID.randomUUID().toString().substring(0, 8);
+        pixKeyRepository.save(PixKey.builder()
+                .account(account)
+                .organization(organization)
+                .type(PixKeyType.EVP)
+                .key(destinationKey)
+                .status(PixKeyStatus.ACTIVE)
+                .providerKeyId("pk_" + destinationKey)
+                .build());
+
+        wallet.setBalance(new BigDecimal("200.00"));
+        wallet = walletRepository.save(wallet);
+
+        String transferId = "tr_race_" + UUID.randomUUID().toString().substring(0, 12);
+        transactionRepository.save(Transaction.builder()
+                .wallet(wallet)
+                .account(account)
+                .organization(organization)
+                .type(TransactionType.TRANSFER_IN)
+                .status(TransactionStatus.COMPLETED)
+                .amount(new BigDecimal("100.00"))
+                .currency("BRL")
+                .description("Platform PIX transfer")
+                .asaasPaymentId(transferId)
+                .idempotencyKey("asaas:platform-pix:in:" + transferId)
+                .completedAt(java.time.LocalDateTime.now())
+                .build());
+        // Race residue: COMPLETED but creditTransactionId never linked
+        platformPixTransferRepository.save(PlatformPixTransfer.builder()
+                .asaasTransferId(transferId)
+                .amount(new BigDecimal("100.00"))
+                .status(TransactionStatus.COMPLETED)
+                .destinationPixKey(destinationKey)
+                .destinationPixKeyType(PixKeyType.EVP)
+                .description("Platform PIX transfer")
+                .idempotencyKey("idem-race-" + UUID.randomUUID())
+                .creditTransactionId(null)
+                .build());
+
+        String dupPaymentId = "pay_race_" + UUID.randomUUID().toString().substring(0, 12);
+        Transaction duplicate = transactionRepository.save(Transaction.builder()
+                .wallet(wallet)
+                .account(account)
+                .organization(organization)
+                .type(TransactionType.TRANSFER_IN)
+                .status(TransactionStatus.COMPLETED)
+                .amount(new BigDecimal("100.00"))
+                .currency("BRL")
+                .description(
+                        "Cobrança gerada automaticamente a partir de Pix recebido. Mensagem: Platform PIX transfer")
+                .asaasPaymentId(dupPaymentId)
+                .idempotencyKey("asaas:pix:in:" + dupPaymentId)
+                .completedAt(java.time.LocalDateTime.now())
+                .build());
+
+        InboundDedupeResponse response = inboundPixDedupeService.dedupeAccount(account.getId());
+
+        assertThat(response.getReversed()).isEqualTo(1);
+        assertThat(response.getTotalDebited()).isEqualByComparingTo("100.00");
+        assertThat(transactionRepository.findById(duplicate.getId()).orElseThrow().getStatus())
+                .isEqualTo(TransactionStatus.REVERSED);
+        assertThat(walletRepository.findById(wallet.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("100.00");
+    }
+
+    @Test
     @DisplayName("repair registers Asaas webhook with subaccount webhookToken")
     void repairRegistersWebhook() {
         when(asaasWebhookClient.createWebhook(eq("sub-api-key"), any()))

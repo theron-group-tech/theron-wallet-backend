@@ -25,8 +25,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -35,6 +37,7 @@ import java.util.UUID;
 public class InboundPixDedupeServiceImpl implements InboundPixDedupeService {
 
     private static final String ORPHAN_PREFIX = "asaas:pix:in:pay_%";
+    private static final String PLATFORM_PIX_IN_PREFIX = "asaas:platform-pix:in:%";
 
     private final AccountRepository accountRepository;
     private final PixKeyRepository pixKeyRepository;
@@ -59,8 +62,15 @@ public class InboundPixDedupeServiceImpl implements InboundPixDedupeService {
 
         List<PlatformPixTransfer> platformCredits = destinationKeys.isEmpty()
                 ? List.of()
-                : platformPixTransferRepository.findCreditedByDestinationKeys(
+                : platformPixTransferRepository.findCompletedByDestinationKeys(
                         destinationKeys, TransactionStatus.COMPLETED);
+
+        List<Transaction> platformPixInCredits =
+                transactionRepository.findByAccountTypeStatusAndIdempotencyPrefix(
+                        accountId,
+                        TransactionType.TRANSFER_IN,
+                        TransactionStatus.COMPLETED,
+                        PLATFORM_PIX_IN_PREFIX);
 
         List<Transaction> orphans = transactionRepository.findByAccountTypeStatusAndIdempotencyPrefix(
                 accountId,
@@ -73,11 +83,8 @@ public class InboundPixDedupeServiceImpl implements InboundPixDedupeService {
         int skipped = 0;
         BigDecimal totalDebited = BigDecimal.ZERO;
 
-        // One consumable slot per Master→Theron platform credit (by amount)
-        List<BigDecimal> unmatchedPlatformAmounts = new ArrayList<>();
-        for (PlatformPixTransfer row : platformCredits) {
-            unmatchedPlatformAmounts.add(row.getAmount());
-        }
+        List<BigDecimal> unmatchedPlatformAmounts =
+                buildPlatformCreditSlots(platformCredits, platformPixInCredits);
 
         for (Transaction orphan : orphans) {
             boolean looksAuto = PlatformPixInboundDedupe.looksLikeAutoChargeFromReceivedPix(
@@ -145,6 +152,43 @@ public class InboundPixDedupeServiceImpl implements InboundPixDedupeService {
                 .totalDebited(totalDebited)
                 .items(items)
                 .build();
+    }
+
+    /**
+     * One consumable slot per Master→Theron credit. COMPLETED transfers count even without
+     * {@code creditTransactionId}; standalone {@code asaas:platform-pix:in:%} rows fill gaps
+     * without double-counting a transfer already linked (or pending link) for the same amount.
+     */
+    static List<BigDecimal> buildPlatformCreditSlots(
+            List<PlatformPixTransfer> platformCredits,
+            List<Transaction> platformPixInCredits) {
+        List<BigDecimal> slots = new ArrayList<>();
+        Set<UUID> linkedCreditIds = new HashSet<>();
+        for (PlatformPixTransfer row : platformCredits) {
+            if (row.getAmount() != null) {
+                slots.add(row.getAmount());
+            }
+            if (row.getCreditTransactionId() != null) {
+                linkedCreditIds.add(row.getCreditTransactionId());
+            }
+        }
+        for (Transaction credit : platformPixInCredits) {
+            if (credit.getId() != null && linkedCreditIds.contains(credit.getId())) {
+                continue;
+            }
+            boolean coveredByUnlinkedTransfer = platformCredits.stream()
+                    .anyMatch(row -> row.getCreditTransactionId() == null
+                            && row.getAmount() != null
+                            && credit.getAmount() != null
+                            && row.getAmount().compareTo(credit.getAmount()) == 0);
+            if (coveredByUnlinkedTransfer) {
+                continue;
+            }
+            if (credit.getAmount() != null) {
+                slots.add(credit.getAmount());
+            }
+        }
+        return slots;
     }
 
     private static InboundDedupeResponse.Item skipItem(Transaction tx, String message) {

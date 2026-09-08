@@ -79,6 +79,17 @@ public interface PlatformPixTransferRepository extends JpaRepository<PlatformPix
             @Param("destinationKeys") Collection<String> destinationKeys,
             @Param("status") TransactionStatus status);
 
+    /** COMPLETED Master PIX rows for destination keys (creditTransactionId may still be null). */
+    @Query("""
+            SELECT p FROM PlatformPixTransfer p
+            WHERE p.destinationPixKey IN :destinationKeys
+              AND p.status = :status
+            ORDER BY p.createdAt ASC
+            """)
+    List<PlatformPixTransfer> findCompletedByDestinationKeys(
+            @Param("destinationKeys") Collection<String> destinationKeys,
+            @Param("status") TransactionStatus status);
+
     @Query("""
             SELECT p FROM PlatformPixTransfer p
             WHERE p.asaasTransferId IS NULL
