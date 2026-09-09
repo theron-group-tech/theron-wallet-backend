@@ -1,5 +1,6 @@
 package com.theron.wallet.service;
 
+import com.theron.wallet.security.Actor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
@@ -597,7 +598,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             CreatePixTransferRequest body = transferBody(accountA.getId(), "15.00");
             body.setIdempotencyKey(key);
 
-            assertThatThrownBy(() -> pixService.createTransfer(ownerA.getId(), body))
+            assertThatThrownBy(() -> pixService.createTransfer(Actor.user(ownerA.getId()), body))
                     .isInstanceOf(ResourceAccessException.class);
 
             List<Transaction> afterTimeout = transactionRepository.findAll().stream()
@@ -609,7 +610,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
 
             reset(asaasTransferClient);
             stubTransfer("tr_retry");
-            PixTransferResponse retried = pixService.createTransfer(ownerA.getId(), body);
+            PixTransferResponse retried = pixService.createTransfer(Actor.user(ownerA.getId()), body);
             assertThat(retried.getProviderReference()).isEqualTo("tr_retry");
             assertThat(retried.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
 
@@ -618,7 +619,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .thenThrow(new RuntimeException("asaas down"));
             CreatePixTransferRequest failBody = transferBody(accountA.getId(), "12.00");
             failBody.setIdempotencyKey(UUID.randomUUID().toString());
-            assertThatThrownBy(() -> pixService.createTransfer(ownerA.getId(), failBody))
+            assertThatThrownBy(() -> pixService.createTransfer(Actor.user(ownerA.getId()), failBody))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("asaas down");
             assertThat(transactionRepository.findAll().stream()

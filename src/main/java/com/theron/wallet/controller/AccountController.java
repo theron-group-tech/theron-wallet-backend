@@ -62,7 +62,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<AccountResponse> findById(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findById(id));
     }
 
@@ -88,7 +88,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account or wallet not found")
     })
     public ResponseEntity<WalletResponse> findWallet(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findWallet(id));
     }
 
@@ -108,7 +108,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<LedgerBalanceResponse> ledgerBalance(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(ledgerService.getBalance(id));
     }
 

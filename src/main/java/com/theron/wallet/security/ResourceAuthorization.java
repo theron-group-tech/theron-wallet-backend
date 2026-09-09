@@ -41,6 +41,22 @@ public class ResourceAuthorization {
     }
 
     @Transactional(readOnly = true)
+    public UUID requireOrganization(Actor actor, UUID organizationId, String permission) {
+        if (actor.isUser()) {
+            return requireOrganization(actor.getUserId(), organizationId, permission);
+        }
+        if (!organizationRepository.existsById(organizationId)) {
+            throw new ResourceNotFoundException("Organization", "id", organizationId);
+        }
+        ClientPrincipal client = actor.getClient();
+        if (!organizationId.equals(client.getOrganizationId())) {
+            throw new ForbiddenException("Access denied");
+        }
+        requireClientScope(client, permission);
+        return organizationId;
+    }
+
+    @Transactional(readOnly = true)
     public UUID requireAccount(UUID actorUserId, UUID accountId, String permission) {
         Account account = accountRepository.findByIdWithOrganization(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
@@ -51,10 +67,48 @@ public class ResourceAuthorization {
     }
 
     @Transactional(readOnly = true)
+    public UUID requireAccount(Actor actor, UUID accountId, String permission) {
+        if (actor.isUser()) {
+            return requireAccount(actor.getUserId(), accountId, permission);
+        }
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        UUID orgId = account.getOrganization().getId();
+        ClientPrincipal client = actor.getClient();
+        if (!orgId.equals(client.getOrganizationId())) {
+            throw new ForbiddenException("Access denied");
+        }
+        if (!client.canAccessAccount(accountId)) {
+            throw new ForbiddenException("Access denied");
+        }
+        requireClientScope(client, permission);
+        return orgId;
+    }
+
+    private static void requireClientScope(ClientPrincipal client, String permission) {
+        if (!client.hasScope(permission)) {
+            throw new ForbiddenException("Insufficient scope: " + permission);
+        }
+    }
+
+    @Transactional(readOnly = true)
     public UUID requireWallet(UUID actorUserId, UUID walletId, String permission) {
         Wallet wallet = walletRepository.findById(walletId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "id", walletId));
         return requireWalletEntity(actorUserId, wallet, permission);
+    }
+
+    @Transactional(readOnly = true)
+    public UUID requireWallet(Actor actor, UUID walletId, String permission) {
+        if (actor.isUser()) {
+            return requireWallet(actor.getUserId(), walletId, permission);
+        }
+        Wallet wallet = walletRepository.findById(walletId)
+                .orElseThrow(() -> new ResourceNotFoundException("Wallet", "id", walletId));
+        if (wallet.getAccount() == null) {
+            throw new ForbiddenException("Wallet is not linked to an account");
+        }
+        return requireAccount(actor, wallet.getAccount().getId(), permission);
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +134,22 @@ public class ResourceAuthorization {
         }
         if (transaction.getWallet() != null) {
             return requireWalletEntity(actorUserId, transaction.getWallet(), permission);
+        }
+        throw new ForbiddenException("Transaction is not linked to an organization");
+    }
+
+    @Transactional(readOnly = true)
+    public UUID requireTransaction(Actor actor, UUID transactionId, String permission) {
+        if (actor.isUser()) {
+            return requireTransaction(actor.getUserId(), transactionId, permission);
+        }
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction", "id", transactionId));
+        if (transaction.getAccount() != null) {
+            return requireAccount(actor, transaction.getAccount().getId(), permission);
+        }
+        if (transaction.getWallet() != null && transaction.getWallet().getAccount() != null) {
+            return requireAccount(actor, transaction.getWallet().getAccount().getId(), permission);
         }
         throw new ForbiddenException("Transaction is not linked to an organization");
     }

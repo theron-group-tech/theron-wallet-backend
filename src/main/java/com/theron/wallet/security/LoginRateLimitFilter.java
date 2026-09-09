@@ -23,6 +23,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
 
     private static final String LOGIN_PATH = "/api/v1/auth/login";
     private static final String REFRESH_PATH = "/api/v1/auth/refresh";
+    private static final String OAUTH_TOKEN_PATH = "/api/v1/oauth/token";
 
     private final ObjectMapper objectMapper;
 
@@ -77,7 +78,7 @@ public class LoginRateLimitFilter extends OncePerRequestFilter {
             return false;
         }
         String path = request.getRequestURI();
-        return LOGIN_PATH.equals(path) || REFRESH_PATH.equals(path);
+        return LOGIN_PATH.equals(path) || REFRESH_PATH.equals(path) || OAUTH_TOKEN_PATH.equals(path);
     }
 
     private static String clientKey(HttpServletRequest request) {

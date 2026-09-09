@@ -97,6 +97,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout"
                         ).permitAll()
 
+                        .requestMatchers(HttpMethod.POST, "/api/v1/oauth/token").permitAll()
+
                         // Swagger / OpenAPI
                         .requestMatchers(
                                 "/swagger-ui.html",
@@ -183,7 +185,8 @@ public class SecurityConfig {
 
         configuration.setAllowedHeaders(List.of(
                 "Authorization",
-                "Content-Type"
+                "Content-Type",
+                "Idempotency-Key"
         ));
 
         configuration.setAllowCredentials(true);

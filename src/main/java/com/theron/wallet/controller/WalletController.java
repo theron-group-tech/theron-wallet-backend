@@ -56,7 +56,7 @@ public class WalletController {
             @ApiResponse(responseCode = "404", description = "Wallet not found")
     })
     public ResponseEntity<WalletResponse> findById(@PathVariable UUID walletId) {
-        resourceAuthorization.requireWallet(actorResolver.requireProductUserId(), walletId, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireWallet(actorResolver.requireActor(), walletId, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(walletService.findById(walletId));
     }
 
@@ -68,7 +68,7 @@ public class WalletController {
             @RequestParam(required = false) TransactionStatus status,
             @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
         resourceAuthorization.requireWallet(
-                actorResolver.requireProductUserId(), walletId, PermissionCodes.TRANSACTIONS_READ);
+                actorResolver.requireActor(), walletId, PermissionCodes.TRANSACTIONS_READ);
 
         Page<TransactionResponse> page;
         if (type != null) {
