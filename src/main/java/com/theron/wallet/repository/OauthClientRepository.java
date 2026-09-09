@@ -48,4 +48,14 @@ public interface OauthClientRepository extends JpaRepository<OauthClient, UUID> 
     Optional<OauthClient> findByIdAndOrganization_Id(UUID id, UUID organizationId);
 
     boolean existsByIdAndStatus(UUID id, OauthClientStatus status);
+
+    @Query("""
+            SELECT COUNT(c) > 0 FROM OauthClient c
+            JOIN c.accounts ca
+            WHERE ca.account.id = :accountId
+              AND (:excludeClientId IS NULL OR c.id <> :excludeClientId)
+            """)
+    boolean existsByAccountIdExcludingClient(
+            @Param("accountId") UUID accountId,
+            @Param("excludeClientId") UUID excludeClientId);
 }

@@ -35,7 +35,7 @@ public class AdminOauthClientController {
     private final OauthClientAdminService oauthClientAdminService;
 
     @PostMapping
-    @Operation(summary = "Create OAuth client (returns plaintext secret once)")
+    @Operation(summary = "Create OAuth client bound 1:1 to one Account (returns plaintext secret once)")
     public ResponseEntity<OauthClientSecretResponse> create(
             @PathVariable UUID organizationId,
             @Valid @RequestBody CreateOauthClientRequest request) {
@@ -81,7 +81,7 @@ public class AdminOauthClientController {
     }
 
     @PutMapping("/{id}/accounts")
-    @Operation(summary = "Replace OAuth client account bindings")
+    @Operation(summary = "Replace the single Account binding (1:1) on an OAuth client")
     public ResponseEntity<OauthClientResponse> replaceAccounts(
             @PathVariable UUID organizationId,
             @PathVariable UUID id,

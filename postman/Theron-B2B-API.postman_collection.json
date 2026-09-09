@@ -1,0 +1,442 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-theron-b2b-api",
+    "name": "Theron B2B API",
+    "description": "Coleção para testar OAuth Client Credentials B2B.\n\nModelo: Organization → Account → client_id/secret (1:1).\niFriend (ou qualquer parceiro) é só um exemplo de Organization.\n\nOrdem sugerida: 0 Setup Admin → 1 OAuth Token → 2 Conta/Wallet → 3 Isolamento → 4 PIX.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8080" }
+  ],
+  "item": [
+    {
+      "name": "0. Setup Admin",
+      "description": "JWT de Platform Admin. Preencha organization_id e account_id no Environment antes.",
+      "item": [
+        {
+          "name": "Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login admin 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "const token = j.accessToken || j.token;",
+                  "if (token) {",
+                  "  pm.environment.set('admin_access_token', token);",
+                  "}",
+                  "pm.test('admin_access_token salvo', function () {",
+                  "  pm.expect(pm.environment.get('admin_access_token')).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"deviceId\": \"{{device_id}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/auth/login",
+            "description": "Autentica Platform Admin. Grava admin_access_token no Environment."
+          }
+        },
+        {
+          "name": "Create OAuth Client (1:1 Account)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Create client 201', function () { pm.response.to.have.status(201); });",
+                  "const j = pm.response.json();",
+                  "if (j.clientId) pm.environment.set('client_id', j.clientId);",
+                  "if (j.clientSecret) pm.environment.set('client_secret', j.clientSecret);",
+                  "if (j.id) pm.environment.set('oauth_client_uuid', j.id);",
+                  "if (j.organizationId) pm.environment.set('organization_id', j.organizationId);",
+                  "pm.test('credenciais salvas', function () {",
+                  "  pm.expect(pm.environment.get('client_id')).to.be.ok;",
+                  "  pm.expect(pm.environment.get('client_secret')).to.be.ok;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
+            },
+            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients",
+            "description": "Cria OAuth client ligado a EXATAMENTE uma Account (1:1).\nO client_secret aparece só nesta resposta — salve-o."
+          }
+        },
+        {
+          "name": "List OAuth Clients",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients"
+          }
+        },
+        {
+          "name": "Rotate Secret",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.clientSecret) pm.environment.set('client_secret', j.clientSecret);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients/{{oauth_client_uuid}}/rotate-secret",
+            "description": "Gera novo secret (one-shot). Atualiza client_secret no Environment."
+          }
+        },
+        {
+          "name": "Revoke OAuth Client",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients/{{oauth_client_uuid}}/revoke",
+            "description": "Revoga o client e libera a Account para um novo client 1:1. Use no final dos testes de security."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. OAuth Token",
+      "description": "Fluxo do parceiro (M2M) — sem JWT de usuário Theron.",
+      "item": [
+        {
+          "name": "Get Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Token 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "if (j.access_token) pm.environment.set('access_token', j.access_token);",
+                  "pm.test('access_token salvo', function () {",
+                  "  pm.expect(pm.environment.get('access_token')).to.be.ok;",
+                  "});",
+                  "pm.test('token_type Bearer', function () {",
+                  "  pm.expect(j.token_type).to.eql('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/oauth/token",
+            "description": "Client Credentials. Grava access_token (~15 min)."
+          }
+        },
+        {
+          "name": "Get Access Token (invalid secret)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 invalid_client', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().error).to.eql('invalid_client');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "client_credentials" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "wrong-secret" }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/oauth/token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Conta Wallet Org",
+      "description": "Rotas autenticadas com Bearer access_token do OAuth client.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Get Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get account 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{account_id}}"
+          }
+        },
+        {
+          "name": "Get Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get wallet 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "const id = j.id || (j.wallet && j.wallet.id);",
+                  "if (id) pm.environment.set('wallet_id', id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{account_id}}/wallet",
+            "description": "Salva wallet_id no Environment."
+          }
+        },
+        {
+          "name": "Get Ledger Balance",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{account_id}}/ledger-balance"
+          }
+        },
+        {
+          "name": "Get Organization",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/organizations/{{organization_id}}"
+          }
+        },
+        {
+          "name": "List Transactions by Wallet",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/transactions?walletId={{wallet_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "transactions"],
+              "query": [
+                { "key": "walletId", "value": "{{wallet_id}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Isolamento Security",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Get Other Account (expect 403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Conta fora do 1:1 retorna 403', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{other_account_id}}",
+            "description": "Preencha other_account_id com outra Account (mesma org ou outra). Deve falhar com 403."
+          }
+        },
+        {
+          "name": "After Revoke - Get Account (expect 401)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Rode antes: 0. Setup Admin → Revoke OAuth Client",
+                  "// Mantém o access_token antigo no Environment para validar rejeição imediata."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Client revogado retorna 401', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{account_id}}",
+            "description": "Ordem: Get Access Token → Revoke OAuth Client → este request (com token antigo)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. PIX Sandbox",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "List PIX Keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pix/keys?accountId={{account_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pix", "keys"],
+              "query": [{ "key": "accountId", "value": "{{account_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "List PIX Transfers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pix/transfers?accountId={{account_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pix", "transfers"],
+              "query": [{ "key": "accountId", "value": "{{account_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "PIX Transfer (with Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 1.00,\n  \"destinationPixKey\": \"{{pix_destination_key}}\",\n  \"destinationPixKeyType\": \"{{pix_destination_key_type}}\",\n  \"description\": \"Postman B2B sandbox\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/pix/transfers",
+            "description": "MOVE DINHEIRO no provedor (só sandbox). Header Idempotency-Key obrigatório."
+          }
+        },
+        {
+          "name": "PIX Transfer without Idempotency-Key (expect error)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Sem Idempotency-Key falha', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 1.00,\n  \"destinationPixKey\": \"{{pix_destination_key}}\",\n  \"destinationPixKeyType\": \"{{pix_destination_key_type}}\",\n  \"description\": \"should fail\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/pix/transfers"
+          }
+        }
+      ]
+    }
+  ]
+}

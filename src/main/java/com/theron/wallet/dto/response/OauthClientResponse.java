@@ -28,6 +28,7 @@ public class OauthClientResponse {
     private OauthClientStatus status;
     private OauthClientEnvironment environment;
     private List<String> scopes;
+    /** Exactly one Account ID (OAuth client ↔ Account is 1:1). */
     private List<UUID> accountIds;
     private LocalDateTime createdAt;
     private LocalDateTime revokedAt;

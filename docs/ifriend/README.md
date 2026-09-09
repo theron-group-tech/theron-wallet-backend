@@ -24,6 +24,7 @@ Credenciais Asaas (API keys) são **exclusivas do backend Theron** e nunca são 
 | [WEBHOOKS.md](WEBHOOKS.md) | Polling atual; outbound futuro |
 | [ERRORS.md](ERRORS.md) | Erros OAuth vs API |
 | [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | Passo a passo de integração |
+| [../../postman/README.md](../../postman/README.md) | Coleção Postman B2B (import + uso) |
 
 ## Ambientes
 
@@ -36,10 +37,11 @@ URLs base e credenciais são fornecidas pela Theron fora de banda (não document
 
 ## Como obter credenciais
 
-1. A Theron cria uma Organization da iFriend na plataforma.
-2. Um Platform Admin cria um OAuth client (`POST /api/v1/admin/organizations/{orgId}/oauth-clients`) com scopes e allowlist de Accounts.
-3. O `client_id` e o `client_secret` são entregues **uma vez** por canal seguro (vault).
-4. O secret **não** pode ser recuperado depois — apenas rotacionado.
+1. A Theron cria uma Organization do parceiro na plataforma.
+2. Um Platform Admin cria **um OAuth client por Account** (`POST /api/v1/admin/organizations/{orgId}/oauth-clients`) com scopes e `accountIds` contendo **exatamente um** Account ID (vínculo 1:1).
+3. O `client_id` e o `client_secret` autenticam **aquela Account** (e a Organization associada) e são entregues **uma vez** por canal seguro (vault).
+4. Contas distintas na mesma Organization recebem credenciais distintas.
+5. O secret **não** pode ser recuperado depois — apenas rotacionado. Revogar o client libera a Account para um novo client.
 
 ## Segurança (resumo)
 

@@ -178,6 +178,68 @@ class OauthClientCredentialsIntegrationTest extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @DisplayName("OAuth client must bind exactly one Account; second ACTIVE client on same Account is rejected")
+    void enforcesOneToOneClientAccount() {
+        assertThatThrownBy(() -> oauthClientAdminService.create(
+                organization.getId(),
+                CreateOauthClientRequest.builder()
+                        .name("Multi")
+                        .environment(OauthClientEnvironment.SANDBOX)
+                        .scopes(List.of(PermissionCodes.WALLET_READ))
+                        .accountIds(List.of(account.getId(), UUID.randomUUID()))
+                        .build(),
+                null))
+                .isInstanceOf(com.theron.wallet.exception.InvalidRequestException.class)
+                .hasMessageContaining("exactly one Account");
+
+        Account second = accountRepository.save(Account.builder()
+                .organization(organization)
+                .ownerUser(account.getOwnerUser())
+                .name("Second")
+                .type(AccountType.RESERVE)
+                .status(AccountStatus.ACTIVE)
+                .currency("BRL")
+                .build());
+
+        assertThatThrownBy(() -> oauthClientAdminService.create(
+                organization.getId(),
+                CreateOauthClientRequest.builder()
+                        .name("Duplicate account")
+                        .environment(OauthClientEnvironment.SANDBOX)
+                        .scopes(List.of(PermissionCodes.WALLET_READ))
+                        .accountIds(List.of(account.getId()))
+                        .build(),
+                null))
+                .isInstanceOf(com.theron.wallet.exception.InvalidRequestException.class)
+                .hasMessageContaining("already has an OAuth client");
+
+        OauthClientSecretResponse forSecond = oauthClientAdminService.create(
+                organization.getId(),
+                CreateOauthClientRequest.builder()
+                        .name("Conta 2")
+                        .environment(OauthClientEnvironment.SANDBOX)
+                        .scopes(List.of(PermissionCodes.WALLET_READ))
+                        .accountIds(List.of(second.getId()))
+                        .build(),
+                null);
+        assertThat(forSecond.getAccountIds()).containsExactly(second.getId());
+
+        oauthClientAdminService.revoke(organization.getId(), created.getId(), null);
+
+        OauthClientSecretResponse reprovisioned = oauthClientAdminService.create(
+                organization.getId(),
+                CreateOauthClientRequest.builder()
+                        .name("Conta 1 again")
+                        .environment(OauthClientEnvironment.SANDBOX)
+                        .scopes(List.of(PermissionCodes.WALLET_READ))
+                        .accountIds(List.of(account.getId()))
+                        .build(),
+                null);
+        assertThat(reprovisioned.getAccountIds()).containsExactly(account.getId());
+        assertThat(reprovisioned.getClientId()).isNotEqualTo(created.getClientId());
+    }
+
     private static String uniqueDigits(int length) {
         String digits = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
         if (digits.length() >= length) {

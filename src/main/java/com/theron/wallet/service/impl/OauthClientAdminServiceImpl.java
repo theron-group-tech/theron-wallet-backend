@@ -68,7 +68,8 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
 
         List<String> scopes = normalizeScopes(request.getScopes());
         validateScopes(scopes);
-        List<Account> accounts = resolveAccountsForOrganization(organizationId, request.getAccountIds());
+        Account account = resolveSingleAccountForOrganization(organizationId, request.getAccountIds());
+        assertAccountAvailableForBinding(account.getId(), null);
 
         String publicClientId = secretHasher.generatePublicClientId();
         String plainSecret = secretHasher.generatePlainSecret();
@@ -89,11 +90,11 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
                 .build();
 
         applyScopes(client, scopes);
-        applyAccounts(client, accounts);
+        applyAccounts(client, List.of(account));
 
         OauthClient saved = oauthClientRepository.save(client);
         audit(saved, "CREATE", adminId, "scopes=" + String.join(" ", scopes)
-                + "; accounts=" + accounts.size());
+                + "; account=" + account.getId());
 
         return toSecretResponse(saved, plainSecret);
     }
@@ -134,6 +135,8 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
 
         client.setStatus(OauthClientStatus.REVOKED);
         client.setRevokedAt(LocalDateTime.now());
+        // Release the 1:1 account binding so a new ACTIVE client can be provisioned for the same account.
+        client.getAccounts().clear();
         OauthClient saved = oauthClientRepository.save(client);
         audit(saved, "REVOKE", adminId, null);
         return toResponse(saved);
@@ -167,12 +170,13 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
             throw new InvalidRequestException("Cannot update accounts of a revoked OAuth client");
         }
 
-        List<Account> accounts = resolveAccountsForOrganization(organizationId, request.getAccountIds());
+        Account account = resolveSingleAccountForOrganization(organizationId, request.getAccountIds());
+        assertAccountAvailableForBinding(account.getId(), client.getId());
         client.getAccounts().clear();
-        applyAccounts(client, accounts);
+        applyAccounts(client, List.of(account));
 
         OauthClient saved = oauthClientRepository.save(client);
-        audit(saved, "UPDATE_ACCOUNTS", adminId, "accounts=" + accounts.size());
+        audit(saved, "UPDATE_ACCOUNTS", adminId, "account=" + account.getId());
         return toResponse(saved);
     }
 
@@ -209,21 +213,30 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
         }
     }
 
-    private List<Account> resolveAccountsForOrganization(UUID organizationId, List<UUID> accountIds) {
+    private Account resolveSingleAccountForOrganization(UUID organizationId, List<UUID> accountIds) {
+        if (accountIds == null || accountIds.isEmpty()) {
+            throw new InvalidRequestException("Exactly one accountId is required (OAuth client is 1:1 with Account)");
+        }
         Set<UUID> uniqueIds = new LinkedHashSet<>(accountIds);
-        List<Account> accounts = accountRepository.findAllById(uniqueIds);
-        if (accounts.size() != uniqueIds.size()) {
-            Set<UUID> found = accounts.stream().map(Account::getId).collect(Collectors.toSet());
-            UUID missing = uniqueIds.stream().filter(id -> !found.contains(id)).findFirst().orElse(null);
-            throw new ResourceNotFoundException("Account", "id", missing);
+        if (uniqueIds.size() != 1) {
+            throw new InvalidRequestException(
+                    "OAuth client must be bound to exactly one Account (got " + uniqueIds.size() + ")");
         }
-        for (Account account : accounts) {
-            if (account.getOrganization() == null || !organizationId.equals(account.getOrganization().getId())) {
-                throw new InvalidRequestException(
-                        "Account " + account.getId() + " does not belong to organization " + organizationId);
-            }
+        UUID accountId = uniqueIds.iterator().next();
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        if (account.getOrganization() == null || !organizationId.equals(account.getOrganization().getId())) {
+            throw new InvalidRequestException(
+                    "Account " + account.getId() + " does not belong to organization " + organizationId);
         }
-        return accounts;
+        return account;
+    }
+
+    private void assertAccountAvailableForBinding(UUID accountId, UUID excludeClientId) {
+        if (oauthClientRepository.existsByAccountIdExcludingClient(accountId, excludeClientId)) {
+            throw new InvalidRequestException(
+                    "Account " + accountId + " already has an OAuth client (1:1 binding required)");
+        }
     }
 
     private void applyScopes(OauthClient client, List<String> scopes) {

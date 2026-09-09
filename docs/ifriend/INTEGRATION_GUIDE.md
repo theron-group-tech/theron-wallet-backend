@@ -1,6 +1,6 @@
 # Guia de integração
 
-1. **Receber credenciais** — `client_id`, `client_secret`, Organization ID, Account IDs permitidos, URL base (sandbox/prod).
+1. **Receber credenciais** — `client_id`, `client_secret`, Organization ID, **Account ID** (1:1 com o client), URL base (sandbox/prod).
 2. **Obter access token** — `POST /api/v1/oauth/token` com `grant_type=client_credentials`.
 3. **Primeira leitura** — `GET /api/v1/accounts/{accountId}` com Bearer token.
 4. **Consultar recursos** — wallet, extrato, chaves PIX (`pix.read` / `wallet.read`).

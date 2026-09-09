@@ -22,7 +22,7 @@ Códigos comuns: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `
 |----------|------|-------------|
 | Token ausente/inválido/expirado | 401 | `UNAUTHORIZED` |
 | Client revogado (checagem a cada request) | 401 | `UNAUTHORIZED` |
-| Scope insuficiente / Account fora da allowlist | 403 | `FORBIDDEN` |
+| Scope insuficiente / Account diferente da vinculada (1:1) | 403 | `FORBIDDEN` |
 | Recurso inexistente | 404 | `NOT_FOUND` |
 | Sem Idempotency-Key em PIX | 400 | `INVALID_REQUEST` |
 | Mesma Idempotency-Key com payload diferente | 409 | `CONFLICT` |

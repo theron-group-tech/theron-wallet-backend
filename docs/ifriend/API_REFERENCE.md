@@ -21,7 +21,7 @@ Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authoriza
 ### GET `/accounts/{id}`
 
 - Scope: `wallet.read`
-- Account na allowlist
+- Account vinculada 1:1 ao OAuth client
 
 ### GET `/accounts/{id}/wallet`
 

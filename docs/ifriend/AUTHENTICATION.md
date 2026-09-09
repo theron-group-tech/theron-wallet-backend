@@ -56,10 +56,10 @@ O token usa scopes com **ponto** (iguais às permissões internas). Alias docume
 | `wallet.transfer` | Saques/transferências internas (se habilitado) | `POST /withdraws` |
 | `beneficiaries.*` | Favorecidos | `/beneficiaries` |
 
-O client só acessa Accounts na **allowlist** vinculada pela Theron. O `organization_id` vem do token — não confie em IDs enviados pelo cliente para autorização.
+O client acessa **exatamente uma Account** (vínculo 1:1 com as credenciais). O `organization_id` vem do token — não confie em IDs enviados pelo cliente para autorização.
 
 ## Tenant
 
 - Tenant = Organization do client.
-- Operações financeiras exigem `accountId` permitido.
-- Conta fora da allowlist → `403 FORBIDDEN`.
+- Credenciais autenticam a Account vinculada 1:1; operações financeiras usam esse `accountId`.
+- Conta diferente da vinculada → `403 FORBIDDEN`.
