@@ -1,5 +1,6 @@
 package com.theron.wallet.exception;
 
+import com.theron.wallet.dto.response.OauthErrorResponse;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSecretRedactor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,15 @@ import java.util.List;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(OauthTokenException.class)
+    public ResponseEntity<OauthErrorResponse> handleOauthTokenException(OauthTokenException ex) {
+        log.warn("OAuth token error: {} — {}", ex.getError(), ex.getMessage());
+        return ResponseEntity.status(ex.getStatus()).body(OauthErrorResponse.builder()
+                .error(ex.getError())
+                .errorDescription(ex.getMessage())
+                .build());
+    }
 
     @ExceptionHandler(FieldValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleFieldValidation(

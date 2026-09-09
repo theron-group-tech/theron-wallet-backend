@@ -79,6 +79,9 @@ jwt:
   access-expiration-ms: ${JWT_ACCESS_EXPIRATION_MS:900000}
   refresh-expiration-days: ${JWT_REFRESH_EXPIRATION_DAYS:30}
 
+oauth:
+  access-expiration-ms: ${OAUTH_ACCESS_EXPIRATION_MS:900000}
+
 app:
   admin:
     email: ${APP_ADMIN_EMAIL:${DEFAULT_ADMIN_EMAIL:}}

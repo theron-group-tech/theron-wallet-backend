@@ -45,11 +45,14 @@ public class TransactionController {
             @RequestParam(required = false) UUID subaccountId,
             @RequestParam(required = false) TransactionType type,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        UUID actor = actorResolver.requireProductUserId();
+        var actor = actorResolver.requireActor();
         if (walletId != null) {
             resourceAuthorization.requireWallet(actor, walletId, PermissionCodes.TRANSACTIONS_READ);
         } else if (subaccountId != null) {
-            resourceAuthorization.requireSubaccount(actor, subaccountId, PermissionCodes.TRANSACTIONS_READ);
+            if (actor.isClient()) {
+                throw new InvalidRequestException("walletId is required for client credentials access");
+            }
+            resourceAuthorization.requireSubaccount(actor.requireUserId(), subaccountId, PermissionCodes.TRANSACTIONS_READ);
         } else {
             throw new InvalidRequestException("walletId or subaccountId is required");
         }
@@ -64,7 +67,7 @@ public class TransactionController {
     })
     public ResponseEntity<TransactionResponse> findById(@PathVariable UUID transactionId) {
         resourceAuthorization.requireTransaction(
-                actorResolver.requireProductUserId(), transactionId, PermissionCodes.TRANSACTIONS_READ);
+                actorResolver.requireActor(), transactionId, PermissionCodes.TRANSACTIONS_READ);
         return ResponseEntity.ok(transactionService.findById(transactionId));
     }
 }
