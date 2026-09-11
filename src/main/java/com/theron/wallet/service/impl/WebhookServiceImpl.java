@@ -10,6 +10,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AsaasPaymentEvent;
 import com.theron.wallet.enums.AsaasTransferEvent;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
+import com.theron.wallet.enums.ChargeStatus;
 import com.theron.wallet.enums.NotificationType;
 import com.theron.wallet.enums.PaymentOrderStatus;
 import com.theron.wallet.enums.TransactionStatus;
@@ -20,6 +21,7 @@ import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.integration.AsaasTransferClient;
 import com.theron.wallet.repository.PaymentOrderRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
+import com.theron.wallet.repository.ChargeRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.repository.WalletRepository;
@@ -53,6 +55,7 @@ import java.util.UUID;
 public class WebhookServiceImpl implements WebhookService {
 
     private final TransactionRepository transactionRepository;
+    private final ChargeRepository chargeRepository;
     private final PaymentOrderRepository paymentOrderRepository;
     private final PixTransactionRepository pixTransactionRepository;
     private final WalletRepository walletRepository;
@@ -210,6 +213,8 @@ public class WebhookServiceImpl implements WebhookService {
 
         Optional<Transaction> transactionOpt = transactionRepository.findByAsaasPaymentIdForUpdate(payment.getId());
 
+        syncChargeFromWebhook(payment, event);
+
         if (transactionOpt.isEmpty()) {
             if (event.isConfirmation()) {
                 creditInboundPixPayment(payload, payment, webhookToken);
@@ -231,6 +236,30 @@ public class WebhookServiceImpl implements WebhookService {
             log.info("Webhook event {} does not require action for transactionId={}",
                     eventName, transaction.getId());
         }
+    }
+
+    private void syncChargeFromWebhook(AsaasWebhookPayload.Payment payment, AsaasPaymentEvent event) {
+        if (payment == null || payment.getId() == null) {
+            return;
+        }
+        chargeRepository.findByAsaasPaymentId(payment.getId()).ifPresent(charge -> {
+            ChargeStatus mapped = ChargeServiceImpl.mapAsaasStatus(payment.getStatus());
+            if (event.isCancellation()) {
+                mapped = ChargeStatus.CANCELLED;
+            } else if (event.isReversal()) {
+                mapped = ChargeStatus.REFUNDED;
+            } else if (event.isConfirmation() && mapped == ChargeStatus.PENDING) {
+                mapped = ChargeStatus.RECEIVED;
+            }
+            if (charge.getStatus() != mapped) {
+                charge.setStatus(mapped);
+                if (payment.getNetValue() != null) {
+                    charge.setNetValue(payment.getNetValue());
+                }
+                chargeRepository.save(charge);
+                log.info("Charge status synced from webhook: chargeId={}, status={}", charge.getId(), mapped);
+            }
+        });
     }
 
     private void creditInboundPixPayment(

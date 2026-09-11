@@ -29,4 +29,15 @@ public class ClientPrincipal {
     public boolean canAccessAccount(UUID accountId) {
         return accountId != null && allowedAccountIds != null && allowedAccountIds.contains(accountId);
     }
+
+    /**
+     * OAuth clients are bound 1:1 to a single Account — returns that Account id.
+     */
+    public UUID requireBoundAccountId() {
+        if (allowedAccountIds == null || allowedAccountIds.size() != 1) {
+            throw new com.theron.wallet.exception.ForbiddenException(
+                    "OAuth client must be bound to exactly one Account");
+        }
+        return allowedAccountIds.iterator().next();
+    }
 }

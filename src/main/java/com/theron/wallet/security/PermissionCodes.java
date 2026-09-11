@@ -62,6 +62,13 @@ public final class PermissionCodes {
     public static final String PROFILE_READ = "profile.read";
     public static final String PROFILE_UPDATE = "profile.update";
 
+    public static final String CHARGES_READ = "charges.read";
+    public static final String CHARGES_CREATE = "charges.create";
+    public static final String CHARGES_CANCEL = "charges.cancel";
+
+    public static final String ANTICIPATIONS_READ = "anticipations.read";
+    public static final String ANTICIPATIONS_CREATE = "anticipations.create";
+
     private PermissionCodes() {
     }
 }

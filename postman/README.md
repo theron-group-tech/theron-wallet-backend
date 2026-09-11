@@ -88,7 +88,7 @@ O restante (`admin_access_token`, `client_id`, `client_secret`, `access_token`, 
 
 ## Scopes usados no Create Client
 
-`organization.read`, `wallet.read`, `transactions.read`, `pix.read`, `pix.create`, `pix.transfer`
+`organization.read`, `wallet.read`, `transactions.read`, `pix.read`, `pix.create`, `pix.transfer`, `charges.read`, `charges.create`, `charges.cancel`, `anticipations.read`, `anticipations.create`
 
 ## Segurança
 

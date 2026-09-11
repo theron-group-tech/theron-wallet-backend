@@ -51,4 +51,9 @@ public class AsaasPaymentClient {
         log.info("Retrieving PIX QR code from Asaas: paymentId={}", paymentId);
         return asaasHttpGateway.get(apiKey, "/payments/{id}/pixQrCode", AsaasPixQrCodeResponse.class, paymentId);
     }
+
+    public void deletePayment(String apiKey, String paymentId) {
+        log.info("Deleting payment in Asaas: id={}", paymentId);
+        asaasHttpGateway.delete(apiKey, "/payments/{id}", paymentId);
+    }
 }

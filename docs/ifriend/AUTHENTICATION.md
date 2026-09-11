@@ -55,8 +55,13 @@ O token usa scopes com **ponto** (iguais às permissões internas). Alias docume
 | `transactions.create` | Depósitos (se habilitado) | `POST /deposits` |
 | `wallet.transfer` | Saques/transferências internas (se habilitado) | `POST /withdraws` |
 | `beneficiaries.*` | Favorecidos | `/beneficiaries` |
+| `charges.read` | Ler cobranças | `GET /charges`, `GET /charges/{id}` |
+| `charges.create` | Criar cobranças | `POST /charges` |
+| `charges.cancel` | Cancelar cobranças | `POST /charges/{id}/cancel` |
+| `anticipations.read` | Ler antecipações | `GET /anticipations` |
+| `anticipations.create` | Simular/criar antecipação | `POST /anticipations/simulate`, `POST /anticipations` |
 
-O client acessa **exatamente uma Account** (vínculo 1:1 com as credenciais). O `organization_id` vem do token — não confie em IDs enviados pelo cliente para autorização.
+O client acessa **exatamente uma Account** (vínculo 1:1 com as credenciais). O `organization_id` e o `account_id` vêm das credenciais — **nunca** envie `accountId` no body de `/charges` ou `/anticipations`.
 
 ## Tenant
 

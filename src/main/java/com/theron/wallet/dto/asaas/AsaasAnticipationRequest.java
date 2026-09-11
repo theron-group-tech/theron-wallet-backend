@@ -1,5 +1,6 @@
 package com.theron.wallet.dto.asaas;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -16,15 +17,8 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class AsaasPaymentRequest {
+public class AsaasAnticipationRequest {
 
-    private String customer;
-    private String billingType;
-    private BigDecimal value;
-    private String dueDate;
-    private String description;
-    private String externalReference;
-    private Integer installmentCount;
-    private BigDecimal installmentValue;
-    private List<AsaasSplitItem> split;
+    /** Asaas payment IDs to anticipate. */
+    private List<String> payment;
 }

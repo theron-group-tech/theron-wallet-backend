@@ -80,7 +80,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
+              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\",\n    \"charges.read\",\n    \"charges.create\",\n    \"charges.cancel\",\n    \"anticipations.read\",\n    \"anticipations.create\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
             },
             "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients",
             "description": "Cria OAuth client ligado a EXATAMENTE uma Account (1:1).\nO client_secret aparece só nesta resposta — salve-o."
@@ -434,6 +434,94 @@
               "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 1.00,\n  \"destinationPixKey\": \"{{pix_destination_key}}\",\n  \"destinationPixKeyType\": \"{{pix_destination_key_type}}\",\n  \"description\": \"should fail\"\n}"
             },
             "url": "{{base_url}}/api/v1/pix/transfers"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Charges",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Create Charge PIX",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.environment.set('charge_id', j.id);",
+                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge\",\n  \"externalReference\": \"postman-{{$guid}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "accountId vem só do OAuth client (1:1). Sem accountId no body."
+          }
+        },
+        {
+          "name": "List Charges",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges"
+          }
+        },
+        {
+          "name": "Get Charge",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges/{{charge_id}}"
+          }
+        },
+        {
+          "name": "Cancel Charge",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges/{{charge_id}}/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Anticipations",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Simulate Anticipation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chargeIds\": [\"{{charge_id}}\"]\n}"
+            },
+            "url": "{{base_url}}/api/v1/anticipations/simulate"
+          }
+        },
+        {
+          "name": "List Anticipations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/anticipations"
           }
         }
       ]

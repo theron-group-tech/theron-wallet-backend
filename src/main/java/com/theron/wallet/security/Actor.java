@@ -72,4 +72,21 @@ public final class Actor {
         }
         return "client:" + client.getPublicClientId();
     }
+
+    /**
+     * Account bound to this actor for B2B charges (CLIENT 1:1). USER must use resource-scoped APIs.
+     */
+    public UUID requireBoundAccountId() {
+        if (!isClient() || client == null) {
+            throw new UnauthorizedException("OAuth client credentials required for bound-account operations");
+        }
+        return client.requireBoundAccountId();
+    }
+
+    public UUID requireOrganizationId() {
+        if (!isClient() || client == null) {
+            throw new UnauthorizedException("OAuth client credentials required");
+        }
+        return client.getOrganizationId();
+    }
 }

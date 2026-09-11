@@ -165,7 +165,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
    - Senão → sessão **produto** (`userId`, `name`, `email`) → `/dashboard`.  
    `/admin/login` apenas redireciona para `/login`.  
    401: `"Invalid email or password"` (não enumere e-mail). 429: rate limit.  
-   **B2B / parceiros:** OAuth Client Credentials em `POST /api/v1/oauth/token` — fora do app Theron; um `client_id`/`client_secret` por Account (1:1); ver `docs/ifriend/`.
+   **B2B / parceiros:** OAuth Client Credentials em `POST /api/v1/oauth/token` — fora do app Theron; um `client_id`/`client_secret` por Account (1:1); cobranças em `/api/v1/charges` (sem UI Theron nesta fase); ver `docs/ifriend/`.
 
 ### Passo 3 — Sessão
 

@@ -5,6 +5,7 @@ import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.dto.request.LoginRequest;
+import com.theron.wallet.integration.AsaasAnticipationClient;
 import com.theron.wallet.integration.AsaasCustomerClient;
 import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.integration.AsaasPixClient;
@@ -68,6 +69,8 @@ public abstract class BaseIntegrationTest {
     protected AsaasAccountStatusClient asaasAccountStatusClient;
     @MockitoBean
     protected AsaasApiKeyResolver asaasApiKeyResolver;
+    @MockitoBean
+    protected AsaasAnticipationClient asaasAnticipationClient;
     @Autowired
     protected AuthService authService;
     @Autowired
@@ -135,6 +138,15 @@ public abstract class BaseIntegrationTest {
     void cleanDatabase() {
         jdbcTemplate.execute("TRUNCATE TABLE audit_log");
         jdbcTemplate.execute("DELETE FROM payment_order");
+        jdbcTemplate.execute("DELETE FROM charge_split");
+        jdbcTemplate.execute("DELETE FROM charge_installment");
+        jdbcTemplate.execute("DELETE FROM charge");
+        jdbcTemplate.execute("DELETE FROM billing_customer");
+        jdbcTemplate.execute("DELETE FROM receivable_anticipation");
+        jdbcTemplate.execute("DELETE FROM oauth_client_audit");
+        jdbcTemplate.execute("DELETE FROM oauth_client_scope");
+        jdbcTemplate.execute("DELETE FROM oauth_client_account");
+        jdbcTemplate.execute("DELETE FROM oauth_client");
         baseNotificationRepository.deleteAll();
         jdbcTemplate.execute("DELETE FROM asaas_webhook_event");
         jdbcTemplate.execute("DELETE FROM asaas_reconciliation");

@@ -50,7 +50,12 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
             PermissionCodes.BENEFICIARIES_READ,
             PermissionCodes.BENEFICIARIES_CREATE,
             PermissionCodes.BENEFICIARIES_UPDATE,
-            PermissionCodes.BENEFICIARIES_DELETE
+            PermissionCodes.BENEFICIARIES_DELETE,
+            PermissionCodes.CHARGES_READ,
+            PermissionCodes.CHARGES_CREATE,
+            PermissionCodes.CHARGES_CANCEL,
+            PermissionCodes.ANTICIPATIONS_READ,
+            PermissionCodes.ANTICIPATIONS_CREATE
     );
 
     private final OauthClientRepository oauthClientRepository;

@@ -91,6 +91,27 @@ public class ResourceAuthorization {
         }
     }
 
+    /**
+     * Resolves the single Account bound to a CLIENT actor and checks scope.
+     * Tenant comes from credentials only — never from HTTP body accountId.
+     */
+    @Transactional(readOnly = true)
+    public UUID requireBoundAccount(Actor actor, String permission) {
+        if (!actor.isClient()) {
+            throw new ForbiddenException("Bound-account operations require OAuth client credentials");
+        }
+        ClientPrincipal client = actor.getClient();
+        requireClientScope(client, permission);
+        UUID accountId = client.requireBoundAccountId();
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        UUID orgId = account.getOrganization().getId();
+        if (!orgId.equals(client.getOrganizationId())) {
+            throw new ForbiddenException("Access denied");
+        }
+        return accountId;
+    }
+
     @Transactional(readOnly = true)
     public UUID requireWallet(UUID actorUserId, UUID walletId, String permission) {
         Wallet wallet = walletRepository.findById(walletId)

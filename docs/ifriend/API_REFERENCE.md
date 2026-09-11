@@ -94,6 +94,35 @@ Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authoriza
 
 - Scope: `wallet.read`
 
+## Charges (cobranças Asaas)
+
+`accountId` **não** é aceito no body — vem do OAuth client (1:1).
+
+### POST `/charges`
+
+- Scope: `charges.create`
+- Body: `customer`, `value`, `billingType` (`PIX`|`BOLETO`|`CREDIT_CARD`), `dueDate`, `description?`, `externalReference?`, `installments?`, `split?`
+- Idempotência: mesmo `externalReference` na mesma Account retorna a charge existente (sem nova chamada Asaas)
+
+### GET `/charges` / GET `/charges/{id}`
+
+- Scope: `charges.read`
+
+### POST `/charges/{id}/cancel`
+
+- Scope: `charges.cancel`
+
+## Anticipations
+
+### POST `/anticipations/simulate` / POST `/anticipations`
+
+- Scope: `anticipations.create`
+- Body: `chargeIds` e/ou `paymentIds` (devem pertencer à Account autenticada)
+
+### GET `/anticipations` / GET `/anticipations/{id}`
+
+- Scope: `anticipations.read`
+
 ## Idempotency
 
 Para `POST /pix/transfers` e `POST /pix/qr-codes/pay`:
