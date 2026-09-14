@@ -18,7 +18,7 @@ Também é aceito `Authorization: Basic base64(client_id:client_secret)`.
   "access_token": "<jwt>",
   "token_type": "Bearer",
   "expires_in": 900,
-  "scope": "organization.read wallet.read pix.read pix.transfer"
+  "scope": "organization.read wallet.read charges.create charges.read anticipations.create anticipations.read"
 }
 ```
 

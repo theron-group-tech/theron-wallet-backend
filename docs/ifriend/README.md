@@ -4,7 +4,7 @@ Documentação de contrato para consumo **machine-to-machine** da Theron Wallet 
 
 ## Visão geral
 
-A Theron Wallet API gerencia contas financeiras (Accounts), saldos, PIX e extrato em cima do trilho Asaas. A iFriend **não** usa o frontend Theron: autentica com **OAuth 2.0 Client Credentials** e chama a API diretamente.
+A Theron Wallet API gerencia contas financeiras (Accounts), saldos, PIX, **cobranças (charges)**, antecipações e extrato em cima do trilho Asaas. A iFriend **não** usa o frontend Theron: autentica com **OAuth 2.0 Client Credentials** e chama a API diretamente.
 
 ```text
 iFriend Backend
@@ -50,4 +50,6 @@ URLs base e credenciais são fornecidas pela Theron fora de banda (não document
 - Use HTTPS.
 - Renove o access token antes da expiração.
 - Use `Idempotency-Key` em toda transferência PIX.
+- Use `externalReference` estável em cobranças (`POST /charges`).
 - Rotacione credenciais periodicamente e em incidente.
+- No sandbox: antecipação via **create/list** — `simulate` só em produção Asaas.

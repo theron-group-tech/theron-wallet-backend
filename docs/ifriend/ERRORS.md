@@ -26,6 +26,10 @@ Códigos comuns: `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `
 | Recurso inexistente | 404 | `NOT_FOUND` |
 | Sem Idempotency-Key em PIX | 400 | `INVALID_REQUEST` |
 | Mesma Idempotency-Key com payload diferente | 409 | `CONFLICT` |
+| Content-Type inválido em `/oauth/token` (ex.: JSON) | 415 | `INVALID_REQUEST` |
+| Validação Asaas (ex.: campo inválido) | 400 / 422 | `ASAAS_ERROR` — `message` costuma começar com `Asaas validation error:` |
+| Erro genérico do provedor / sandbox sem detalhe | 502 | `ASAAS_ERROR` — `Payment provider error. Please try again later.` |
+| Simular antecipação no Sandbox Asaas | 502 (ou falha de provedor) | `ASAAS_ERROR` — recurso **indisponível no sandbox**; use `POST /anticipations` |
 
 ## Exceção: `POST /oauth/token` (RFC 6749)
 
@@ -45,3 +49,9 @@ Este endpoint **não** usa `ApiErrorResponse`. Exemplo:
 | `unsupported_grant_type` | 400 | grant_type ≠ `client_credentials` |
 
 Libs OAuth padrão esperam este formato no token endpoint.
+
+Use sempre:
+
+```http
+Content-Type: application/x-www-form-urlencoded
+```
