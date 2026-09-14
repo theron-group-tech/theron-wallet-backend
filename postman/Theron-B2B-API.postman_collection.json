@@ -465,10 +465,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge\",\n  \"externalReference\": \"postman-{{$guid}}\"\n}"
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge\",\n  \"externalReference\": \"pm-{{$timestamp}}\"\n}"
             },
             "url": "{{base_url}}/api/v1/charges",
-            "description": "accountId vem só do OAuth client (1:1). Sem accountId no body."
+            "description": "accountId vem só do OAuth client (1:1). Sem accountId no body. externalReference pode ser longo — backend envia Idempotency-Key ≤48 ao Asaas."
           }
         },
         {

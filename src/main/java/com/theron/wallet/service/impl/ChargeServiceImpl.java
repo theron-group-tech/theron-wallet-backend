@@ -24,6 +24,7 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasCustomerClient;
+import com.theron.wallet.integration.AsaasIdempotencyKeys;
 import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.BillingCustomerRepository;
@@ -121,12 +122,16 @@ public class ChargeServiceImpl implements ChargeService {
         // Platform fee split is appended; Asaas fees remain on the issuing account.
         platformSplitService.applyToPayment(paymentRequest);
 
-        String idempotencyKey = StringUtils.hasText(request.getExternalReference())
+        // Local key may exceed Asaas 48-char limit; Asaas receives a short deterministic key.
+        String localIdempotencyKey = StringUtils.hasText(request.getExternalReference())
                 ? "charge:" + accountId + ":" + request.getExternalReference().trim()
                 : "charge:" + UUID.randomUUID();
+        String asaasIdempotencyKey = AsaasIdempotencyKeys.forCharge(
+                accountId,
+                request.getExternalReference());
 
         AsaasPaymentResponse paymentResponse =
-                asaasPaymentClient.createPayment(apiKey, paymentRequest, idempotencyKey);
+                asaasPaymentClient.createPayment(apiKey, paymentRequest, asaasIdempotencyKey);
 
         Wallet wallet = walletRepository.findByAccount_Id(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
@@ -143,7 +148,7 @@ public class ChargeServiceImpl implements ChargeService {
                 .description(request.getDescription() != null ? request.getDescription() : "Charge")
                 .asaasPaymentId(paymentResponse.getId())
                 .externalReference(paymentRequest.getExternalReference())
-                .idempotencyKey(idempotencyKey)
+                .idempotencyKey(localIdempotencyKey)
                 .build();
         transaction = transactionRepository.save(transaction);
 
