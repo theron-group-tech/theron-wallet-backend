@@ -47,14 +47,19 @@ public class OauthClientLoader {
         return base.map(c -> hydrate(c.getId()));
     }
 
+    /**
+     * Load scopes + accounts on the same persistence-context instance.
+     * Must not replace {@code scopes}/{@code accounts} Set references — both use
+     * {@code orphanRemoval=true}; replacing them and later {@code save()} causes
+     * Hibernate "collection with orphan deletion was no longer referenced".
+     */
     private OauthClient hydrate(UUID id) {
-        OauthClient withScopes = oauthClientRepository.findByIdWithScopes(id).orElseThrow();
-        OauthClient withAccounts = oauthClientRepository.findByIdWithAccounts(id).orElseThrow();
-        Set<OauthClientScope> scopes = new HashSet<>(withScopes.getScopes());
-        Set<OauthClientAccount> accounts = new HashSet<>(withAccounts.getAccounts());
-        withScopes.setScopes(scopes);
-        withScopes.setAccounts(accounts);
-        return withScopes;
+        OauthClient client = oauthClientRepository.findByIdWithOrganization(id).orElseThrow();
+        oauthClientRepository.findByIdWithScopes(id).orElseThrow();
+        oauthClientRepository.findByIdWithAccounts(id).orElseThrow();
+        client.getScopes().size();
+        client.getAccounts().size();
+        return client;
     }
 
     public static Set<String> scopeCodes(OauthClient client) {

@@ -145,6 +145,17 @@ public class GlobalExceptionHandler {
                 request.getRequestURI()));
     }
 
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMediaTypeNotSupported(
+            org.springframework.web.HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiErrorResponse.of(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE.value(),
+                ApiErrorCodes.INVALID_REQUEST,
+                "Unsupported Media Type",
+                ex.getMessage(),
+                request.getRequestURI()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGenericException(Exception ex, HttpServletRequest request) {
         log.error("Unexpected error — path={}", request.getRequestURI(), ex);
