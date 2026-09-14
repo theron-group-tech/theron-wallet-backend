@@ -28,7 +28,7 @@ A iFriend é só um **exemplo** de Organization. Qualquer org/conta funciona.
 
 | Variável | Obrigatório | O que colocar |
 |----------|-------------|---------------|
-| `base_url` | sim | Ex.: `http://localhost:8080` |
+| `base_url` | sim | `https://theron-wallet-backend-production.up.railway.app` |
 | `admin_email` / `admin_password` | sim (setup) | Platform Admin Theron |
 | `organization_id` | sim | UUID da Organization (ex. parceiro) |
 | `account_id` | sim | UUID da **Account** que receberá o OAuth client |
@@ -37,7 +37,7 @@ A iFriend é só um **exemplo** de Organization. Qualquer org/conta funciona.
 
 O restante (`admin_access_token`, `client_id`, `client_secret`, `access_token`, `wallet_id`, `oauth_client_uuid`) é preenchido **automaticamente** pelos scripts das requests.
 
-> Backend precisa estar rodando e a Account/Organization já existirem no banco.
+> O backend usado por esta collection é o ambiente publicado na Railway. A Account/Organization já precisam existir no banco remoto.
 
 ## Ordem de uso (rápido)
 
