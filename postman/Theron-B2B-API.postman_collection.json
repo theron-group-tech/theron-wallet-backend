@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-theron-b2b-api",
-    "name": "Theron B2B API",
-    "description": "Coleção para testar OAuth Client Credentials B2B.\n\nModelo: Organization → Account → client_id/secret (1:1).\niFriend (ou qualquer parceiro) é só um exemplo de Organization.\n\nOrdem sugerida: 0 Setup Admin → 1 OAuth Token → 2 Conta/Wallet → 3 Isolamento → 4 PIX.",
+"_postman_id": "c0f73e1e-c993-4845-a8d6-0f47273e3d71",
+    "name": "Theron Wallet API - B2B Integration",
+    "description": "Collection oficial para testes de integração B2B da Theron Wallet.\n\nFluxo recomendado: Health → Login Admin → Criar OAuth Client → Token B2B → Consultas → Cobranças (Boleto / Cartão / PIX) → Antecipações. O provisionamento de subconta é administrativo e deve ser executado antes de vincular a Account ao OAuth Client.\n\n**Credenciais:** o Platform Owner da Theron cria e fornece `client_id` e `client_secret` ao integrador. Não publique credenciais reais nem `ASAAS_API_KEY`.\n\n**Cobrança PIX / QR:** use `billingType: \"PIX\"`. O pagador acessa o QR Code pela `invoiceUrl` retornada na resposta (fatura Asaas). Nesta API B2B não há endpoint separado com payload EMV/copia-e-cola.\n\n**Sandbox:** a antecipação efetiva pode não ser testável porque a própria Asaas não disponibiliza essa operação no Sandbox.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -455,6 +455,33 @@
                 "exec": [
                   "const j = pm.response.json();",
                   "if (j.id) pm.environment.set('charge_id', j.id);",
+                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);",
+                  "if (j.invoiceUrl) console.log('INVOICE_URL (QR / fatura):', j.invoiceUrl);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge PIX\",\n  \"externalReference\": \"pm-pix-{{$timestamp}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Cobrança PIX (`billingType: PIX`). accountId vem só do OAuth client (1:1). Sem accountId no body.\n\n**QR Code:** a resposta inclui `invoiceUrl` — o pagador abre essa URL na fatura Asaas para ver/pagar o QR. A API B2B não devolve payload EMV/copia-e-cola em ChargeResponse.\n\nexternalReference pode ser longo — backend envia Idempotency-Key ≤48 ao Asaas."
+          }
+        },
+        {
+          "name": "Create Charge BOLETO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.environment.set('charge_id', j.id);",
                   "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);"
                 ]
               }
@@ -465,10 +492,36 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge\",\n  \"externalReference\": \"pm-{{$timestamp}}\"\n}"
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"BOLETO\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge boleto\",\n  \"externalReference\": \"pm-boleto-{{$timestamp}}\"\n}"
             },
             "url": "{{base_url}}/api/v1/charges",
-            "description": "accountId vem só do OAuth client (1:1). Sem accountId no body. externalReference pode ser longo — backend envia Idempotency-Key ≤48 ao Asaas."
+            "description": "Cobrança boleto (`billingType: BOLETO`). Resposta pode incluir `bankSlipUrl` / `invoiceUrl`."
+          }
+        },
+        {
+          "name": "Create Charge CREDIT_CARD",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.environment.set('charge_id', j.id);",
+                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 150.00,\n  \"billingType\": \"CREDIT_CARD\",\n  \"dueDate\": \"2030-12-31\",\n  \"installments\": 3,\n  \"description\": \"Postman charge cartao\",\n  \"externalReference\": \"pm-card-{{$timestamp}}\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Cobrança cartão (`billingType: CREDIT_CARD`). `installments` opcional (>1 apenas para cartão)."
           }
         },
         {

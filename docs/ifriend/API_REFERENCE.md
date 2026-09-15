@@ -130,6 +130,20 @@ Body (exemplo):
 
 `billingType`: `PIX` | `BOLETO` | `CREDIT_CARD`.
 
+Exemplo PIX (QR via fatura):
+
+```json
+{
+  "billingType": "PIX",
+  "value": 50.00,
+  "dueDate": "2030-12-31",
+  "customer": { "name": "Cliente B2B", "cpfCnpj": "52998224725", "email": "cliente@example.com" },
+  "externalReference": "erp-pix-123"
+}
+```
+
+Para PIX, a resposta inclui `invoiceUrl`: o pagador abre essa URL na fatura Asaas para visualizar/pagar o **QR Code**. A API B2B de charges **não** devolve payload EMV (copia e cola) nem imagem base64 do QR em `ChargeResponse`.
+
 Split por item:
 - `walletId` — ID de **carteira Asaas** (não UUID da wallet Theron)
 - `percentualValue` **ou** `fixedValue` (um dos dois, > 0)
