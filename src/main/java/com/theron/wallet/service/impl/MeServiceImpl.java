@@ -17,6 +17,7 @@ import com.theron.wallet.enums.SubaccountStatus;
 import com.theron.wallet.enums.TransactionStatus;
 import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.exception.ResourceNotFoundException;
+import com.theron.wallet.integration.AsaasFinancialTransactionClient;
 import com.theron.wallet.mapper.AccountMapper;
 import com.theron.wallet.mapper.TransactionMapper;
 import com.theron.wallet.repository.AccountRepository;
@@ -32,7 +33,6 @@ import com.theron.wallet.service.MobileScopeService;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.StatementService;
 import com.theron.wallet.service.UserService;
-import com.theron.wallet.integration.AsaasFinancialTransactionClient;
 import com.theron.wallet.web.MobilePageables;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +50,6 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -62,11 +61,6 @@ public class MeServiceImpl implements MeService {
     private static final String CURRENCY = "BRL";
     private static final int ASAAS_STATEMENT_LIMIT = 100;
     private static final int RECENT_TRANSACTION_LIMIT = 4;
-    private static final Set<TransactionType> INCOME_TYPES = Set.of(
-            TransactionType.DEPOSIT, TransactionType.TRANSFER_IN, TransactionType.REFUND);
-    private static final Set<TransactionType> EXPENSE_TYPES = Set.of(
-            TransactionType.WITHDRAWAL, TransactionType.TRANSFER_OUT, TransactionType.PIX,
-            TransactionType.PAYMENT, TransactionType.FEE);
     private static final List<TransactionStatus> PENDING_STATUSES = List.of(
             TransactionStatus.PENDING, TransactionStatus.PENDING_APPROVAL, TransactionStatus.PROCESSING);
 
