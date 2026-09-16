@@ -16,6 +16,7 @@ import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
+import com.theron.wallet.integration.AsaasWebhookConfigFactory;
 import com.theron.wallet.mapper.SubaccountMapper;
 import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
 import com.theron.wallet.repository.SubaccountRepository;
@@ -40,25 +41,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SubaccountServiceImpl implements SubaccountService {
 
-    private static final List<String> WEBHOOK_EVENTS = List.of(
-            "PAYMENT_CONFIRMED",
-            "PAYMENT_RECEIVED",
-            "PAYMENT_OVERDUE",
-            "PAYMENT_DELETED",
-            "PAYMENT_REFUNDED",
-            "PAYMENT_UPDATED",
-            "PAYMENT_CHARGEBACK_REQUESTED",
-            "PAYMENT_CHARGEBACK_DISPUTE",
-            "PAYMENT_AWAITING_CHARGEBACK_REVERSAL",
-            "TRANSFER_CREATED",
-            "TRANSFER_PENDING",
-            "TRANSFER_IN_BANK_PROCESSING",
-            "TRANSFER_BLOCKED",
-            "TRANSFER_DONE",
-            "TRANSFER_FAILED",
-            "TRANSFER_CANCELLED"
-    );
-
     private final SubaccountRepository subaccountRepository;
     private final SubaccountApiKeyAuditRepository auditRepository;
     private final AsaasSubaccountClient asaasSubaccountClient;
@@ -66,6 +48,7 @@ public class SubaccountServiceImpl implements SubaccountService {
     private final ApiKeyEncryptionService encryptionService;
     private final WebhookTokenGenerator webhookTokenGenerator;
     private final AsaasProperties asaasProperties;
+    private final AsaasWebhookConfigFactory asaasWebhookConfigFactory;
 
     @Override
     @Transactional
@@ -114,7 +97,8 @@ public class SubaccountServiceImpl implements SubaccountService {
 
         try {
             // Phase 2: Call Asaas API — webhooks are registered inline (atomic)
-            List<AsaasWebhookConfigRequest> webhooks = buildWebhookConfig(subaccount.getWebhookToken());
+            List<AsaasWebhookConfigRequest> webhooks =
+                    asaasWebhookConfigFactory.buildInlineConfigs(subaccount.getWebhookToken());
             AsaasSubaccountRequest asaasRequest = SubaccountMapper.toAsaasRequest(subaccount, webhooks);
             AsaasSubaccountResponse asaasResponse = asaasSubaccountClient.createSubaccount(asaasRequest);
 
@@ -196,29 +180,6 @@ public class SubaccountServiceImpl implements SubaccountService {
         }
         return subaccountRepository.findAll(pageable)
                 .map(SubaccountMapper::toResponse);
-    }
-
-    /**
-     * Builds the webhook config list for inline registration during account creation.
-     * Returns null if webhookUrl is not configured — Asaas will skip webhook setup.
-     */
-    private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
-        String webhookUrl = asaasProperties.getWebhookUrl();
-        if (webhookUrl == null || webhookUrl.isBlank()) {
-            log.info("ASAAS_WEBHOOK_URL not set — subaccount created without inline webhook registration");
-            return null;
-        }
-        return List.of(AsaasWebhookConfigRequest.builder()
-                .name("Theron Wallet Webhook")
-                .url(webhookUrl)
-                .email("engineering@therongroup.com")
-                .enabled(true)
-                .interrupted(false)
-                .apiVersion("3")
-                .authToken(webhookToken)
-                .sendType("SEQUENTIALLY")
-                .events(WEBHOOK_EVENTS)
-                .build());
     }
 
     private String maskCpfCnpj(String cpfCnpj) {

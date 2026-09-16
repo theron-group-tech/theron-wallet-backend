@@ -21,6 +21,8 @@ public class JwtTokenProvider {
     public static final String CLAIM_TYP = "typ";
     public static final String CLAIM_SID = "sid";
     public static final String CLAIM_ROLE = "role";
+    public static final String CLAIM_ORG = "org";
+    public static final String CLAIM_SCP = "scp";
     public static final String TYP_ACCESS = "access";
 
     @Value("${jwt.secret}")
@@ -31,6 +33,9 @@ public class JwtTokenProvider {
 
     @Value("${jwt.access-expiration-ms:900000}")
     private long accessExpirationMs;
+
+    @Value("${oauth.access-expiration-ms:900000}")
+    private long oauthAccessExpirationMs;
 
     public String generateToken(String email, String role) {
         SecretKey key = getSigningKey();
@@ -59,6 +64,24 @@ public class JwtTokenProvider {
                 .expiration(expiration)
                 .signWith(key)
                 .compact();
+    }
+
+    public String generateClientAccessToken(UUID oauthClientId, UUID organizationId, java.util.Collection<String> scopes) {
+        SecretKey key = getSigningKey();
+        return Jwts.builder()
+                .subject(oauthClientId.toString())
+                .claim(CLAIM_TYP, TYP_ACCESS)
+                .claim(CLAIM_PRINCIPAL, ClientPrincipal.PRINCIPAL_CLIENT)
+                .claim(CLAIM_ORG, organizationId.toString())
+                .claim(CLAIM_SCP, scopes == null ? java.util.List.of() : scopes.stream().toList())
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + oauthAccessExpirationMs))
+                .signWith(key)
+                .compact();
+    }
+
+    public long getOauthAccessExpirationMs() {
+        return oauthAccessExpirationMs;
     }
 
     public String getEmailFromToken(String token) {

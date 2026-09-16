@@ -24,5 +24,7 @@ public class AsaasPaymentRequest {
     private String dueDate;
     private String description;
     private String externalReference;
+    private Integer installmentCount;
+    private BigDecimal installmentValue;
     private List<AsaasSplitItem> split;
 }

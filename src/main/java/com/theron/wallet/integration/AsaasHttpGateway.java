@@ -127,8 +127,9 @@ public class AsaasHttpGateway {
         WebClient.RequestBodySpec spec = webClient.method(method)
                 .uri(uri, uriVariables)
                 .header("access_token", apiKey);
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            spec.header("Idempotency-Key", idempotencyKey);
+        String asaasIdempotencyKey = AsaasIdempotencyKeys.forHeader(idempotencyKey);
+        if (asaasIdempotencyKey != null) {
+            spec.header("Idempotency-Key", asaasIdempotencyKey);
         }
 
         WebClient.RequestHeadersSpec<?> headersSpec = body != null ? spec.bodyValue(body) : spec;

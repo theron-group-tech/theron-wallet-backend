@@ -22,6 +22,7 @@ import com.theron.wallet.exception.ResourceNotFoundException;
 import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSubaccountClient;
+import com.theron.wallet.integration.AsaasWebhookConfigFactory;
 import com.theron.wallet.mapper.SubaccountMapper;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.SubaccountApiKeyAuditRepository;
@@ -40,28 +41,11 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisioningService {
-
-    private static final AtomicBoolean WEBHOOK_SKIP_LOGGED = new AtomicBoolean(false);
-
-    private static final List<String> WEBHOOK_EVENTS = List.of(
-            "PAYMENT_CONFIRMED",
-            "PAYMENT_RECEIVED",
-            "PAYMENT_OVERDUE",
-            "PAYMENT_DELETED",
-            "PAYMENT_REFUNDED",
-            "PAYMENT_UPDATED",
-            "TRANSFER_CREATED",
-            "TRANSFER_PENDING",
-            "TRANSFER_DONE",
-            "TRANSFER_FAILED",
-            "TRANSFER_CANCELLED"
-    );
 
     private final AccountRepository accountRepository;
     private final SubaccountRepository subaccountRepository;
@@ -71,6 +55,7 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
     private final ApiKeyEncryptionService encryptionService;
     private final WebhookTokenGenerator webhookTokenGenerator;
     private final AsaasProperties asaasProperties;
+    private final AsaasWebhookConfigFactory asaasWebhookConfigFactory;
     private final AuditLogService auditLogService;
 
     @Override
@@ -167,7 +152,8 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
         }
 
         try {
-            List<AsaasWebhookConfigRequest> webhooks = buildWebhookConfig(existing.getWebhookToken());
+            List<AsaasWebhookConfigRequest> webhooks =
+                    asaasWebhookConfigFactory.buildInlineConfigs(existing.getWebhookToken());
             AsaasSubaccountRequest asaasRequest = SubaccountMapper.toAsaasRequest(existing, webhooks);
             AsaasSubaccountResponse asaasResponse = asaasSubaccountClient.createSubaccount(asaasRequest);
 
@@ -433,27 +419,6 @@ public class AccountAsaasProvisioningServiceImpl implements AccountAsaasProvisio
             String onboardingUrl,
             boolean changed
     ) {
-    }
-
-    private List<AsaasWebhookConfigRequest> buildWebhookConfig(String webhookToken) {
-        String webhookUrl = asaasProperties.getWebhookUrl();
-        if (webhookUrl == null || webhookUrl.isBlank()) {
-            if (WEBHOOK_SKIP_LOGGED.compareAndSet(false, true)) {
-                log.info("ASAAS_WEBHOOK_URL not set — subaccounts are created without inline webhooks");
-            }
-            return null;
-        }
-        return List.of(AsaasWebhookConfigRequest.builder()
-                .name("Theron Wallet")
-                .url(webhookUrl)
-                .email("webhooks@theron.internal")
-                .enabled(true)
-                .interrupted(false)
-                .apiVersion("3")
-                .authToken(webhookToken)
-                .sendType("SEQUENTIALLY")
-                .events(WEBHOOK_EVENTS)
-                .build());
     }
 
     private static String normalizeDocument(String document) {

@@ -3,10 +3,12 @@ package com.theron.wallet.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.entity.AuthSession;
+import com.theron.wallet.entity.OauthClient;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.ApiErrorResponse;
 import com.theron.wallet.repository.AdminUserRepository;
 import com.theron.wallet.repository.AuthSessionRepository;
+import com.theron.wallet.service.impl.OauthClientLoader;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
@@ -26,6 +28,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -35,6 +38,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthSessionRepository authSessionRepository;
     private final AdminUserRepository adminUserRepository;
+    private final OauthClientLoader oauthClientLoader;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -45,11 +49,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        log.info("JWT FILTER - {} {}", request.getMethod(), request.getRequestURI());
-        log.info("JWT FILTER - Authorization header present: {}", header != null);
-
         if (header == null || !header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            log.warn("JWT FILTER - No Bearer token found");
             filterChain.doFilter(request, response);
             return;
         }
@@ -57,7 +57,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = header.substring(7).trim();
 
         if (token.isEmpty()) {
-            log.warn("JWT FILTER - Bearer token is empty");
             filterChain.doFilter(request, response);
             return;
         }
@@ -66,72 +65,50 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             claims = jwtTokenProvider.parseClaims(token);
-
-            log.info(
-                    "JWT FILTER - Token valid. subject={}, principal={}, role={}, typ={}, sid={}",
-                    claims.getSubject(),
-                    claims.get("principal"),
-                    claims.get("role"),
-                    claims.get("typ"),
-                    claims.get("sid")
-            );
-
         } catch (ExpiredJwtException ex) {
-            log.error("JWT FILTER - Token expired", ex);
             writeUnauthorized(request, response, "Access token expired");
             return;
-
         } catch (Exception ex) {
-            log.error("JWT FILTER - Token parsing failed: {}", ex.getMessage(), ex);
             writeUnauthorized(request, response, "Invalid access token");
             return;
         }
 
         String principalType = jwtTokenProvider.getPrincipalType(claims);
 
-        log.info("JWT FILTER - Principal type: {}", principalType);
+        if (ClientPrincipal.PRINCIPAL_CLIENT.equals(principalType)) {
+            ClientPrincipal client = authenticateClient(claims);
+            if (client == null) {
+                writeUnauthorized(request, response, "Invalid or revoked client credentials");
+                return;
+            }
+            List<SimpleGrantedAuthority> authorities = client.getScopes().stream()
+                    .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
+                    .collect(Collectors.toList());
+            authorities.add(new SimpleGrantedAuthority("ROLE_CLIENT"));
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(client, null, authorities);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         UserPrincipal principal;
 
         if (UserPrincipal.PRINCIPAL_USER.equals(principalType)) {
-
-            log.info("JWT FILTER - Authenticating PRODUCT USER");
-
             principal = authenticateProductUser(claims);
-
             if (principal == null) {
-                log.error("JWT FILTER - Product user authentication failed");
                 writeUnauthorized(request, response, "Invalid or revoked session");
                 return;
             }
-
         } else {
-
             String email = claims.getSubject();
-
-            log.info("JWT FILTER - Authenticating ADMIN: {}", email);
-
             AdminUser admin = adminUserRepository
                     .findByEmailAndActiveTrue(email)
                     .orElse(null);
-
             if (admin == null) {
-                log.error(
-                        "JWT FILTER - Admin NOT FOUND or inactive. email={}",
-                        email
-                );
-
                 writeUnauthorized(request, response, "Authentication required");
                 return;
             }
-
-            log.info(
-                    "JWT FILTER - Admin authenticated successfully. id={}, email={}, role={}",
-                    admin.getId(),
-                    admin.getEmail(),
-                    admin.getRole()
-            );
-
             principal = UserPrincipal.builder()
                     .principalType(UserPrincipal.PRINCIPAL_ADMIN)
                     .adminId(admin.getId())
@@ -140,26 +117,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     .build();
         }
 
-        String role = principal.getRole() != null
-                ? principal.getRole()
-                : "USER";
-
+        String role = principal.getRole() != null ? principal.getRole() : "USER";
         UsernamePasswordAuthenticationToken authentication =
                 new UsernamePasswordAuthenticationToken(
                         principal,
                         null,
                         List.of(new SimpleGrantedAuthority("ROLE_" + role))
                 );
-
         SecurityContextHolder.getContext().setAuthentication(authentication);
-
-        log.info(
-                "JWT FILTER - SecurityContext authenticated. principal={}, authorities={}",
-                principal.getEmail(),
-                authentication.getAuthorities()
-        );
-
         filterChain.doFilter(request, response);
+    }
+
+    private ClientPrincipal authenticateClient(Claims claims) {
+        UUID oauthClientId;
+        try {
+            oauthClientId = UUID.fromString(claims.getSubject());
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        OauthClient client = oauthClientLoader.loadActiveWithDetailsById(oauthClientId).orElse(null);
+        if (client == null) {
+            return null;
+        }
+        return ClientPrincipal.builder()
+                .oauthClientId(client.getId())
+                .publicClientId(client.getClientId())
+                .organizationId(client.getOrganization().getId())
+                .name(client.getName())
+                .scopes(OauthClientLoader.scopeCodes(client))
+                .allowedAccountIds(OauthClientLoader.accountIds(client))
+                .build();
     }
 
     private UserPrincipal authenticateProductUser(Claims claims) {

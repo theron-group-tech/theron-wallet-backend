@@ -103,7 +103,7 @@ O cliente chama **sempre** `/api/v1/...` (same-origin). Base URL pública do bac
 - `Content-Type: application/json`.
 - `Authorization: Bearer <accessToken>`.
 - `X-Correlation-Id`: UUID por request (aparece como `traceId` no erro).
-- Header **`Idempotency-Key`**: UUID **obrigatório** em `POST /deposits`, `POST /withdraws`, `POST /pix/transfers`. Opcional em `POST /transfers/internal` e approve/reject/cancel.
+- Header **`Idempotency-Key`**: UUID **obrigatório** em `POST /deposits`, `POST /withdraws`, `POST /pix/transfers`, `POST /pix/qr-codes/pay`. Opcional em `POST /transfers/internal` e approve/reject/cancel.
 - Em **401** (exceto login): tentar `POST /auth/refresh` com o `refreshToken`; se falhar, logout e ir para login.
 - Rate limit: login/refresh podem devolver **429** `RATE_LIMITED` (20 tentativas / 300s por IP).
 
@@ -137,7 +137,7 @@ Esconda botões com essa lista. Recarregue ao trocar de org.
 | Perfil | `PATCH` self com `profile.update` | Nome/email/telefone |
 | Configurações | `PATCH /organizations/{id}` se `organization.update` | |
 
-Quick actions do dashboard: Nova transação / Enviar PIX / Adicionar beneficiário — só se a permissão existir. “Cobrar” = criar QR PIX (`POST /pix/qr-codes`) se `pix.create`.
+Quick actions do dashboard: Nova transação / Enviar PIX / Adicionar beneficiário — só se a permissão existir. “Cobrar” = criar QR PIX (`POST /pix/qr-codes`) se `pix.create`. Enviar PIX (`/transferencias`): Destino só **Chave PIX avulsa** ou **Copia e cola** (sem Beneficiário).
 
 ---
 
@@ -164,7 +164,8 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
    - Se `adminId` presente → sessão **admin** → `/admin` (não misturar com sessão produto).  
    - Senão → sessão **produto** (`userId`, `name`, `email`) → `/dashboard`.  
    `/admin/login` apenas redireciona para `/login`.  
-   401: `"Invalid email or password"` (não enumere e-mail). 429: rate limit.
+   401: `"Invalid email or password"` (não enumere e-mail). 429: rate limit.  
+   **B2B / parceiros:** OAuth Client Credentials em `POST /api/v1/oauth/token` — fora do app Theron; um `client_id`/`client_secret` por Account (1:1); cobranças em `/api/v1/charges` (sem UI Theron nesta fase); ver `docs/ifriend/`.
 
 ### Passo 3 — Sessão
 
@@ -177,7 +178,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 
 - `GET /api/v1/me` → perfil + orgs. Monte o org switcher.
 - `GET /api/v1/me/dashboard?organizationId=&accountId=`  
-  Campos: `balance`, `availableBalance`, `blockedBalance`, `currency`, `todayIncome`, `todayExpenses`, `pendingTransactions[]`, `recentTransactions[]`, `organizationId`, `accountId`.
+  Campos: `balance` (Asaas), `ledgerBalance` (`wallet.balance`), `availableBalance` (= `balance −` PIX `PENDING_APPROVAL`), `blockedBalance`, `currency`, `todayIncome`, `todayExpenses`, `pendingTransactions[]`, `recentTransactions[]`, `organizationId`, `accountId`. Hero = `availableBalance`; aviso de divergência compara **`ledgerBalance` × `balance`**, não × `availableBalance`.
 - `GET /api/v1/notifications/unread-count` para o sino.
 
 ### Passo 5 — Contas e saldo
@@ -186,7 +187,7 @@ Crie o Next.js, Tailwind, tokens de cor, fontes, layout shell (sidebar prussian 
 - `POST /api/v1/organizations/{organizationId}/accounts` `{ "name", "type": "MAIN"|"EMPLOYEE"|"RESERVE" }` (perm `organization.update`).
 - `GET /api/v1/accounts/{id}`  
 - `GET /api/v1/accounts/{id}/wallet` → `balance` da **Account** (é este o saldo do dashboard/PIX).  
-- `GET /api/v1/accounts/{id}/ledger-balance` → conferência.
+- `GET /api/v1/accounts/{id}/ledger-balance` → conferência do livro (`ledger_entry`). O **Ledger local** do dashboard é `wallet.balance` (`ledgerBalance`). Divergência UI = `ledgerBalance` vs `balance` (Asaas), não vs `availableBalance`. PIX recebido em QR estático (Cobrar) ou chave credita essa wallet via webhook `PAYMENT_RECEIVED` (`TRANSFER_IN`); pay Theron→Theron também credita o destino no próprio `POST /pix/qr-codes/pay`. Master→Theron (admin PIX transfer ou QR pay): um único crédito local via Platform PIX; race `TRANSFER_*`/`PAYMENT_RECEIVED` é tratada no BE — a UI só lê o saldo, não credita localmente. Admin (fora do app produto): reconcile de órfãos (`POST /admin/accounts/{id}/inbound-reconcile`), dedupe Master→Theron (`POST /admin/accounts/{id}/inbound-dedupe`; usar se ledger > Asaas) e repair de webhooks Asaas nas subcontas.
 
 **Não** use `POST /deposits` para encher este saldo. Depósito credita wallet de **subconta**, outro trilho.
 
@@ -199,8 +200,9 @@ Exige Account com subconta Asaas **ACTIVE** (`asaasStatus` em `AccountResponse`)
 - A chamada Asaas é `POST /v3/pix/addressKeys` com a **API key da subconta** da Account — **não** com a Master (`ASAAS_API_KEY`). No console Asaas, abra a **subconta** (não a conta raiz Theron) para ver a chave.
 - `DELETE /api/v1/pix/keys/{id}` → 204
 - `POST /api/v1/pix/qr-codes` `{ "accountId", "pixKeyId", "value?", "description?" }`
+- `POST /api/v1/pix/qr-codes/pay` `{ "accountId", "payload", "amount?", "description?" }` + **Idempotency-Key** (`pix.transfer`). Pay copia e cola na subconta para **OWNER, FINANCE e EMPLOYEE** (Account própria). Em `/transferencias`, Destino é só chave avulsa ou copia e cola; colar EMV (`000201…`) no campo de chave **troca automaticamente** para copia e cola e preenche o valor se o QR tiver tag 54. Enviar o EMV ao Asaas **sem remover espaços** (nome/cidade/CRC). Poll: `GET /pix/transactions/{asaasId}?accountId=`.
 - `POST /api/v1/pix/transfers` header `Idempotency-Key`  
-  Body: `{ "accountId", "amount", "beneficiaryId" }` **ou** `{ "destinationPixKey", "destinationPixKeyType" }`  
+  Body: `{ "accountId", "amount", "destinationPixKey", "destinationPixKeyType" }`. UI `/transferencias` **não** usa `beneficiaryId`.  
   Perm `pix.transfer`. 201 com `status` tipicamente `PROCESSING` (PIX pessoal **não** vai para ApprovalPolicy).  
   Sem bind Asaas → **422** `ASAAS_ERROR`. Mesma key + mesmo body → mesma operação. Mesma key + body diferente → 409.
 
@@ -334,6 +336,8 @@ Query padrão: `page`, `size` (default 20, max 100), `sort=createdAt,desc`.
 | GET | `/api/v1/pix/transfers/{id}` | | pix.read |
 | GET | `/api/v1/pix/transfers?accountId=` | | pix.read |
 | POST | `/api/v1/pix/qr-codes` | | pix.create |
+| POST | `/api/v1/pix/qr-codes/pay` | **Idempotency-Key** | pix.transfer — pay copia e cola da subconta (OWNER, FINANCE, EMPLOYEE, Account própria). Body: `accountId`, `payload`, `amount?`, `description?`. UI `/transferencias` detecta EMV colado na chave e envia o payload **com espaços**. Resposta: `id` (Asaas pix tx), `transactionId`, `pixTransactionId`, `status`, destinatário |
+| GET | `/api/v1/pix/transactions/{id}?accountId=` | | pix.read — poll após pay QR |
 
 ### Beneficiários / aprovações / limites / notificações / audit
 
@@ -370,13 +374,13 @@ PIX legado: `/api/v1/subaccounts/{subaccountId}/pix/...`.
 
 **DashboardResponse:** ver passo 4.
 
-**AccountResponse:** `id`, `organizationId`, `name`, `type`, `status`, `currency`, `ownerUserId?`, `asaasStatus` (`PENDING`|`ACTIVE`|`FAILED`), `asaasAccountId?`, `asaasWalletId?`, `asaasMessage?`, `asaasCommercialStatus?`, `asaasDocumentationStatus?`, `asaasGeneralStatus?`, `onboardingUrl?`, timestamps.
+**AccountResponse:** campos anteriores + `onboardingStatus?`, `financialResourcesEnabled?`.
 
-**Asaas bind (produto):** `POST /api/v1/accounts/{accountId}/asaas-subaccount` — provisiona/repara a subconta do **próprio** dono da Account (`wallet.read`). Resposta `AsaasBindResponse`. Após login, se `asaasStatus !== ACTIVE`, abrir Modal pedindo criação.
+**Onboarding financeiro (produto):** endpoints em `/api/v1/asaas/onboarding/*` — wizard self-service CPF ou CNPJ. Após login, se `financialResourcesEnabled !== true`, abrir `FinancialSetupModal` → `/onboarding-financeiro`. `POST /accounts/{id}/asaas-subaccount` está **descontinuado** (422).
 
-**Sandbox Asaas:** após create o BE chama `POST /v3/accounts/{id}/approve` e sincroniza `GET /myAccount/status` com a apiKey da subconta. `asaasStatus=ACTIVE` quando `general` ou `commercialInfo` = `APPROVED`. Se documentação pendente e houver `onboardingUrl`, mostre botão “Continuar onboarding Asaas”. “Aguardando ativação” no painel Asaas (e-mail/senha) **não** bloqueia PIX via API.
+**Sandbox Asaas:** após submit o BE pode aprovar sandbox e sincronizar status. PIX/transfer exigem `financialResourcesEnabled=true` (onboarding `APPROVED`). Se docs pendentes, mostrar `onboardingUrl`.
 
-**CNPJ-only (Asaas BaaS):** Organization e subconta Asaas exigem **CNPJ** (14 dígitos). CPF é rejeitado no provision (`422`). Ao criar FINANCE/EMPLOYEE, o formulário deve pedir **CNPJ próprio** do titular (MEI/filial), não CPF.
+**Criar membro:** `POST /organization/members` **sem** documento/CNPJ — titular faz onboarding após login.
 
 **Webhooks:** `ASAAS_WEBHOOK_URL` é opcional em dev/sandbox. Sem URL, a subconta é criada sem webhooks inline; configure URL + painel Asaas quando for receber eventos de pagamento/transfer.
 
@@ -488,8 +492,12 @@ Rotas UI: `/admin`, `/admin/organizacoes`, `/admin/organizacoes/[id]`, `/admin/c
 | GET | `/api/v1/admin/platform-account/balance-divergences` | Contas ACTIVE com diferença Asaas vs ledger (`divergedCount`, `items[]`) |
 | GET/POST/DELETE | `/api/v1/admin/platform-account/pix/keys` | Chaves PIX Master (`ASAAS_API_KEY`). POST só `{ "type": "EVP" }`. Resposta: `id` (Asaas string), `type`, `key`, `status` — sem `accountId` |
 | GET | `/api/v1/admin/platform-account/pix/keys/lookup?type&key` | Lookup automático no modal de envio PIX Master (Asaas external): `ownerName`, `ownerCpfCnpj`, `institutionName`, `institutionCode`, `ispb` — sem passo separado no formulário |
+| POST | `/api/v1/admin/platform-account/pix/qr-codes` | QR estático Master (cobrança). Body: `pixKeyId`, `value` (obrigatório), `description?` |
+| POST | `/api/v1/admin/platform-account/pix/qr-codes/pay` | Pay copia e cola Master. Body: `payload`, `amount`, `description?` + `Idempotency-Key`. **Pré-registra** em `platform_pix_transfer` antes do Asaas. Asaas valida com `type=PIX_QR_CODE` e `pixQrCode.id` = `id` da resposta (pix transaction id, **não** `transferId`). Sem registro → Asaas `REFUSED` / *Autorização externa foi recusada*. Resposta: `id`, `amount`, `status`, `providerStatus`, `transferId`, `refusalReason`, destinatário |
+| GET | `/api/v1/admin/platform-account/pix/transactions/{id}` | Poll status PIX Asaas após pay (`PROCESSING` → `COMPLETED`) |
 | GET | `/api/v1/pix/keys/lookup?accountId&type&key` | Idem no produto (modal de envio; apiKey da subconta; `pix.transfer` + bind ACTIVE) |
-| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer` para approve em `/webhooks/asaas/transfer-validation` (`ASAAS_TRANSFER_VALIDATION_URL` + token). GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local |
+| GET/POST | `/api/v1/admin/platform-account/pix/transfers` | PIX Master por chave. POST body: `amount`, `destinationPixKey`, `destinationPixKeyType`, `description?` + header `Idempotency-Key`. Persistido em `platform_pix_transfer`; Asaas valida com `type=TRANSFER` + `transfer.id`. GET paginado. Resposta: `id` Asaas string, `amount`, `status`, destino — sem `accountId`. COMPLETED para chave Theron credita `TRANSFER_IN` local uma vez (mesmo trilho que QR pay Master; `PAYMENT_RECEIVED` auto-gerado não duplica — race tratada no BE) |
+| POST | `/api/v1/webhooks/asaas/transfer-validation` | **Interno (Asaas → BE, não consumido pelo FE).** Token `ASAAS_TRANSFER_VALIDATION_TOKEN`. Tipos: `TRANSFER` (transfer por chave) ou `PIX_QR_CODE` (pay QR copia e cola). Resposta: `{ "status": "APPROVED" \| "REFUSED", "refuseReason"?: string }` |
 | POST | `/api/v1/admin/platform-account/pix/reconcile-credits` | Backfill créditos locais de transfers Master COMPLETED sem `credit_transaction_id` → `{ credited }` |
 | POST | `/api/v1/admin/payment-orders/{id}/sync` | Reconciliar ordem `PROCESSING` com `GET /transfers/{id}` Asaas; 404 → `FAILED` (sem auto-reverter ledger) |
 | GET | `/api/v1/admin/transactions` | Extrato global paginado (`organizationId`, `accountId`, `from`, `to`, `type`, `status`) — `AdminTransactionResponse` |
@@ -517,6 +525,7 @@ Logo: `public/brand/theron-mark.png` no `LogoMark`. Timestamps do extrato admin:
 - Login/signup/refresh/logout funcionam contra o backend local via rewrite.
 - Dashboard mostra saldo real de `GET /me/dashboard` da Account própria.
 - Enviar PIX usa `Idempotency-Key` e **não** espera `PENDING_APPROVAL` por policy.
+- Copia e cola em `/transferencias` funciona para OWNER, FINANCE e EMPLOYEE (não só Admin Master): colar EMV reconhece o payload, **preserva espaços** e chama `POST /pix/qr-codes/pay`. Destino sem opção Beneficiário.
 - Maria (outra org) não vê contas de João (403 tratado).
 - EMPLOYEE envia PIX da própria Account; não vê PaymentOrders.
 - FINANCE cria PaymentOrder; OWNER aprova; FINANCE não aprova.

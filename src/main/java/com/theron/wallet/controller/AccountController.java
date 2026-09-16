@@ -12,7 +12,9 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.exception.InvalidRequestException;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.LedgerService;
 import com.theron.wallet.service.StatementService;
@@ -60,7 +62,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<AccountResponse> findById(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findById(id));
     }
 
@@ -86,17 +88,17 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account or wallet not found")
     })
     public ResponseEntity<WalletResponse> findWallet(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(accountService.findWallet(id));
     }
 
     @PostMapping("/{accountId}/asaas-subaccount")
-    @Operation(summary = "Provision or retry Asaas subaccount bind for the caller's own account")
+    @Operation(summary = "Deprecated — use POST /api/v1/asaas/onboarding instead")
     public ResponseEntity<AsaasBindResponse> provisionAsaas(@PathVariable UUID accountId) {
         UUID actor = actorResolver.requireProductUserId();
-        // Own-account isolation: any product role may provision/repair their own Account bind.
         resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.WALLET_READ);
-        return ResponseEntity.ok(accountAsaasProvisioningService.provisionByAccountId(accountId, null));
+        throw new InvalidRequestException(
+                "Legacy Asaas provisioning is disabled. Complete financial onboarding at POST /api/v1/asaas/onboarding");
     }
 
     @GetMapping("/{id}/ledger-balance")
@@ -106,7 +108,7 @@ public class AccountController {
             @ApiResponse(responseCode = "404", description = "Account not found")
     })
     public ResponseEntity<LedgerBalanceResponse> ledgerBalance(@PathVariable UUID id) {
-        resourceAuthorization.requireAccount(actorResolver.requireProductUserId(), id, PermissionCodes.WALLET_READ);
+        resourceAuthorization.requireAccount(actorResolver.requireActor(), id, PermissionCodes.WALLET_READ);
         return ResponseEntity.ok(ledgerService.getBalance(id));
     }
 

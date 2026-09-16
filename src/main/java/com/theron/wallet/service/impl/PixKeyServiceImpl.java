@@ -13,6 +13,7 @@ import com.theron.wallet.integration.AsaasPixClient;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.service.PixKeyService;
+import com.theron.wallet.util.PixEmvPayloadUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -78,16 +79,14 @@ public class PixKeyServiceImpl implements PixKeyService {
         log.info("Creating static PIX QR code: subaccountId={}, pixKeyId={}", subaccountId, pixKeyId);
 
         String apiKey = resolveApiKey(subaccountId);
-        AsaasPixStaticQrCodeRequest qrRequest = AsaasPixStaticQrCodeRequest.builder()
-                .value(request.getValue())
-                .description(request.getDescription())
-                .format("ALL")
-                .build();
+        String addressKey = resolveAddressKey(apiKey, pixKeyId);
+        AsaasPixStaticQrCodeRequest qrRequest = PixEmvPayloadUtils.buildStaticQrCodeRequest(
+                request.getValue(), request.getDescription());
 
-        AsaasPixStaticQrCodeResponse response = asaasPixClient.createStaticQrCode(apiKey, pixKeyId, qrRequest);
+        AsaasPixStaticQrCodeResponse response = asaasPixClient.createStaticQrCode(apiKey, addressKey, qrRequest);
 
         log.info("Static PIX QR code created: subaccountId={}, qrCodeId={}", subaccountId, response.getId());
-        return toQrCodeResponse(response);
+        return toQrCodeResponse(response, request.getValue());
     }
 
     @Override
@@ -115,6 +114,19 @@ public class PixKeyServiceImpl implements PixKeyService {
         return asaasApiKeyResolver.resolveForSubaccount(subaccountId);
     }
 
+    private String resolveAddressKey(String apiKey, String asaasPixKeyId) {
+        AsaasListResponse<AsaasPixKeyResponse> response = asaasPixClient.listPixKeys(apiKey);
+        if (response == null || response.getData() == null) {
+            throw new ResourceNotFoundException("PixKey", "id", asaasPixKeyId);
+        }
+        return response.getData().stream()
+                .filter(key -> asaasPixKeyId.equals(key.getId()))
+                .map(AsaasPixKeyResponse::getKey)
+                .filter(key -> key != null && !key.isBlank())
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("PixKey", "id", asaasPixKeyId));
+    }
+
     private PixKeyResponse toPixKeyResponse(AsaasPixKeyResponse r) {
         return PixKeyResponse.builder()
                 .id(r.getId())
@@ -126,7 +138,7 @@ public class PixKeyServiceImpl implements PixKeyService {
                 .build();
     }
 
-    private PixStaticQrCodeResponse toQrCodeResponse(AsaasPixStaticQrCodeResponse r) {
+    private PixStaticQrCodeResponse toQrCodeResponse(AsaasPixStaticQrCodeResponse r, java.math.BigDecimal requestValue) {
         return PixStaticQrCodeResponse.builder()
                 .id(r.getId())
                 .addressKey(r.getAddressKey())
@@ -135,7 +147,7 @@ public class PixKeyServiceImpl implements PixKeyService {
                 .encodedImage(r.getEncodedImage())
                 .expirationDate(r.getExpirationDate())
                 .allowsMultiplePayments(r.getAllowsMultiplePayments())
-                .value(r.getValue())
+                .value(PixEmvPayloadUtils.resolveQrCodeValue(r.getValue(), requestValue, r.getPayload()))
                 .build();
     }
 }

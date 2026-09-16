@@ -98,7 +98,12 @@ public class PlatformSplitServiceImpl implements PlatformSplitService {
                 .percentualValue(hasPercent ? config.getPercent() : null)
                 .fixedValue(hasFixed ? config.getFixedAmount() : null)
                 .build();
-        paymentRequest.setSplit(List.of(item));
+        java.util.ArrayList<AsaasSplitItem> splits = new java.util.ArrayList<>();
+        if (paymentRequest.getSplit() != null) {
+            splits.addAll(paymentRequest.getSplit());
+        }
+        splits.add(item);
+        paymentRequest.setSplit(splits);
     }
 
     private PlatformSplitConfig load() {

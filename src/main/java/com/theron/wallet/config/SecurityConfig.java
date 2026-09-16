@@ -97,6 +97,8 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout"
                         ).permitAll()
 
+                        .requestMatchers(HttpMethod.POST, "/api/v1/oauth/token").permitAll()
+
                         // Swagger / OpenAPI
                         .requestMatchers(
                                 "/swagger-ui.html",
@@ -165,36 +167,35 @@ public class SecurityConfig {
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-
         CorsConfiguration configuration = new CorsConfiguration();
 
         configuration.setAllowedOrigins(List.of(
-                "http://localhost:3000"
+            "http://localhost:3000"
         ));
 
         configuration.setAllowedMethods(List.of(
-                "GET",
-                "POST",
-                "PUT",
-                "PATCH",
-                "DELETE",
-                "OPTIONS"
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS"
         ));
 
         configuration.setAllowedHeaders(List.of(
-                "Authorization",
-                "Content-Type"
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Origin",
+            "Idempotency-Key"
         ));
 
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source =
-                new UrlBasedCorsConfigurationSource();
+            new UrlBasedCorsConfigurationSource();
 
-        source.registerCorsConfiguration(
-                "/**",
-                configuration
-        );
+        source.registerCorsConfiguration("/**", configuration);
 
         return source;
     }

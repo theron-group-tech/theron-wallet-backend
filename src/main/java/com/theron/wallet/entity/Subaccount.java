@@ -1,5 +1,6 @@
 package com.theron.wallet.entity;
 
+import com.theron.wallet.enums.AsaasPersonType;
 import com.theron.wallet.enums.SubaccountStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -10,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -109,6 +111,18 @@ public class Subaccount {
 
     @Column(name = "company_type", length = 50)
     private String companyType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "person_type", length = 20)
+    private AsaasPersonType personType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "onboarding_id")
+    private AsaasOnboarding onboarding;
+
+    @Column(name = "legacy_auto_provisioned", nullable = false)
+    @Builder.Default
+    private boolean legacyAutoProvisioned = false;
 
     // ── Audit ────────────────────────────────────────────────────────────────
     @Column(name = "status_reason", length = 500)

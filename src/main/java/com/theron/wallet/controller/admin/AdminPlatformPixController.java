@@ -1,8 +1,12 @@
 package com.theron.wallet.controller.admin;
 
 import com.theron.wallet.dto.request.CreatePlatformPixKeyRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePlatformPixTransferRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
+import com.theron.wallet.dto.response.PlatformPixPayQrCodeResponse;
 import com.theron.wallet.dto.response.PlatformPixKeyResponse;
 import com.theron.wallet.dto.response.PlatformPixTransferResponse;
 import com.theron.wallet.enums.PixKeyType;
@@ -71,6 +75,36 @@ public class AdminPlatformPixController {
         actorResolver.requireAdmin();
         platformPixService.deleteKey(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/qr-codes")
+    @Operation(summary = "Create static PIX QR code for a Platform Account key")
+    public ResponseEntity<AccountPixQrCodeResponse> createQrCode(
+            @Valid @RequestBody CreatePlatformPixQrCodeRequest request) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformPixService.createQrCode(request));
+    }
+
+    @PostMapping("/qr-codes/pay")
+    @Operation(
+            summary = "Pay a PIX QR code (copia e cola) from Platform Account",
+            description = "Uses Asaas POST /pix/qrCodes/pay. Idempotency-Key header is mandatory.")
+    public ResponseEntity<PlatformPixPayQrCodeResponse> payQrCode(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody CreatePlatformPixPayQrCodeRequest request) {
+        actorResolver.requireAdmin();
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for Platform PIX QR payments");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(platformPixService.payQrCode(request, idempotencyKey.trim()));
+    }
+
+    @GetMapping("/transactions/{id}")
+    @Operation(summary = "Retrieve Platform Account PIX transaction status from Asaas")
+    public ResponseEntity<PlatformPixPayQrCodeResponse> getPixTransaction(@PathVariable String id) {
+        actorResolver.requireAdmin();
+        return ResponseEntity.ok(platformPixService.getPixTransaction(id));
     }
 
     @PostMapping("/transfers")

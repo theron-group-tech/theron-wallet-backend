@@ -67,7 +67,7 @@ public class OrganizationController {
     })
     public ResponseEntity<OrganizationResponse> findById(@PathVariable UUID id) {
         resourceAuthorization.requireOrganization(
-                actorResolver.requireProductUserId(), id, PermissionCodes.ORGANIZATION_READ);
+                actorResolver.requireActor(), id, PermissionCodes.ORGANIZATION_READ);
         return ResponseEntity.ok(organizationService.findById(id));
     }
 

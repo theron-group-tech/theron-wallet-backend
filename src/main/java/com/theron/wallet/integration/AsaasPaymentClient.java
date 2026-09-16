@@ -1,10 +1,12 @@
 package com.theron.wallet.integration;
 
+import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPaymentRequest;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasPixQrCodeResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,8 +35,25 @@ public class AsaasPaymentClient {
         return asaasHttpGateway.get(apiKey, "/payments/{id}", AsaasPaymentResponse.class, paymentId);
     }
 
+    public AsaasListResponse<AsaasPaymentResponse> listPayments(
+            String apiKey, String status, int offset, int limit) {
+        log.info("Listing payments in Asaas: status={}, offset={}, limit={}", status, offset, limit);
+        return asaasHttpGateway.get(
+                apiKey,
+                "/payments?status={status}&offset={offset}&limit={limit}",
+                new ParameterizedTypeReference<AsaasListResponse<AsaasPaymentResponse>>() {},
+                status,
+                offset,
+                limit);
+    }
+
     public AsaasPixQrCodeResponse getPixQrCode(String apiKey, String paymentId) {
         log.info("Retrieving PIX QR code from Asaas: paymentId={}", paymentId);
         return asaasHttpGateway.get(apiKey, "/payments/{id}/pixQrCode", AsaasPixQrCodeResponse.class, paymentId);
+    }
+
+    public void deletePayment(String apiKey, String paymentId) {
+        log.info("Deleting payment in Asaas: id={}", paymentId);
+        asaasHttpGateway.delete(apiKey, "/payments/{id}", paymentId);
     }
 }

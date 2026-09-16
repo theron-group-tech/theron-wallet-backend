@@ -2,6 +2,8 @@
 
 Este documento é a **fonte canônica** do domínio. Substitui o modelo anterior com roles `ADMIN`/`AUDITOR`, carteira coletiva da Organization e `ApprovalPolicy` genérica para PIX pessoal.
 
+**Fluxogramas visuais:** [`FLUXOGRAMA.md`](FLUXOGRAMA.md)
+
 ## Modelo
 
 ```
@@ -34,11 +36,28 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Cria/edita/ativa/suspende Organizations; define OWNER inicial via `POST /admin/organizations/{id}/owners` (cria user + membership OWNER + Account + Asaas). Assign legado: `POST .../admin` com `{ userId }`.
 - Consulta Platform Account / saldo Master (`GET /admin/platform-account`) e extrato global (`GET /admin/transactions`). Divergências Asaas vs ledger local: `GET /admin/platform-account/balance-divergences`.
 - Configura split; administra Platform Account (Master Asaas).
-- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup` (lookup de destino via Asaas `/pix/addressKeys/external`, usado no modal de confirmação de envio) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` (sem FK de Account) para a autorização externa Asaas (`POST /webhooks/asaas/transfer-validation` com `ASAAS_TRANSFER_VALIDATION_TOKEN` / URL). Webhooks TRANSFER_* da Master usam `ASAAS_WEBHOOK_TOKEN` e atualizam o status; se o destino for chave PIX Theron ACTIVE, creditam `TRANSFER_IN` + wallet local (`credit_transaction_id`). Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
+- PIX da Platform Account: `GET/POST/DELETE /admin/platform-account/pix/keys`, `GET /admin/platform-account/pix/keys/lookup`, `POST /admin/platform-account/pix/qr-codes`, `POST /admin/platform-account/pix/qr-codes/pay` (copia e cola) e `GET/POST /admin/platform-account/pix/transfers` com `ASAAS_API_KEY` (Master). Criação de chave só `EVP`. Transfers por chave e pay QR exigem `Idempotency-Key` e são persistidos em `platform_pix_transfer` para autorização externa Asaas — ver **§2.1**. Webhooks `TRANSFER_*` da Master usam `ASAAS_WEBHOOK_TOKEN`; destino chave Theron ACTIVE credita `TRANSFER_IN` + wallet local (`asaas:platform-pix:in:{transferId}`). Transfer por chave e pay QR Master usam o **mesmo crédito único**; o `PAYMENT_RECEIVED` auto-gerado na subconta destino **não** credita de novo (dedupe via `platform_pix_transfer` COMPLETED / `asaas:platform-pix:in` + re-check sob lock da wallet — cobre race `TRANSFER_DONE` × `PAYMENT_RECEIVED`). Backfill: `POST /admin/platform-account/pix/reconcile-credits`.
 - PIX produto: `GET /pix/keys/lookup?accountId&type&key` consulta destino com a apiKey da subconta no modal de envio (exige bind ACTIVE + `pix.transfer`).
-- **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). `wallet.balance` / ledger permanecem espelho interno; dashboard inclui `ledgerBalance` para auditoria.
+- **Saldo exibido** (produto e admin): Asaas `GET /finance/balance` (Master ou apiKey da subconta). No dashboard: `balance` = Asaas; `availableBalance` = `balance −` PIX `PENDING_APPROVAL` (só spend); `ledgerBalance` = `SUM(wallet.balance)` da Account (`wallet.account_id`), **não** a reconstrução de `ledger_entry`. Aviso de divergência na UI compara **`ledgerBalance` × `balance` (Asaas)**, nunca × `availableBalance`. `GET /accounts/{id}/ledger-balance` é conferência do livro. PIX recebido (QR estático / Cobrar ou chave) credita essa wallet via `PAYMENT_RECEIVED` / `PAYMENT_CONFIRMED` sem cobrança Theron prévia (`TRANSFER_IN` COMPLETED, idempotency `asaas:pix:in:{paymentId}`); reenvio não duplica. Master→Theron: crédito único via Platform PIX (`asaas:platform-pix:in:{transferId}`) para transfer por chave e QR pay; race `TRANSFER_*`/`PAYMENT_RECEIVED` é tratada no BE (sem mudança de UI); `PAYMENT_RECEIVED` auto-gerado e `inbound-reconcile` não duplicam. Pay Theron→Theron (`POST /pix/qr-codes/pay` com chave ACTIVE de outra Account) também credita o destino na hora (mesmo `TRANSFER_IN` / idempotency; webhook posterior não duplica). Admin: `POST /api/v1/admin/accounts/{accountId}/inbound-reconcile` credita payments RECEIVED/CONFIRMED órfãos; `POST /api/v1/admin/accounts/{accountId}/inbound-dedupe` estorna `TRANSFER_IN` duplicados `asaas:pix:in:pay_*` quando já existe crédito Platform PIX do mesmo valor — inclusive `platform_pix_transfer` COMPLETED sem `creditTransactionId` ou slot via `asaas:platform-pix:in:%` (débito na wallet + status `REVERSED`); `POST /api/v1/admin/subaccounts/{id}/webhooks/repair` (e `.../webhooks/repair-all`) registra webhooks `PAYMENT_*`/`TRANSFER_*` na subconta Asaas (`ASAAS_WEBHOOK_URL` + `authToken = webhookToken`).
+- **API B2B (OAuth Client Credentials):** parceiros usam `POST /api/v1/oauth/token` e Bearer JWT `principal=CLIENT` vinculado à Organization + **uma Account (1:1)** + scopes. Cobranças multi-tenant: `POST/GET /api/v1/charges` e antecipações ` /api/v1/anticipations` (tenant só das credenciais; sem `accountId` no body). Revogação imediata na próxima request. Docs: `docs/ifriend/`. Frontend Theron continua em JWT usuário.
 - Não pertence a Organization.
 - Platform Account recebe splits; **não** é subconta filha.
+
+### 2.1 Autorização externa Asaas (`transfer-validation`)
+
+Saídas PIX da Master exigem aprovação via `POST /webhooks/asaas/transfer-validation` (token `ASAAS_TRANSFER_VALIDATION_TOKEN`; URL `ASAAS_TRANSFER_VALIDATION_URL` no painel Asaas Master).
+
+| Operação | `type` | Objeto | Campo chave |
+|----------|--------|--------|-------------|
+| Transfer por chave (Master) | `TRANSFER` | `transfer` | `transfer.id` → `asaas_transfer_id` |
+| Pay QR copia e cola (Master) | `PIX_QR_CODE` | `pixQrCode` | `pixQrCode.id` → `asaas_pix_transaction_id` |
+| Pay QR copia e cola (subconta) | `PIX_QR_CODE` | `pixQrCode` | `pixQrCode.id` → `pix_transaction.asaas_pix_transaction_id` |
+
+**Sequência pay QR:** pré-registro em `platform_pix_transfer` (`status=PROCESSING`, `asaas_transfer_id` null) → chamada Asaas `POST /pix/qrCodes/pay` → atualiza `asaas_pix_transaction_id` (+ `asaas_transfer_id` se disponível) → Asaas chama `transfer-validation` com `type=PIX_QR_CODE` → `APPROVED` → webhook `TRANSFER_*` confirma.
+
+**Fallbacks de lookup:** `externalReference` (= idempotency key) ou pending QR pay recente (valor + janela de 10 min). Sem registro prévio, o Asaas recusa com *"Autorização externa foi recusada"*.
+
+**Ops:** URL de validação = `{BACKEND}/api/v1/webhooks/asaas/transfer-validation`; token = `ASAAS_TRANSFER_VALIDATION_TOKEN` no Railway.
 
 ## 3. Organization
 
@@ -48,15 +67,17 @@ A Organization **não** possui saldo coletivo. Recursos financeiros pertencem à
 - Operações normais exigem `ACTIVE`.
 - **Não** tem Wallet/saldo coletivo.
 
-## 3.1 Asaas subconta
+## 3.1 Asaas subconta e onboarding financeiro
 
-- Subcontas Asaas exigem **CNPJ** (titular PJ). CPF é rejeitado no provision (`422`).
-- **OWNER:** CNPJ da Organization (ou informado no admin).
-- **FINANCE/EMPLOYEE:** CNPJ **próprio** (MEI/filial), distinto por Account.
-- `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; sem URL, create não registra webhooks inline. Necessário em produção para eventos de pagamento/transfer.
-- Operações PIX/deposit/withdraw exigem subconta `ACTIVE` (não `PENDING_EVALUATION`).
-- **Aprovado ≠ Aguardando ativação:** “Aguardando ativação” no painel Asaas é senha/login da UI (e-mail na conta pai no Sandbox). Não é pré-requisito para PIX via API.
-- No Sandbox o BE chama `POST /accounts/{id}/approve` e sincroniza `GET /myAccount/status` (apiKey da subconta). Se docs pendentes, `AsaasBindResponse.onboardingUrl` é exposto.
+- **Organization** continua exigindo **CNPJ** (14 dígitos) — tenant administrativo.
+- **Subconta Asaas** (titular da Account): **CPF (PF)** ou **CNPJ (PJ)**, escolhido pelo titular no wizard self-service (`POST/PUT /api/v1/asaas/onboarding/*`).
+- **Sem auto-provision:** criar Account, membro ou Owner **não** cria subconta Asaas automaticamente. Titular conclui onboarding após login.
+- `POST /api/v1/accounts/{id}/asaas-subaccount` está **descontinuado** — usar onboarding.
+- Operações PIX/transfer/PaymentOrder (origem) exigem subconta `ACTIVE` **e** onboarding `APPROVED` (`financialResourcesEnabled=true` em `AccountResponse`).
+- Subcontas legadas (auto-provisionadas antes da migration) têm `legacy_auto_provisioned=true` e seguem liberadas se `ACTIVE`.
+- `ASAAS_WEBHOOK_URL` é **opcional** em dev/sandbox; necessário em produção. Registrar eventos `ACCOUNT_STATUS_*` além de `PAYMENT_*` e `TRANSFER_*`.
+- No Sandbox o BE pode chamar `POST /accounts/{id}/approve` após submit; status final via webhook ou `GET /myAccount/status`.
+- Se documentação pendente, `onboardingUrl` é exposto na resposta do onboarding.
 
 ## 4. Membership
 
@@ -94,6 +115,8 @@ Provisionamento Asaas idempotente. Soft suspend/remove preserva histórico finan
 - Requer bind Asaas utilizável, saldo, limites, Idempotency-Key em transfer.
 - Sem bind / status ≠ `ACTIVE` / sem apiKey → **422** `ASAAS_ERROR` com mensagem distinta.
 - Criação de chave (`POST /api/v1/pix/keys`): somente `type=EVP` (chave aleatória). A API Asaas não cria CPF, CNPJ, e-mail ou telefone. Outros tipos → **422**. Destino de transferência / beneficiário continua com `CPF`, `CNPJ`, `EMAIL`, `PHONE`, `EVP`.
+- Cobrar (`POST /api/v1/pix/qr-codes`): QR estático no Asaas; **não** cria `Transaction` local. Quem paga dispara `PAYMENT_RECEIVED` na subconta destino; o crédito vai na **wallet da Account** (`wallet.account_id`), que é o `ledgerBalance` do dashboard. Subcontas precisam de webhook Asaas com `PAYMENT_*` (`ASAAS_WEBHOOK_URL`); admin pode reparar via `POST /api/v1/admin/subaccounts/{id}/webhooks/repair`.
+- Pay copia e cola (`POST /api/v1/pix/qr-codes/pay`): body `accountId`, `payload`, `amount?`, `description?` + `Idempotency-Key`. Roles com `pix.transfer` (**OWNER, FINANCE, EMPLOYEE**) na **própria Account** — mesma UX em `/transferencias` (colar EMV no campo de chave troca para copia e cola). Pré-registra `Transaction` + `PixTransaction` antes do Asaas; validação externa usa `type=PIX_QR_CODE` (ver **§2.1**). Poll: `GET /api/v1/pix/transactions/{asaasPixTransactionId}?accountId=`. O débito é na origem. Se o destino for chave PIX **ACTIVE** Theron de **outra** Account, o BE credita `TRANSFER_IN` no destino no próprio pay (idempotency `asaas:pix:in:{pixTxId}`); caso contrário o crédito chega pelo webhook `PAYMENT_RECEIVED` da cobrança auto-criada no Asaas. Órfãos (Asaas creditou, ledger 0): admin `POST /api/v1/admin/accounts/{accountId}/inbound-reconcile`. Double-credit histórico Master→Theron (ledger > Asaas): admin `POST /api/v1/admin/accounts/{accountId}/inbound-dedupe`.
 
 ## 9. Payment Order
 

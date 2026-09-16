@@ -16,6 +16,7 @@ asaas:
     base-url: https://api-sandbox.asaas.com/v3
     key: test-key
     webhook-token: test-webhook-token
+    transfer-validation-token: test-transfer-validation-token
     webhook-url: https://test.therongroup.com/api/v1/webhooks/asaas
     master-wallet-id: master-wallet-test
     retry:

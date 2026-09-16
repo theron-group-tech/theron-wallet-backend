@@ -1,5 +1,6 @@
 package com.theron.wallet.exception;
 
+import com.theron.wallet.dto.response.OauthErrorResponse;
 import com.theron.wallet.integration.AsaasErrorBodies;
 import com.theron.wallet.integration.AsaasSecretRedactor;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,15 @@ import java.util.List;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(OauthTokenException.class)
+    public ResponseEntity<OauthErrorResponse> handleOauthTokenException(OauthTokenException ex) {
+        log.warn("OAuth token error: {} — {}", ex.getError(), ex.getMessage());
+        return ResponseEntity.status(ex.getStatus()).body(OauthErrorResponse.builder()
+                .error(ex.getError())
+                .errorDescription(ex.getMessage())
+                .build());
+    }
 
     @ExceptionHandler(FieldValidationException.class)
     public ResponseEntity<ApiErrorResponse> handleFieldValidation(
@@ -47,9 +57,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AsaasApiException.class)
     public ResponseEntity<ApiErrorResponse> handleAsaasApiException(AsaasApiException ex, HttpServletRequest request) {
         String asaasDescription = AsaasErrorBodies.extractFirstDescription(ex.getAsaasErrorBody());
-        String message = asaasDescription != null
-                ? "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription)
-                : "Payment provider error. Please try again later.";
+        String message;
+        if (asaasDescription != null) {
+            message = "Asaas validation error: " + AsaasSecretRedactor.redact(asaasDescription);
+        } else if (ex.getAsaasStatusCode() == 404) {
+            message = "PIX key not found in payment provider";
+        } else {
+            message = "Payment provider error. Please try again later.";
+        }
         message = AsaasSecretRedactor.redact(message);
 
         log.error("Asaas API error: status={}, message={}, path={}",
@@ -127,6 +142,17 @@ public class GlobalExceptionHandler {
                 ApiErrorCodes.NOT_FOUND,
                 "Not Found",
                 "The requested resource was not found",
+                request.getRequestURI()));
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMediaTypeNotSupported(
+            org.springframework.web.HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiErrorResponse.of(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE.value(),
+                ApiErrorCodes.INVALID_REQUEST,
+                "Unsupported Media Type",
+                ex.getMessage(),
                 request.getRequestURI()));
     }
 

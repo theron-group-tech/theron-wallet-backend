@@ -13,7 +13,6 @@ import com.theron.wallet.exception.UnauthorizedException;
 import com.theron.wallet.repository.PlatformPixTransferRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
-import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.InboundTransferService;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
@@ -40,7 +39,7 @@ public class InboundTransferServiceImpl implements InboundTransferService {
     private final SubaccountRepository subaccountRepository;
     private final PlatformPixTransferRepository platformPixTransferRepository;
     private final TransactionRepository transactionRepository;
-    private final WalletRepository walletRepository;
+    private final InboundWalletResolver inboundWalletResolver;
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
@@ -143,8 +142,7 @@ public class InboundTransferServiceImpl implements InboundTransferService {
             AsaasWebhookPayload.Transfer transfer,
             BigDecimal amount,
             String event) {
-        Wallet wallet = walletRepository.findBySubaccountIdWithLock(subaccount.getId())
-                .orElseThrow(() -> new IllegalStateException("Wallet not found for Asaas subaccount"));
+        Wallet wallet = inboundWalletResolver.resolveAndLink(subaccount);
 
         Transaction transaction = Transaction.builder()
                 .wallet(wallet)

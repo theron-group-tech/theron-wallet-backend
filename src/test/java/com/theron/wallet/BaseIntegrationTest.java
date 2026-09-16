@@ -1,8 +1,11 @@
 package com.theron.wallet;
+import com.theron.wallet.dto.asaas.AsaasAccountStatusResponse;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
+import com.theron.wallet.integration.AsaasAccountStatusClient;
 import com.theron.wallet.dto.request.LoginRequest;
+import com.theron.wallet.integration.AsaasAnticipationClient;
 import com.theron.wallet.integration.AsaasCustomerClient;
 import com.theron.wallet.integration.AsaasPaymentClient;
 import com.theron.wallet.integration.AsaasPixClient;
@@ -63,7 +66,11 @@ public abstract class BaseIntegrationTest {
     @MockitoBean
     protected AsaasPixClient asaasPixClient;
     @MockitoBean
+    protected AsaasAccountStatusClient asaasAccountStatusClient;
+    @MockitoBean
     protected AsaasApiKeyResolver asaasApiKeyResolver;
+    @MockitoBean
+    protected AsaasAnticipationClient asaasAnticipationClient;
     @Autowired
     protected AuthService authService;
     @Autowired
@@ -131,6 +138,15 @@ public abstract class BaseIntegrationTest {
     void cleanDatabase() {
         jdbcTemplate.execute("TRUNCATE TABLE audit_log");
         jdbcTemplate.execute("DELETE FROM payment_order");
+        jdbcTemplate.execute("DELETE FROM charge_split");
+        jdbcTemplate.execute("DELETE FROM charge_installment");
+        jdbcTemplate.execute("DELETE FROM charge");
+        jdbcTemplate.execute("DELETE FROM billing_customer");
+        jdbcTemplate.execute("DELETE FROM receivable_anticipation");
+        jdbcTemplate.execute("DELETE FROM oauth_client_audit");
+        jdbcTemplate.execute("DELETE FROM oauth_client_scope");
+        jdbcTemplate.execute("DELETE FROM oauth_client_account");
+        jdbcTemplate.execute("DELETE FROM oauth_client");
         baseNotificationRepository.deleteAll();
         jdbcTemplate.execute("DELETE FROM asaas_webhook_event");
         jdbcTemplate.execute("DELETE FROM asaas_reconciliation");
@@ -140,6 +156,7 @@ public abstract class BaseIntegrationTest {
         baseLedgerAccountRepository.deleteAll();
         baseApprovalActionRepository.deleteAll();
         baseApprovalRequestRepository.deleteAll();
+        jdbcTemplate.execute("DELETE FROM platform_pix_transfer");
         basePixTransactionRepository.deleteAll();
         baseTransactionRepository.deleteAll();
         baseTransactionLimitRepository.deleteAll();
@@ -149,6 +166,7 @@ public abstract class BaseIntegrationTest {
         baseBeneficiaryRepository.deleteAll();
         baseWalletRepository.deleteAll();
         baseSubaccountRepository.deleteAll();
+        jdbcTemplate.execute("DELETE FROM asaas_onboarding");
         baseAccountRepository.deleteAll();
         baseCustomerRepository.deleteAll();
         baseAuthSessionRepository.deleteAll();
@@ -177,6 +195,13 @@ public abstract class BaseIntegrationTest {
                     .apiKey("$aact_hmlg_test_key_" + suffix)
                     .build();
         });
+        when(asaasAccountStatusClient.getStatus(any())).thenReturn(
+                AsaasAccountStatusResponse.builder()
+                        .general("APPROVED")
+                        .commercialInfo("APPROVED")
+                        .build());
+        when(asaasAccountStatusClient.listDocuments(any())).thenReturn(java.util.Collections.emptyList());
+        when(asaasAccountStatusClient.firstOnboardingUrl(any())).thenReturn(null);
     }
 
     protected String adminAccessToken() {

@@ -12,13 +12,9 @@ import com.theron.wallet.dto.response.OrganizationResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.AuditAction;
-import com.theron.wallet.enums.DocumentType;
 import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.RoleCode;
-import com.theron.wallet.exception.AsaasErrorException;
 import com.theron.wallet.exception.ForbiddenException;
-import com.theron.wallet.exception.InvalidRequestException;
-import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.security.OrganizationContextResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
@@ -30,7 +26,6 @@ import com.theron.wallet.service.OrganizationMembershipService;
 import com.theron.wallet.service.OrganizationService;
 import com.theron.wallet.service.RoleAssignmentService;
 import com.theron.wallet.service.UserService;
-import com.theron.wallet.util.AsaasDocumentRules;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -51,7 +46,6 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     private final RoleAssignmentService roleAssignmentService;
     private final UserService userService;
     private final AccountService accountService;
-    private final AccountRepository accountRepository;
     private final AccountAsaasProvisioningService provisioningService;
     private final ResourceAuthorization resourceAuthorization;
     private final AuditLogService auditLogService;
@@ -77,13 +71,8 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     public OrganizationEmployeeResponse createEmployee(UUID actorUserId, CreateOrganizationEmployeeRequest request) {
         UUID organizationId = organizationContextResolver.requireSingleOrganizationId(actorUserId);
         organizationContextResolver.requireOwner(organizationId, actorUserId);
-        requireActiveAdminBind(organizationId, actorUserId);
 
         OrganizationResponse organization = organizationService.findById(organizationId);
-        if (organization.getDocumentType() != DocumentType.CNPJ) {
-            throw new InvalidRequestException(
-                    "Organization must use CNPJ before creating employees with Asaas subaccounts");
-        }
 
         UserResponse user = userService.create(CreateUserRequest.builder()
                 .name(request.getName())
@@ -104,17 +93,6 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
         roleAssignmentService.assignRolesInternal(
                 organizationId, user.getId(), List.of(role.name()));
 
-        DocumentType documentType = request.getDocumentType() == null ? DocumentType.CNPJ : request.getDocumentType();
-        if (documentType != DocumentType.CNPJ) {
-            throw new InvalidRequestException(AsaasDocumentRules.CNPJ_REQUIRED_MESSAGE);
-        }
-        try {
-            AsaasDocumentRules.requireCnpj(request.getDocument(), "document");
-        } catch (IllegalArgumentException ex) {
-            throw new InvalidRequestException(ex.getMessage());
-        }
-        String employeeCnpj = AsaasDocumentRules.normalize(request.getDocument());
-
         AccountType accountType = role == RoleCode.FINANCE ? AccountType.MAIN : AccountType.EMPLOYEE;
         AccountResponse account = accountService.create(
                 organizationId,
@@ -123,7 +101,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                         .type(accountType)
                         .build(),
                 user.getId(),
-                employeeCnpj);
+                null);
 
         AsaasBindResponse bind = provisioningService.currentBind(account.getId());
         auditLogService.record(
@@ -135,8 +113,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
                 Map.of(
                         "employeeUserId", user.getId().toString(),
                         "accountId", account.getId().toString(),
-                        "role", role.name(),
-                        "documentType", documentType.name()));
+                        "role", role.name()));
 
         return OrganizationEmployeeResponse.builder()
                 .userId(user.getId())
@@ -186,15 +163,5 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     public AsaasBindResponse repairAsaasBind(UUID actorUserId, UUID accountId) {
         resourceAuthorization.requireAccount(actorUserId, accountId, PermissionCodes.ORGANIZATION_UPDATE);
         return provisioningService.provisionByAccountId(accountId, null);
-    }
-
-    private void requireActiveAdminBind(UUID organizationId, UUID actorUserId) {
-        var account = accountRepository.findByOrganization_IdAndOwnerUser_Id(organizationId, actorUserId)
-                .orElseThrow(() -> new AsaasErrorException(
-                        "Organization admin must provision their own Asaas subaccount before creating employees"));
-        if (!provisioningService.hasActiveBind(account.getId())) {
-            throw new AsaasErrorException(
-                    "Organization admin must provision their own Asaas subaccount before creating employees");
-        }
     }
 }

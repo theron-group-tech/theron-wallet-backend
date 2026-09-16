@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.67",
+    "ai": "^7.0.102",
+    "framer-motion": "^13.3.0",
+    "lucide-react": "^1.46.0"
+  }
+}

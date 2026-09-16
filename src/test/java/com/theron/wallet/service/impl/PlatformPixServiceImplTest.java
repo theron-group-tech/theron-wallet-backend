@@ -1,6 +1,14 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasListResponse;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
+import com.theron.wallet.dto.request.CreatePlatformPixPayQrCodeRequest;
+import com.theron.wallet.dto.request.CreatePlatformPixQrCodeRequest;
+import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.entity.Account;
 import com.theron.wallet.entity.Organization;
 import com.theron.wallet.entity.PixKey;
@@ -18,6 +26,7 @@ import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.service.NotificationService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
+import com.theron.wallet.exception.InvalidRequestException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -26,10 +35,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
@@ -102,12 +113,64 @@ class PlatformPixServiceImplTest {
                     return transaction;
                 });
 
-        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE");
-        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE");
+        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE", null, null);
+        service.applyWebhookStatus("transfer-master-1", "TRANSFER_DONE", null, null);
 
         assertThat(row.getCreditTransactionId()).isEqualTo(transactionId);
         verify(walletService, times(1)).credit(walletId, new BigDecimal("42.50"));
         verify(notificationService, times(1)).notifyUsersWithPermission(
                 eq(organizationId), any(), any(), any(), eq(transactionId), any());
+    }
+
+    @Test
+    void createQrCodeUsesMasterApiKeyAndReturnsPayload() {
+        when(asaasProperties.getKey()).thenReturn("master-api-key");
+        when(asaasPixClient.listPixKeys("master-api-key")).thenReturn(
+                AsaasListResponse.<AsaasPixKeyResponse>builder()
+                        .data(List.of(AsaasPixKeyResponse.builder()
+                                .id("pix-key-asaas-1")
+                                .key("evp-master-key-1")
+                                .type("EVP")
+                                .status("ACTIVE")
+                                .build()))
+                        .build());
+
+        when(asaasPixClient.createStaticQrCode(
+                eq("master-api-key"),
+                eq("evp-master-key-1"),
+                any()))
+                .thenReturn(AsaasPixStaticQrCodeResponse.builder()
+                        .payload("00020126...")
+                        .encodedImage("data:image/png;base64,abc")
+                        .value(new BigDecimal("25.00"))
+                        .description("Cobrança teste")
+                        .build());
+
+        AccountPixQrCodeResponse response = service.createQrCode(CreatePlatformPixQrCodeRequest.builder()
+                .pixKeyId("pix-key-asaas-1")
+                .value(new BigDecimal("25.00"))
+                .description("Cobrança teste")
+                .build());
+
+        assertThat(response.getPayload()).isEqualTo("00020126...");
+        assertThat(response.getEncodedImage()).isEqualTo("data:image/png;base64,abc");
+        assertThat(response.getValue()).isEqualByComparingTo(new BigDecimal("25.00"));
+        assertThat(response.getDescription()).isEqualTo("Cobrança teste");
+        verify(asaasPixClient).createStaticQrCode(eq("master-api-key"), eq("evp-master-key-1"), any());
+    }
+
+    @Test
+    void payQrCodeRejectsMismatchedAmount() {
+        when(asaasProperties.getKey()).thenReturn("master-api-key");
+        String payload =
+                "00020126580014br.gov.bcb.pix01365d276f1d-6264-45e4-bc5b-d01a4f90d7c5520400005303986540510.005802BR5912iFriend Bank6013Medeiros Neto62290525IFRIENDB00000001770524ASA63040092";
+
+        assertThatThrownBy(() -> service.payQrCode(CreatePlatformPixPayQrCodeRequest.builder()
+                        .payload(payload)
+                        .amount(new BigDecimal("5.00"))
+                        .build(),
+                "idem-1"))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("Amount must match QR code value");
     }
 }

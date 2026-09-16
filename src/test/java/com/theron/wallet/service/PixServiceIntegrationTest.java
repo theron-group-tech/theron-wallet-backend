@@ -1,15 +1,20 @@
 package com.theron.wallet.service;
 
+import com.theron.wallet.security.Actor;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.BaseIntegrationTest;
 import com.theron.wallet.TestFixtures;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
+import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
 import com.theron.wallet.dto.request.CreateAccountRequest;
 import com.theron.wallet.dto.request.CreateOrganizationRequest;
+import com.theron.wallet.dto.request.CreatePixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.request.CreateUserRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
@@ -20,6 +25,7 @@ import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.dto.response.UserResponse;
 import com.theron.wallet.entity.AccountLimit;
 import com.theron.wallet.entity.ApprovalPolicy;
+import com.theron.wallet.entity.PixKey;
 import com.theron.wallet.entity.PixTransaction;
 import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.entity.Transaction;
@@ -27,6 +33,7 @@ import com.theron.wallet.entity.Wallet;
 import com.theron.wallet.enums.AccountType;
 import com.theron.wallet.enums.ApprovalPolicyStatus;
 import com.theron.wallet.enums.DocumentType;
+import com.theron.wallet.enums.PixKeyStatus;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.enums.SubaccountStatus;
@@ -35,6 +42,7 @@ import com.theron.wallet.enums.TransactionType;
 import com.theron.wallet.repository.AccountLimitRepository;
 import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.ApprovalPolicyRepository;
+import com.theron.wallet.repository.PixKeyRepository;
 import com.theron.wallet.repository.PixTransactionRepository;
 import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
@@ -65,6 +73,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -98,6 +107,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
     @Autowired private WalletRepository walletRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private PixTransactionRepository pixTransactionRepository;
+    @Autowired private PixKeyRepository pixKeyRepository;
     @Autowired private MockMvc mockMvc;
     @Autowired private PixService pixService;
     @Autowired private WalletService walletService;
@@ -286,6 +296,44 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                             .header("Authorization", bearer(tokenOwnerA)))
                     .andExpect(status().isNoContent());
             verify(asaasPixClient).deletePixKey(anyString(), org.mockito.ArgumentMatchers.eq("prov_1"));
+        }
+
+        @Test
+        @DisplayName("POST /pix/qr-codes returns payload when subaccount active and key exists")
+        void createQrCodeHappyPath() throws Exception {
+            stubCreatePixKey("pix_qr", "evp-qr-key");
+            MvcResult created = mockMvc.perform(post("/api/v1/pix/keys")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreateAccountPixKeyRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .type(PixKeyType.EVP)
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andReturn();
+            AccountPixKeyResponse key = objectMapper.readValue(
+                    created.getResponse().getContentAsString(), AccountPixKeyResponse.class);
+
+            when(asaasPixClient.createStaticQrCode(anyString(), eq("evp-qr-key"), any()))
+                    .thenReturn(AsaasPixStaticQrCodeResponse.builder()
+                            .payload("00020126...")
+                            .encodedImage("data:image/png;base64,xyz")
+                            .value(new BigDecimal("10.00"))
+                            .description("Cobrança dashboard")
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreateAccountPixQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .pixKeyId(key.getId())
+                                    .value(new BigDecimal("10.00"))
+                                    .description("Cobrança dashboard")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.payload").value("00020126..."))
+                    .andExpect(jsonPath("$.pixKeyId").value(key.getId().toString()));
         }
 
         @Test
@@ -550,7 +598,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
             CreatePixTransferRequest body = transferBody(accountA.getId(), "15.00");
             body.setIdempotencyKey(key);
 
-            assertThatThrownBy(() -> pixService.createTransfer(ownerA.getId(), body))
+            assertThatThrownBy(() -> pixService.createTransfer(Actor.user(ownerA.getId()), body))
                     .isInstanceOf(ResourceAccessException.class);
 
             List<Transaction> afterTimeout = transactionRepository.findAll().stream()
@@ -562,7 +610,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
 
             reset(asaasTransferClient);
             stubTransfer("tr_retry");
-            PixTransferResponse retried = pixService.createTransfer(ownerA.getId(), body);
+            PixTransferResponse retried = pixService.createTransfer(Actor.user(ownerA.getId()), body);
             assertThat(retried.getProviderReference()).isEqualTo("tr_retry");
             assertThat(retried.getStatus()).isEqualTo(TransactionStatus.PROCESSING);
 
@@ -571,7 +619,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
                     .thenThrow(new RuntimeException("asaas down"));
             CreatePixTransferRequest failBody = transferBody(accountA.getId(), "12.00");
             failBody.setIdempotencyKey(UUID.randomUUID().toString());
-            assertThatThrownBy(() -> pixService.createTransfer(ownerA.getId(), failBody))
+            assertThatThrownBy(() -> pixService.createTransfer(Actor.user(ownerA.getId()), failBody))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessageContaining("asaas down");
             assertThat(transactionRepository.findAll().stream()
@@ -731,6 +779,111 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
     }
 
     @Nested
+    @DisplayName("QR pay (copia e cola)")
+    class QrPayTests {
+
+        @Test
+        @DisplayName("POST /pix/qr-codes/pay + transfer-validation PIX_QR_CODE APPROVED")
+        void payQrCodeAndTransferValidation() throws Exception {
+            when(asaasPixClient.payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-prod-qr-pay")))
+                    .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                            .id("pix-tx-prod-qr")
+                            .transferId("transfer-prod-qr")
+                            .status("AWAITING_REQUEST")
+                            .value(new BigDecimal("25.00"))
+                            .description("QR pay produto")
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes/pay")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .header(IDEMPOTENCY, "idem-prod-qr-pay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreatePixPayQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .payload("00020126580014br.gov.bcb.pix0136test")
+                                    .amount(new BigDecimal("25.00"))
+                                    .description("QR pay produto")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.id").value("pix-tx-prod-qr"))
+                    .andExpect(jsonPath("$.status").value("PROCESSING"));
+
+            mockMvc.perform(post("/api/v1/webhooks/asaas/transfer-validation")
+                            .header("asaas-access-token", "test-transfer-validation-token")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "type": "PIX_QR_CODE",
+                                      "pixQrCode": {
+                                        "id": "pix-tx-prod-qr",
+                                        "value": 25.00,
+                                        "status": "AWAITING_REQUEST"
+                                      }
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("APPROVED"));
+
+            verify(asaasPixClient).payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-prod-qr-pay"));
+        }
+
+        @Test
+        @DisplayName("pay QR to ACTIVE Theron key of another Account credits destination TRANSFER_IN")
+        void payQrToTheronDestinationCreditsLedger() throws Exception {
+            String destinationKey = "theron-dest-" + UUID.randomUUID().toString().substring(0, 8);
+            var destAccount = accountRepository.findByIdWithOrganization(accountB.getId()).orElseThrow();
+            pixKeyRepository.saveAndFlush(PixKey.builder()
+                    .account(destAccount)
+                    .organization(destAccount.getOrganization())
+                    .type(PixKeyType.EVP)
+                    .key(destinationKey)
+                    .status(PixKeyStatus.ACTIVE)
+                    .providerKeyId("pk_" + destinationKey)
+                    .build());
+
+            Wallet destWalletBefore = walletRepository.findByAccountId(accountB.getId()).orElseThrow();
+            BigDecimal destBalanceBefore = destWalletBefore.getBalance();
+
+            when(asaasPixClient.payQrCode(eq("encrypted-resolved-key"), any(), eq("idem-theron-qr-pay")))
+                    .thenReturn(AsaasPixPayQrCodeResponse.builder()
+                            .id("pix-tx-theron-qr")
+                            .transferId("transfer-theron-qr")
+                            .status("DONE")
+                            .value(new BigDecimal("40.00"))
+                            .description("Theron QR pay")
+                            .endToEndIdentifier("E2E_THERON_QR")
+                            .externalAccount(AsaasPixPayQrCodeResponse.ExternalAccount.builder()
+                                    .addressKey(destinationKey)
+                                    .name("Destino B")
+                                    .build())
+                            .build());
+
+            mockMvc.perform(post("/api/v1/pix/qr-codes/pay")
+                            .header("Authorization", bearer(tokenOwnerA))
+                            .header(IDEMPOTENCY, "idem-theron-qr-pay")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(CreatePixPayQrCodeRequest.builder()
+                                    .accountId(accountA.getId())
+                                    .payload("00020126580014br.gov.bcb.pix0136test")
+                                    .amount(new BigDecimal("40.00"))
+                                    .description("Theron QR pay")
+                                    .build())))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+            Wallet destWalletAfter = walletRepository.findByAccountId(accountB.getId()).orElseThrow();
+            assertThat(destWalletAfter.getBalance())
+                    .isEqualByComparingTo(destBalanceBefore.add(new BigDecimal("40.00")));
+
+            Transaction inbound = transactionRepository.findByAsaasPaymentId("pix-tx-theron-qr").orElseThrow();
+            assertThat(inbound.getType()).isEqualTo(TransactionType.TRANSFER_IN);
+            assertThat(inbound.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+            assertThat(inbound.getIdempotencyKey()).isEqualTo("asaas:pix:in:pix-tx-theron-qr");
+            assertThat(inbound.getAccount().getId()).isEqualTo(accountB.getId());
+        }
+    }
+
+    @Nested
     @DisplayName("Status enum")
     class StatusTests {
 
@@ -813,6 +966,7 @@ class PixServiceIntegrationTest extends BaseIntegrationTest {
         sub.setAsaasAccountId("asaas_acc_" + cpf);
         sub.setAsaasWalletId("asaas_wal_" + cpf);
         sub.setStatus(SubaccountStatus.ACTIVE);
+        sub.setLegacyAutoProvisioned(true);
         sub.setEncryptedApiKey(withApiKey ? new byte[]{1, 2, 3, 4, 5, 6, 7, 8} : null);
         if (!withApiKey) {
             sub.transitionTo(SubaccountStatus.FAILED, "no api key");

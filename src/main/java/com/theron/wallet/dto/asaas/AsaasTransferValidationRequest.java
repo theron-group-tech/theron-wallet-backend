@@ -19,6 +19,20 @@ public class AsaasTransferValidationRequest {
 
     private String type;
     private Transfer transfer;
+    private PixQrCode pixQrCode;
+
+    @Getter
+    @Setter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class PixQrCode {
+        private String id;
+        private BigDecimal value;
+        private String status;
+        private String externalReference;
+    }
 
     @Getter
     @Setter

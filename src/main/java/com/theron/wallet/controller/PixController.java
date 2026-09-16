@@ -2,10 +2,12 @@ package com.theron.wallet.controller;
 
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
 import com.theron.wallet.dto.request.CreateAccountPixQrCodeRequest;
+import com.theron.wallet.dto.request.CreatePixPayQrCodeRequest;
 import com.theron.wallet.dto.request.CreatePixTransferRequest;
 import com.theron.wallet.dto.response.AccountPixKeyResponse;
 import com.theron.wallet.dto.response.AccountPixQrCodeResponse;
 import com.theron.wallet.dto.response.PixKeyLookupResponse;
+import com.theron.wallet.dto.response.PixPayQrCodeResponse;
 import com.theron.wallet.dto.response.PixTransferResponse;
 import com.theron.wallet.enums.PixKeyType;
 import com.theron.wallet.exception.InvalidRequestException;
@@ -47,14 +49,14 @@ public class PixController {
     public ResponseEntity<AccountPixKeyResponse> createKey(
             @Valid @RequestBody CreateAccountPixKeyRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createKey(actorResolver.requireProductUserId(), request));
+                .body(pixService.createKey(actorResolver.requireActor(), request));
     }
 
     @GetMapping("/keys")
     @Operation(summary = "List PIX keys of an Account")
     public ResponseEntity<List<AccountPixKeyResponse>> listKeys(
             @RequestParam UUID accountId) {
-        return ResponseEntity.ok(pixService.listKeys(actorResolver.requireProductUserId(), accountId));
+        return ResponseEntity.ok(pixService.listKeys(actorResolver.requireActor(), accountId));
     }
 
     @GetMapping("/keys/lookup")
@@ -66,7 +68,7 @@ public class PixController {
             @RequestParam PixKeyType type,
             @RequestParam String key) {
         return ResponseEntity.ok(pixService.checkKey(
-                actorResolver.requireProductUserId(), accountId, type, key));
+                actorResolver.requireActor(), accountId, type, key));
     }
 
     @DeleteMapping("/keys/{id}")
@@ -74,7 +76,7 @@ public class PixController {
     public ResponseEntity<Void> deleteKey(
             @PathVariable UUID id
             ) {
-        pixService.deleteKey(actorResolver.requireProductUserId(), id);
+        pixService.deleteKey(actorResolver.requireActor(), id);
         return ResponseEntity.noContent().build();
     }
 
@@ -88,7 +90,7 @@ public class PixController {
         }
         request.setIdempotencyKey(idempotencyKey.trim());
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createTransfer(actorResolver.requireProductUserId(), request));
+                .body(pixService.createTransfer(actorResolver.requireActor(), request));
     }
 
     @GetMapping("/transfers/{id}")
@@ -96,7 +98,7 @@ public class PixController {
     public ResponseEntity<PixTransferResponse> getTransfer(
             @PathVariable UUID id
             ) {
-        return ResponseEntity.ok(pixService.getTransfer(actorResolver.requireProductUserId(), id));
+        return ResponseEntity.ok(pixService.getTransfer(actorResolver.requireActor(), id));
     }
 
     @GetMapping("/transfers")
@@ -105,7 +107,7 @@ public class PixController {
             @RequestParam UUID accountId,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(pixService.listTransfers(
-                actorResolver.requireProductUserId(), accountId, pageable));
+                actorResolver.requireActor(), accountId, pageable));
     }
 
     @PostMapping("/qr-codes")
@@ -113,6 +115,32 @@ public class PixController {
     public ResponseEntity<AccountPixQrCodeResponse> createQrCode(
             @Valid @RequestBody CreateAccountPixQrCodeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(pixService.createQrCode(actorResolver.requireProductUserId(), request));
+                .body(pixService.createQrCode(actorResolver.requireActor(), request));
+    }
+
+    @PostMapping("/qr-codes/pay")
+    @Operation(
+            summary = "Pay a PIX QR code (copia e cola)",
+            description = "Uses Asaas POST /pix/qrCodes/pay on the Account subaccount. "
+                    + "Requires pix.transfer on the actor's own Account (OWNER, FINANCE or EMPLOYEE). "
+                    + "Idempotency-Key header is mandatory.")
+    public ResponseEntity<PixPayQrCodeResponse> payQrCode(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody CreatePixPayQrCodeRequest request) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required for PIX QR payments");
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(pixService.payQrCode(
+                        actorResolver.requireActor(), request, idempotencyKey.trim()));
+    }
+
+    @GetMapping("/transactions/{id}")
+    @Operation(summary = "Poll PIX transaction status after QR pay (Asaas id)")
+    public ResponseEntity<PixPayQrCodeResponse> getPixTransaction(
+            @RequestParam UUID accountId,
+            @PathVariable String id) {
+        return ResponseEntity.ok(pixService.getPixTransaction(
+                actorResolver.requireActor(), accountId, id));
     }
 }

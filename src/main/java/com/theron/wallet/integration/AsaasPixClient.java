@@ -1,11 +1,14 @@
 package com.theron.wallet.integration;
 
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixKeyRequest;
 import com.theron.wallet.dto.asaas.AsaasPixKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeRequest;
 import com.theron.wallet.dto.asaas.AsaasPixStaticQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -54,14 +57,35 @@ public class AsaasPixClient {
     }
 
     public AsaasPixStaticQrCodeResponse createStaticQrCode(
-            String apiKey, String pixKeyId, AsaasPixStaticQrCodeRequest request) {
-        log.info("Creating static PIX QR code in Asaas: pixKeyId={}", pixKeyId);
+            String apiKey, String addressKey, AsaasPixStaticQrCodeRequest request) {
+        log.info("Creating static PIX QR code in Asaas: addressKey={}", addressKey);
+        AsaasPixStaticQrCodeRequest body = request != null ? request : new AsaasPixStaticQrCodeRequest();
+        body.setAddressKey(addressKey);
+        if (body.getFormat() == null) {
+            body.setFormat("ALL");
+        }
         return asaasHttpGateway.post(
                 apiKey,
-                "/pix/addressKeys/{id}/qrCodes/static",
+                "/pix/qrCodes/static",
+                body,
+                AsaasPixStaticQrCodeResponse.class);
+    }
+
+    public AsaasPixPayQrCodeResponse payQrCode(
+            String apiKey, AsaasPixPayQrCodeRequest request, String idempotencyKey) {
+        log.info("Paying PIX QR code in Asaas: value={}", request != null ? request.getValue() : null);
+        return asaasHttpGateway.postFinancial(
+                apiKey,
+                "/pix/qrCodes/pay",
                 request,
-                AsaasPixStaticQrCodeResponse.class,
-                pixKeyId);
+                idempotencyKey,
+                AsaasPixPayQrCodeResponse.class);
+    }
+
+    public AsaasPixTransactionResponse retrievePixTransaction(String apiKey, String transactionId) {
+        log.info("Retrieving PIX transaction in Asaas: id={}", transactionId);
+        return asaasHttpGateway.get(
+                apiKey, "/pix/transactions/{id}", AsaasPixTransactionResponse.class, transactionId);
     }
 
     public void deleteStaticQrCode(String apiKey, String qrCodeId) {
