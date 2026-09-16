@@ -57,11 +57,17 @@ public class MobileScopeServiceImpl implements MobileScopeService {
             }
             return List.of();
         }
-        List<Account> accounts = accountRepository.findByOrganization_IdInOrderByCreatedAtDesc(orgIds);
+
+        // A mobile product user must only see the account he owns. Membership in
+        // an organization does not grant access to the other users' accounts.
+        List<Account> ownedAccounts = accountRepository
+                .findByOrganization_IdInAndOwnerUser_IdOrderByCreatedAtDesc(orgIds, userId);
+
         if (accountId == null) {
-            return accounts;
+            return ownedAccounts;
         }
-        Account match = accounts.stream()
+
+        Account match = ownedAccounts.stream()
                 .filter(account -> account.getId().equals(accountId))
                 .findFirst()
                 .orElse(null);
@@ -71,7 +77,7 @@ public class MobileScopeServiceImpl implements MobileScopeService {
         if (!accountRepository.existsById(accountId)) {
             throw new ResourceNotFoundException("Account", "id", accountId);
         }
-        throw new ForbiddenException("Cannot access another organization's account");
+        throw new ForbiddenException("Cannot access another user's account");
     }
 
     @Override
