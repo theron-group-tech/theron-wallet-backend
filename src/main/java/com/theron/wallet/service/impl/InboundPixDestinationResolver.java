@@ -44,14 +44,19 @@ public class InboundPixDestinationResolver {
     private final SubaccountRepository subaccountRepository;
 
     /**
-     * Backwards-compatible subaccount-only resolver used by existing webhook code.
+     * Legacy subaccount-only API retained for existing callers.
      */
     public Subaccount resolve(AsaasWebhookPayload payload) {
-        Resolution resolution = resolveDestination(payload);
+        Resolution resolution = classify(payload);
         return resolution.isSubaccount() ? resolution.subaccount() : null;
     }
 
-    public Resolution resolveDestination(AsaasWebhookPayload payload) {
+    /**
+     * Explicit destination classification API. The name intentionally differs
+     * from the legacy resolve() method so callers cannot accidentally assign a
+     * Subaccount-returning method to Resolution.
+     */
+    public Resolution classify(AsaasWebhookPayload payload) {
         if (payload == null || payload.getPayment() == null) {
             return Resolution.external(null);
         }
