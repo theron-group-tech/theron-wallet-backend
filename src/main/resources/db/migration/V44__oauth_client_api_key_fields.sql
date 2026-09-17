@@ -1,5 +1,5 @@
 -- Theron API Key fields on oauth_client (API Key = OauthClient evolution)
--- V42 b2b onboarding scopes already applied on theron_wallet_test; V43 = platform_pix_keys
+-- V42 = platform_pix_keys; V43 = b2b onboarding scopes
 
 ALTER TABLE oauth_client
     ADD COLUMN IF NOT EXISTS api_key_prefix VARCHAR(48),
