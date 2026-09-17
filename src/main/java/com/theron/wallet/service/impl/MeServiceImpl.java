@@ -38,6 +38,7 @@ import com.theron.wallet.web.MobilePageables;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -269,12 +270,16 @@ public class MeServiceImpl implements MeService {
     @Transactional(readOnly = true)
     public PageResponse<AccountResponse> accounts(UUID userId, UUID organizationId, Pageable pageable) {
         Pageable clamped = MobilePageables.clamp(pageable);
-        List<UUID> orgIds = mobileScopeService.organizationIds(userId, organizationId);
-        if (orgIds.isEmpty()) {
+        List<Account> ownedAccounts = mobileScopeService.accounts(userId, organizationId, null);
+        if (ownedAccounts.isEmpty()) {
             return PageResponse.from(Page.empty(clamped));
         }
-        return PageResponse.from(accountRepository.findByOrganization_IdIn(orgIds, clamped)
-                .map(this::toEnrichedAccountResponse));
+
+        int start = (int) Math.min(clamped.getOffset(), ownedAccounts.size());
+        int end = Math.min(start + clamped.getPageSize(), ownedAccounts.size());
+        List<Account> pageContent = ownedAccounts.subList(start, end);
+        Page<Account> page = new PageImpl<>(pageContent, clamped, ownedAccounts.size());
+        return PageResponse.from(page.map(this::toEnrichedAccountResponse));
     }
 
     private AccountResponse toEnrichedAccountResponse(Account account) {
