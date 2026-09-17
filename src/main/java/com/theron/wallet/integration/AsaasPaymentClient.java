@@ -4,6 +4,7 @@ import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPaymentRequest;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
 import com.theron.wallet.dto.asaas.AsaasPixQrCodeResponse;
+import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
@@ -33,6 +34,15 @@ public class AsaasPaymentClient {
     public AsaasPaymentResponse retrievePayment(String apiKey, String paymentId) {
         log.info("Retrieving payment from Asaas: id={}", paymentId);
         return asaasHttpGateway.get(apiKey, "/payments/{id}", AsaasPaymentResponse.class, paymentId);
+    }
+
+    public AsaasPixTransactionResponse retrievePixTransaction(String apiKey, String pixTransactionId) {
+        log.info("Retrieving Pix transaction from Asaas: id={}", pixTransactionId);
+        return asaasHttpGateway.get(
+                apiKey,
+                "/pix/transactions/{id}",
+                AsaasPixTransactionResponse.class,
+                pixTransactionId);
     }
 
     public AsaasListResponse<AsaasPaymentResponse> listPayments(
