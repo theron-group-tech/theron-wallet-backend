@@ -55,7 +55,9 @@ public class OauthClientAdminServiceImpl implements OauthClientAdminService {
             PermissionCodes.CHARGES_CREATE,
             PermissionCodes.CHARGES_CANCEL,
             PermissionCodes.ANTICIPATIONS_READ,
-            PermissionCodes.ANTICIPATIONS_CREATE
+            PermissionCodes.ANTICIPATIONS_CREATE,
+            PermissionCodes.ONBOARDING_READ,
+            PermissionCodes.ONBOARDING_SUBMIT
     );
 
     private final OauthClientRepository oauthClientRepository;

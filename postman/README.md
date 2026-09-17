@@ -47,10 +47,12 @@ O restante (`admin_access_token`, `client_id`, `client_secret`, `access_token`, 
    2) Create OAuth Client (1:1 Account)   ← secret aparece UMA vez
 1. OAuth Token
    3) Get Access Token
+1.5 Onboarding Asaas (B2B)
+   4) POST /asaas/onboarding/b2b (+ Idempotency-Key) até financialResourcesEnabled
 2. Conta Wallet Org
-   4) Get Account → Get Wallet → …
+   5) Get Account → Get Wallet → …
 3. Isolamento Security (opcional)
-4. PIX Sandbox (opcional; só com Asaas sandbox)
+4. PIX / Charges / Antecipações
 ```
 
 ### Passo a passo
@@ -59,22 +61,26 @@ O restante (`admin_access_token`, `client_id`, `client_secret`, `access_token`, 
    Usa `admin_email` / `admin_password`. Salva `admin_access_token`.
 
 2. **Create OAuth Client**  
-   Body com `"accountIds": ["{{account_id}}"]` — **exatamente um** ID.  
+   Body com `"accountIds": ["{{account_id}}"]` — **exatamente um** ID. Inclua scopes `onboarding.read` e `onboarding.submit`.  
    Salva `client_id`, `client_secret`, `oauth_client_uuid`.  
    Guarde o secret: não volta a aparecer (só em rotate).
 
 3. **Get Access Token**  
    `grant_type=client_credentials`. Salva `access_token` (~15 min).
 
-4. **Get Account / Get Wallet**  
+4. **Onboarding Asaas**  
+   `POST /api/v1/asaas/onboarding/b2b` com KYC (PF ou PJ) + `Idempotency-Key`.  
+   Confira `GET /asaas/subaccount/status/b2b` → `financialResourcesEnabled: true` (sandbox costuma aprovar na hora).
+
+5. **Get Account / Get Wallet**  
    Bearer do cliente B2B. Wallet grava `wallet_id`.
 
-5. **Isolamento**  
+6. **Isolamento**  
    Preencha `other_account_id` e rode **Get Other Account** → espera **403**.  
    Para revoke: rode **Revoke OAuth Client** e depois **After Revoke - Get Account** → **401**.
 
-6. **PIX**  
-   Só em sandbox. Transferências exigem header `Idempotency-Key`.
+7. **PIX / Charges**  
+   Só com subconta aprovada. Transferências e charges exigem `Idempotency-Key` / `externalReference` conforme a pasta.
 
 ## Pastas da collection
 
@@ -82,13 +88,15 @@ O restante (`admin_access_token`, `client_id`, `client_secret`, `access_token`, 
 |-------|------|--------|
 | `0. Setup Admin` | Bearer admin | Criar/listar/rotacionar/revogar OAuth client |
 | `1. OAuth Token` | client_id/secret | Obter JWT M2M |
+| `1.4 Theron API Key` | Bearer `owner_access_token` / `theron_api_key` | Criar chave OWNER e chamar API com `tk_*` |
+| `1.5 Onboarding Asaas (B2B)` | Bearer `access_token` | Provisionar subconta Asaas (KYC one-shot) |
 | `2. Conta Wallet Org` | Bearer `access_token` | Conta, saldo, org, extrato |
 | `3. Isolamento Security` | Bearer `access_token` | 403 / revoke |
 | `4. PIX Sandbox` | Bearer `access_token` | Chaves e transfers |
 
 ## Scopes usados no Create Client
 
-`organization.read`, `wallet.read`, `transactions.read`, `pix.read`, `pix.create`, `pix.transfer`, `charges.read`, `charges.create`, `charges.cancel`, `anticipations.read`, `anticipations.create`
+`organization.read`, `wallet.read`, `transactions.read`, `pix.read`, `pix.create`, `pix.transfer`, `charges.read`, `charges.create`, `charges.cancel`, `anticipations.read`, `anticipations.create`, `onboarding.read`, `onboarding.submit`
 
 ## Segurança
 

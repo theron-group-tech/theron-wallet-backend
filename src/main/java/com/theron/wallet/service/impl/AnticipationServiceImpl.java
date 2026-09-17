@@ -51,7 +51,7 @@ public class AnticipationServiceImpl implements AnticipationService {
     @Override
     @Transactional(readOnly = true)
     public AnticipationResponse simulate(Actor actor, CreateAnticipationRequest request) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.ANTICIPATIONS_CREATE);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.ANTICIPATIONS_CREATE);
         Account account = loadAccount(accountId);
         List<String> paymentIds = resolvePaymentIds(accountId, request);
         String apiKey = accountAsaasGateway.resolveApiKey(accountId);
@@ -74,7 +74,7 @@ public class AnticipationServiceImpl implements AnticipationService {
     @Override
     @Transactional
     public AnticipationResponse create(Actor actor, CreateAnticipationRequest request) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.ANTICIPATIONS_CREATE);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.ANTICIPATIONS_CREATE);
         Account account = loadAccount(accountId);
         List<String> paymentIds = resolvePaymentIds(accountId, request);
         String apiKey = accountAsaasGateway.resolveApiKey(accountId);
@@ -100,7 +100,7 @@ public class AnticipationServiceImpl implements AnticipationService {
     @Override
     @Transactional(readOnly = true)
     public Page<AnticipationResponse> list(Actor actor, Pageable pageable) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.ANTICIPATIONS_READ);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.ANTICIPATIONS_READ);
         return anticipationRepository.findByAccount_IdOrderByCreatedAtDesc(accountId, pageable)
                 .map(a -> toResponse(a, parsePaymentIds(a.getPaymentIdsJson())));
     }
@@ -108,7 +108,7 @@ public class AnticipationServiceImpl implements AnticipationService {
     @Override
     @Transactional(readOnly = true)
     public AnticipationResponse get(Actor actor, UUID id) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.ANTICIPATIONS_READ);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.ANTICIPATIONS_READ);
         ReceivableAnticipation entity = anticipationRepository.findByIdAndAccount_Id(id, accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Anticipation", "id", id));
         return toResponse(entity, parsePaymentIds(entity.getPaymentIdsJson()));

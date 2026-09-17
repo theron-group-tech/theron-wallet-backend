@@ -8,6 +8,7 @@ import com.theron.wallet.dto.asaas.AsaasAccountStatusResponse;
 import com.theron.wallet.dto.asaas.AsaasSubaccountRequest;
 import com.theron.wallet.dto.asaas.AsaasSubaccountResponse;
 import com.theron.wallet.dto.asaas.AsaasWebhookConfigRequest;
+import com.theron.wallet.dto.request.onboarding.B2bAsaasOnboardingSubmitRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingAccountTypeRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingAddressRequest;
 import com.theron.wallet.dto.request.onboarding.OnboardingBusinessRequest;
@@ -82,7 +83,7 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             return toResponse(onboardingRepository.findByAccountId(account.getId()).orElse(null), account);
         }
         AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId())
-                .orElseGet(() -> createOnboarding(actorUserId, account));
+                .orElseGet(() -> createOnboarding(account));
         if (onboarding.getStatus() == AsaasOnboardingStatus.NOT_STARTED) {
             onboarding.setStatus(AsaasOnboardingStatus.IN_PROGRESS);
             onboarding = onboardingRepository.save(onboarding);
@@ -93,14 +94,134 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
     @Override
     @Transactional(readOnly = true)
     public AsaasOnboardingResponse getCurrent(UUID actorUserId) {
-        Account account = requireOwnAccount(actorUserId);
-        return toResponse(onboardingRepository.findByAccountId(account.getId()).orElse(null), account);
+        return getCurrentForAccount(requireOwnAccount(actorUserId).getId());
     }
 
     @Override
     @Transactional
     public AsaasOnboardingResponse saveAccountType(UUID actorUserId, OnboardingAccountTypeRequest request) {
-        AsaasOnboarding onboarding = requireEditableOnboarding(actorUserId);
+        return saveAccountTypeForAccount(requireOwnAccount(actorUserId), request);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse savePersonal(UUID actorUserId, OnboardingPersonalRequest request) {
+        return savePersonalForAccount(requireOwnAccount(actorUserId), request);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse saveBusiness(UUID actorUserId, OnboardingBusinessRequest request) {
+        return saveBusinessForAccount(requireOwnAccount(actorUserId), request);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse saveAddress(UUID actorUserId, OnboardingAddressRequest request) {
+        return saveAddressForAccount(requireOwnAccount(actorUserId), request);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse saveFinancial(UUID actorUserId, OnboardingFinancialRequest request) {
+        return saveFinancialForAccount(requireOwnAccount(actorUserId), request);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse submit(UUID actorUserId, String idempotencyKey) {
+        Account account = requireOwnAccount(actorUserId);
+        return submitForAccount(account, idempotencyKey, actorUserId);
+    }
+
+    @Override
+    @Transactional
+    public AsaasSubaccountStatusResponse subaccountStatus(UUID actorUserId) {
+        return subaccountStatusForAccount(requireOwnAccount(actorUserId).getId());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AsaasOnboardingResponse getCurrentForAccount(UUID accountId) {
+        Account account = requireAccount(accountId);
+        return toResponse(onboardingRepository.findByAccountId(account.getId()).orElse(null), account);
+    }
+
+    @Override
+    @Transactional
+    public AsaasOnboardingResponse submitOneShotForAccount(
+            UUID accountId, B2bAsaasOnboardingSubmitRequest request, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new InvalidRequestException("Idempotency-Key is required");
+        }
+        if (request.getPersonType() == null) {
+            throw new InvalidRequestException("personType is required");
+        }
+        if (request.getAddress() == null || request.getFinancial() == null) {
+            throw new InvalidRequestException("address and financial are required");
+        }
+
+        Account account = requireAccount(accountId);
+        UUID auditUserId = account.getOwnerUser() != null ? account.getOwnerUser().getId() : null;
+
+        AsaasOnboarding existing = onboardingRepository.findByAccountId(account.getId()).orElse(null);
+        if (existing != null
+                && (existing.getStatus() == AsaasOnboardingStatus.SUBACCOUNT_CREATED
+                || existing.getStatus() == AsaasOnboardingStatus.PENDING_DOCUMENTS
+                || existing.getStatus() == AsaasOnboardingStatus.UNDER_ANALYSIS
+                || existing.getStatus() == AsaasOnboardingStatus.APPROVED
+                || existing.getAsaasAccountId() != null)) {
+            return toResponse(existing, account);
+        }
+        Subaccount existingSub = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
+        if (existingSub != null && hasSubmittedSubaccount(existingSub)) {
+            return toResponse(existing, account);
+        }
+
+        saveAccountTypeForAccount(account, OnboardingAccountTypeRequest.builder()
+                .personType(request.getPersonType())
+                .build());
+
+        if (request.getPersonType() == AsaasPersonType.INDIVIDUAL) {
+            if (request.getPersonal() == null) {
+                throw new InvalidRequestException("personal is required for INDIVIDUAL");
+            }
+            savePersonalForAccount(account, request.getPersonal());
+        } else if (request.getPersonType() == AsaasPersonType.COMPANY) {
+            if (request.getBusiness() == null) {
+                throw new InvalidRequestException("business is required for COMPANY");
+            }
+            saveBusinessForAccount(account, request.getBusiness());
+        } else {
+            throw new InvalidRequestException("Unsupported personType: " + request.getPersonType());
+        }
+
+        saveAddressForAccount(account, request.getAddress());
+        saveFinancialForAccount(account, request.getFinancial());
+        return submitForAccount(account, idempotencyKey, auditUserId);
+    }
+
+    @Override
+    @Transactional
+    public AsaasSubaccountStatusResponse subaccountStatusForAccount(UUID accountId) {
+        Account account = requireAccount(accountId);
+        refreshOperationalStatusFromAsaas(account.getId());
+        Subaccount subaccount = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
+        AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId()).orElse(null);
+        boolean enabled = isFinancialResourcesEnabled(account.getId());
+        return AsaasSubaccountStatusResponse.builder()
+                .accountId(account.getId())
+                .hasSubaccount(subaccount != null && subaccount.getAsaasAccountId() != null)
+                .subaccountStatus(subaccount != null ? subaccount.getStatus() : null)
+                .onboardingStatus(onboarding != null ? onboarding.getStatus() : AsaasOnboardingStatus.NOT_STARTED)
+                .onboardingUrl(onboarding != null ? onboarding.getOnboardingUrl() : null)
+                .financialResourcesEnabled(enabled)
+                .message(resolveStatusMessage(subaccount, onboarding, enabled))
+                .build();
+    }
+
+    private AsaasOnboardingResponse saveAccountTypeForAccount(Account account, OnboardingAccountTypeRequest request) {
+        AsaasOnboarding onboarding = requireEditableOnboardingForAccount(account);
         onboarding.setPersonType(request.getPersonType());
         onboarding.setCurrentStep(request.getPersonType() == AsaasPersonType.COMPANY
                 ? AsaasOnboardingStep.BUSINESS_DATA
@@ -109,10 +230,8 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return toResponse(onboardingRepository.save(onboarding), onboarding.getAccount());
     }
 
-    @Override
-    @Transactional
-    public AsaasOnboardingResponse savePersonal(UUID actorUserId, OnboardingPersonalRequest request) {
-        AsaasOnboarding onboarding = requireEditableOnboarding(actorUserId);
+    private AsaasOnboardingResponse savePersonalForAccount(Account account, OnboardingPersonalRequest request) {
+        AsaasOnboarding onboarding = requireEditableOnboardingForAccount(account);
         if (onboarding.getPersonType() != AsaasPersonType.INDIVIDUAL) {
             throw new InvalidRequestException("Personal data is only valid for INDIVIDUAL accounts");
         }
@@ -132,10 +251,8 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return toResponse(onboardingRepository.save(onboarding), onboarding.getAccount());
     }
 
-    @Override
-    @Transactional
-    public AsaasOnboardingResponse saveBusiness(UUID actorUserId, OnboardingBusinessRequest request) {
-        AsaasOnboarding onboarding = requireEditableOnboarding(actorUserId);
+    private AsaasOnboardingResponse saveBusinessForAccount(Account account, OnboardingBusinessRequest request) {
+        AsaasOnboarding onboarding = requireEditableOnboardingForAccount(account);
         if (onboarding.getPersonType() != AsaasPersonType.COMPANY) {
             throw new InvalidRequestException("Business data is only valid for COMPANY accounts");
         }
@@ -156,10 +273,8 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return toResponse(onboardingRepository.save(onboarding), onboarding.getAccount());
     }
 
-    @Override
-    @Transactional
-    public AsaasOnboardingResponse saveAddress(UUID actorUserId, OnboardingAddressRequest request) {
-        AsaasOnboarding onboarding = requireEditableOnboarding(actorUserId);
+    private AsaasOnboardingResponse saveAddressForAccount(Account account, OnboardingAddressRequest request) {
+        AsaasOnboarding onboarding = requireEditableOnboardingForAccount(account);
         CepValidator.requireValid(request.getPostalCode());
         AsaasOnboardingPayload payload = readPayload(onboarding);
         payload.setAddress(request.getAddress().trim());
@@ -173,10 +288,8 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return toResponse(onboardingRepository.save(onboarding), onboarding.getAccount());
     }
 
-    @Override
-    @Transactional
-    public AsaasOnboardingResponse saveFinancial(UUID actorUserId, OnboardingFinancialRequest request) {
-        AsaasOnboarding onboarding = requireEditableOnboarding(actorUserId);
+    private AsaasOnboardingResponse saveFinancialForAccount(Account account, OnboardingFinancialRequest request) {
+        AsaasOnboarding onboarding = requireEditableOnboardingForAccount(account);
         AsaasOnboardingPayload payload = readPayload(onboarding);
         payload.setIncomeValue(request.getIncomeValue());
         writePayload(onboarding, payload);
@@ -184,10 +297,7 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         return toResponse(onboardingRepository.save(onboarding), onboarding.getAccount());
     }
 
-    @Override
-    @Transactional
-    public AsaasOnboardingResponse submit(UUID actorUserId, String idempotencyKey) {
-        Account account = requireOwnAccount(actorUserId);
+    private AsaasOnboardingResponse submitForAccount(Account account, String idempotencyKey, UUID auditUserId) {
         AsaasOnboarding onboarding = onboardingRepository.findByAccountIdForUpdate(account.getId())
                 .orElseThrow(() -> new InvalidRequestException("Onboarding not started"));
 
@@ -267,7 +377,7 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             auditLogService.record(
                     AuditAction.SUBACCOUNT_PROVISIONED,
                     account.getOrganization().getId(),
-                    actorUserId,
+                    auditUserId,
                     "AsaasOnboarding",
                     onboarding.getId(),
                     java.util.Map.of(
@@ -291,25 +401,6 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         }
 
         return toResponse(onboarding, account);
-    }
-
-    @Override
-    @Transactional
-    public AsaasSubaccountStatusResponse subaccountStatus(UUID actorUserId) {
-        Account account = requireOwnAccount(actorUserId);
-        refreshOperationalStatusFromAsaas(account.getId());
-        Subaccount subaccount = subaccountRepository.findByAccount_Id(account.getId()).orElse(null);
-        AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId()).orElse(null);
-        boolean enabled = isFinancialResourcesEnabled(account.getId());
-        return AsaasSubaccountStatusResponse.builder()
-                .accountId(account.getId())
-                .hasSubaccount(subaccount != null && subaccount.getAsaasAccountId() != null)
-                .subaccountStatus(subaccount != null ? subaccount.getStatus() : null)
-                .onboardingStatus(onboarding != null ? onboarding.getStatus() : AsaasOnboardingStatus.NOT_STARTED)
-                .onboardingUrl(onboarding != null ? onboarding.getOnboardingUrl() : null)
-                .financialResourcesEnabled(enabled)
-                .message(resolveStatusMessage(subaccount, onboarding, enabled))
-                .build();
     }
 
     @Override
@@ -468,7 +559,10 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
         }
     }
 
-    private AsaasOnboarding createOnboarding(UUID actorUserId, Account account) {
+    private AsaasOnboarding createOnboarding(Account account) {
+        if (account.getOwnerUser() == null) {
+            throw new InvalidRequestException("Account has no owner user for onboarding");
+        }
         return onboardingRepository.save(AsaasOnboarding.builder()
                 .user(account.getOwnerUser())
                 .account(account)
@@ -477,10 +571,9 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
                 .build());
     }
 
-    private AsaasOnboarding requireEditableOnboarding(UUID actorUserId) {
-        Account account = requireOwnAccount(actorUserId);
+    private AsaasOnboarding requireEditableOnboardingForAccount(Account account) {
         AsaasOnboarding onboarding = onboardingRepository.findByAccountId(account.getId())
-                .orElseGet(() -> createOnboarding(actorUserId, account));
+                .orElseGet(() -> createOnboarding(account));
         if (onboarding.getStatus() == AsaasOnboardingStatus.APPROVED
                 || onboarding.getStatus() == AsaasOnboardingStatus.BLOCKED) {
             throw new InvalidRequestException("Onboarding cannot be edited in status " + onboarding.getStatus());
@@ -492,6 +585,11 @@ public class AsaasOnboardingServiceImpl implements AsaasOnboardingService {
             onboarding.setStatus(AsaasOnboardingStatus.IN_PROGRESS);
         }
         return onboarding;
+    }
+
+    private Account requireAccount(UUID accountId) {
+        return accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
     }
 
     private Account requireOwnAccount(UUID actorUserId) {

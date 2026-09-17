@@ -4,13 +4,14 @@ Documentação de contrato para consumo **machine-to-machine** da Theron Wallet 
 
 ## Visão geral
 
-A Theron Wallet API gerencia contas financeiras (Accounts), saldos, PIX, **cobranças (charges)**, antecipações e extrato em cima do trilho Asaas. A iFriend **não** usa o frontend Theron: autentica com **OAuth 2.0 Client Credentials** e chama a API diretamente.
+A Theron Wallet API gerencia contas financeiras (Accounts), saldos, PIX, **cobranças (charges)**, antecipações e extrato em cima do trilho Asaas. A iFriend **não** usa o frontend Theron: autentica com **OAuth 2.0 Client Credentials** (JWT) **ou** **Theron API Key** (`tk_sandbox_` / `tk_live_`) e chama a API diretamente. A **subconta Asaas** da Account vinculada pode ser provisionada via `POST /api/v1/asaas/onboarding/b2b` (sem wizard do site).
 
 ```text
 iFriend Backend
-  → POST /api/v1/oauth/token  (client_id + client_secret)
-  → Access Token (JWT, curta duração)
-  → GET/POST /api/v1/...  (Authorization: Bearer <token>)
+  → POST /api/v1/oauth/token  (client_id + client_secret)  → Bearer <jwt>
+  — ou —
+  → Authorization: Bearer tk_sandbox_<secret>
+  → GET/POST /api/v1/...
 ```
 
 Credenciais Asaas (API keys) são **exclusivas do backend Theron** e nunca são expostas a parceiros.

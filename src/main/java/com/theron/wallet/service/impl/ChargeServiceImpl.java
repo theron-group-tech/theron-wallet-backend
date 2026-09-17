@@ -74,7 +74,7 @@ public class ChargeServiceImpl implements ChargeService {
     @Override
     @Transactional
     public ChargeResponse create(Actor actor, CreateChargeRequest request) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.CHARGES_CREATE);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.CHARGES_CREATE);
         Account account = accountRepository.findByIdWithOrganization(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
         Organization organization = account.getOrganization();
@@ -197,14 +197,14 @@ public class ChargeServiceImpl implements ChargeService {
     @Override
     @Transactional(readOnly = true)
     public Page<ChargeResponse> list(Actor actor, Pageable pageable) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.CHARGES_READ);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.CHARGES_READ);
         return chargeRepository.findByAccount_IdOrderByCreatedAtDesc(accountId, pageable).map(this::toResponse);
     }
 
     @Override
     @Transactional(readOnly = true)
     public ChargeResponse get(Actor actor, UUID chargeId) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.CHARGES_READ);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.CHARGES_READ);
         Charge charge = chargeRepository.findByIdAndAccountIdWithDetails(chargeId, accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Charge", "id", chargeId));
         return toResponse(charge);
@@ -213,7 +213,7 @@ public class ChargeServiceImpl implements ChargeService {
     @Override
     @Transactional
     public ChargeResponse cancel(Actor actor, UUID chargeId) {
-        UUID accountId = resourceAuthorization.requireBoundAccount(actor, PermissionCodes.CHARGES_CANCEL);
+        UUID accountId = resourceAuthorization.requireOperatingAccount(actor, PermissionCodes.CHARGES_CANCEL);
         Charge charge = chargeRepository.findByIdAndAccount_Id(chargeId, accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Charge", "id", chargeId));
 

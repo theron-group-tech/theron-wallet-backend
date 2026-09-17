@@ -14,6 +14,10 @@ public interface OauthClientRepository extends JpaRepository<OauthClient, UUID> 
 
     Optional<OauthClient> findByClientId(String clientId);
 
+    Optional<OauthClient> findByClientSecretHashAndStatus(String clientSecretHash, OauthClientStatus status);
+
+    Optional<OauthClient> findByApiKeyPrefixAndStatus(String apiKeyPrefix, OauthClientStatus status);
+
     @Query("""
             SELECT c FROM OauthClient c
             JOIN FETCH c.organization

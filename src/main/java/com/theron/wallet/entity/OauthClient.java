@@ -71,6 +71,14 @@ public class OauthClient {
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
 
+    /** Visible prefix of Theron API Key (e.g. tk_sandbox_abcd1234); never the full secret. */
+    @Column(name = "api_key_prefix", length = 48)
+    private String apiKeyPrefix;
+
+    /** Audit only — who created the key; not used for authorization. */
+    @Column(name = "created_by_user_id")
+    private UUID createdByUserId;
+
     @OneToMany(mappedBy = "client", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private Set<OauthClientScope> scopes = new HashSet<>();

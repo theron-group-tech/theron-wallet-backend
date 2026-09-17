@@ -112,6 +112,28 @@ public class ResourceAuthorization {
         return accountId;
     }
 
+    /**
+     * Operating account for financial APIs (charges, anticipations).
+     * CLIENT/API Key: bound OauthClient account + scope.
+     * USER/JWT: RBAC + own Account in the organization (never trust body accountId).
+     */
+    @Transactional(readOnly = true)
+    public UUID requireOperatingAccount(Actor actor, String permission) {
+        if (actor.isClient()) {
+            return requireBoundAccount(actor, permission);
+        }
+        if (!actor.isUser()) {
+            throw new ForbiddenException("Authentication required");
+        }
+        UUID userId = actor.getUserId();
+        UUID organizationId = organizationContextResolver.requireSingleOrganizationId(userId);
+        authorizationService.requirePermission(organizationId, userId, permission);
+        Account account = accountRepository
+                .findByOrganization_IdAndOwnerUser_Id(organizationId, userId)
+                .orElseThrow(() -> new ForbiddenException("No account for authenticated user"));
+        return account.getId();
+    }
+
     @Transactional(readOnly = true)
     public UUID requireWallet(UUID actorUserId, UUID walletId, String permission) {
         Wallet wallet = walletRepository.findById(walletId)

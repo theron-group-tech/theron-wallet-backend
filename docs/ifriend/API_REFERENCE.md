@@ -1,6 +1,6 @@
 # API Reference (B2B)
 
-Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authorization: Bearer <access_token>`.
+Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authorization: Bearer <access_token>` **ou** `Authorization: Bearer tk_sandbox_…` / `tk_live_…`.
 
 ## OAuth
 
@@ -8,6 +8,28 @@ Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authoriza
 
 - Auth: client_id/secret (form ou Basic)
 - Erros: formato RFC 6749 (ver ERRORS.md)
+
+## Theron API Keys (produto — JWT OWNER)
+
+Não confundir com a API Key Asaas. Tenant = Account MAIN do OWNER (1:1).
+
+### POST `/developer/api-keys`
+
+- Auth: JWT produto; permissão `developer.api_keys.manage` (OWNER)
+- Body: `{ "name": "ERP Integration" }`
+- Resposta inclui `apiKey` (plaintext **uma vez**) + `prefix` + `warning`
+
+### GET `/developer/api-keys`
+
+- Lista metadados; **nunca** devolve `apiKey`
+
+### DELETE `/developer/api-keys/{id}`
+
+- Revoga (status `REVOKED`)
+
+### POST `/developer/api-keys/{id}/rotate`
+
+- Novo plaintext uma vez; hash anterior invalidado
 
 ## Organization
 
@@ -30,6 +52,69 @@ Base: `/api/v1`. Todas as rotas abaixo (exceto `/oauth/token`) exigem `Authoriza
 ### GET `/accounts/{id}/ledger-balance`
 
 - Scope: `wallet.read`
+
+## Asaas onboarding (subconta B2B)
+
+A Theron cria Organization + Account + OAuth. O **parceiro** provisiona a subconta Asaas via API (sem login no site do produto). Account resolvida das credenciais — **não** envie `accountId` no body. A `apiKey` Asaas **nunca** é devolvida.
+
+### GET `/asaas/onboarding/b2b`
+
+- Scope: `onboarding.read`
+- Estado atual (`status`, `currentStep`, `onboardingUrl`, `financialResourcesEnabled`)
+
+### POST `/asaas/onboarding/b2b`
+
+- Scope: `onboarding.submit`
+- Header obrigatório: `Idempotency-Key`
+- Body one-shot (PF ou PJ):
+
+```json
+{
+  "personType": "INDIVIDUAL",
+  "personal": {
+    "name": "Bruno Santos",
+    "cpf": "52998224725",
+    "birthDate": "1990-01-15",
+    "email": "bruno@example.com",
+    "mobilePhone": "11999998888"
+  },
+  "address": {
+    "address": "Rua das Flores",
+    "addressNumber": "100",
+    "complement": "Apto 1",
+    "province": "Centro",
+    "postalCode": "01310100",
+    "city": "São Paulo"
+  },
+  "financial": { "incomeValue": 5000.00 }
+}
+```
+
+Para PJ use `personType: "COMPANY"` e objeto `business` (`cnpj`, `legalName`, `tradeName?`, `email`, `mobilePhone`, `companyType`) em vez de `personal`.
+
+- Replay com a mesma `Idempotency-Key` após sucesso → não recria subconta
+- Sem chave → `422`
+- Resposta: `AsaasOnboardingResponse` (sem `apiKey`)
+
+### GET `/asaas/subaccount/status/b2b`
+
+- Scope: `onboarding.read`
+- Status enxuto: `hasSubaccount`, `onboardingStatus`, `financialResourcesEnabled`, `onboardingUrl?`
+- PIX/charges exigem `financialResourcesEnabled=true`
+
+## Asaas subaccounts (aliases produto — JWT OWNER)
+
+Mesmo one-shot KYC do B2B, resolvendo a Account do OWNER autenticado (nunca `accountId` no body).
+
+### POST `/asaas/subaccounts`
+
+- Auth: JWT OWNER
+- Header: `Idempotency-Key` recomendado
+- Body: igual a `POST /asaas/onboarding/b2b`
+
+### GET `/asaas/subaccounts/me`
+
+- Status da própria subconta (`hasSubaccount`, `approved`, `asaasAccountId`, …)
 
 ## PIX
 

@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.entity.AdminUser;
 import com.theron.wallet.entity.AuthSession;
 import com.theron.wallet.entity.OauthClient;
+import com.theron.wallet.enums.OauthClientStatus;
 import com.theron.wallet.enums.UserStatus;
 import com.theron.wallet.exception.ApiErrorResponse;
 import com.theron.wallet.repository.AdminUserRepository;
 import com.theron.wallet.repository.AuthSessionRepository;
+import com.theron.wallet.repository.OauthClientRepository;
 import com.theron.wallet.service.impl.OauthClientLoader;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -39,6 +41,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final AuthSessionRepository authSessionRepository;
     private final AdminUserRepository adminUserRepository;
     private final OauthClientLoader oauthClientLoader;
+    private final OauthClientRepository oauthClientRepository;
+    private final OauthClientSecretHasher secretHasher;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -57,6 +61,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String token = header.substring(7).trim();
 
         if (token.isEmpty()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // Theron API Key — never parse as JWT
+        if (secretHasher.isTheronApiKey(token)) {
+            ClientPrincipal client = authenticateTheronApiKey(token);
+            if (client == null) {
+                writeUnauthorized(request, response, "Invalid or revoked API key");
+                return;
+            }
+            setClientAuthentication(client);
             filterChain.doFilter(request, response);
             return;
         }
@@ -81,13 +97,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 writeUnauthorized(request, response, "Invalid or revoked client credentials");
                 return;
             }
-            List<SimpleGrantedAuthority> authorities = client.getScopes().stream()
-                    .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
-                    .collect(Collectors.toList());
-            authorities.add(new SimpleGrantedAuthority("ROLE_CLIENT"));
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(client, null, authorities);
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            setClientAuthentication(client);
             filterChain.doFilter(request, response);
             return;
         }
@@ -126,6 +136,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 );
         SecurityContextHolder.getContext().setAuthentication(authentication);
         filterChain.doFilter(request, response);
+    }
+
+    private void setClientAuthentication(ClientPrincipal client) {
+        List<SimpleGrantedAuthority> authorities = client.getScopes().stream()
+                .map(scope -> new SimpleGrantedAuthority("SCOPE_" + scope))
+                .collect(Collectors.toList());
+        authorities.add(new SimpleGrantedAuthority("ROLE_CLIENT"));
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(client, null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+    }
+
+    private ClientPrincipal authenticateTheronApiKey(String plainApiKey) {
+        String hash = secretHasher.sha256Hex(plainApiKey);
+        OauthClient base = oauthClientRepository
+                .findByClientSecretHashAndStatus(hash, OauthClientStatus.ACTIVE)
+                .orElse(null);
+        if (base == null) {
+            return null;
+        }
+        if (!secretHasher.matches(plainApiKey, base.getClientSecretHash())) {
+            return null;
+        }
+        OauthClient client = oauthClientLoader.loadActiveWithDetailsById(base.getId()).orElse(null);
+        if (client == null) {
+            return null;
+        }
+        oauthClientLoader.touchLastUsedAt(client.getId());
+        log.debug("Theron API Key auth ok: keyId={}, orgId={}, prefix={}",
+                client.getId(), client.getOrganization().getId(), client.getApiKeyPrefix());
+        return ClientPrincipal.builder()
+                .oauthClientId(client.getId())
+                .publicClientId(client.getClientId())
+                .organizationId(client.getOrganization().getId())
+                .name(client.getName())
+                .scopes(OauthClientLoader.scopeCodes(client))
+                .allowedAccountIds(OauthClientLoader.accountIds(client))
+                .build();
     }
 
     private ClientPrincipal authenticateClient(Claims claims) {

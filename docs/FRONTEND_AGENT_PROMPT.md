@@ -79,6 +79,7 @@ app/
   (app)/limites/page.tsx
   (app)/perfil/page.tsx
   (app)/configuracoes/page.tsx
+  (app)/developer/api-keys/page.tsx   # Theron API Keys (OWNER / developer.api_keys.manage)
 lib/
   api.ts                    # fetch wrapper
   auth.ts                   # tokens + refresh

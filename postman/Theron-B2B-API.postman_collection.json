@@ -2,7 +2,7 @@
   "info": {
 "_postman_id": "c0f73e1e-c993-4845-a8d6-0f47273e3d71",
     "name": "Theron Wallet API - B2B Integration",
-    "description": "Collection oficial para testes de integração B2B da Theron Wallet.\n\nFluxo recomendado: Health → Login Admin → Criar OAuth Client → Token B2B → Consultas → Cobranças (Boleto / Cartão / PIX) → Antecipações. O provisionamento de subconta é administrativo e deve ser executado antes de vincular a Account ao OAuth Client.\n\n**Credenciais:** o Platform Owner da Theron cria e fornece `client_id` e `client_secret` ao integrador. Não publique credenciais reais nem `ASAAS_API_KEY`.\n\n**Cobrança PIX / QR:** use `billingType: \"PIX\"`. O pagador acessa o QR Code pela `invoiceUrl` retornada na resposta (fatura Asaas). Nesta API B2B não há endpoint separado com payload EMV/copia-e-cola.\n\n**Sandbox:** a antecipação efetiva pode não ser testável porque a própria Asaas não disponibiliza essa operação no Sandbox.",
+    "description": "Collection oficial para testes de integração B2B da Theron Wallet.\n\nFluxo recomendado: Health → Login Admin → Criar OAuth Client → Token B2B → **Onboarding Asaas (B2B)** → Consultas → Cobranças (Boleto / Cartão / PIX) → Antecipações.\n\nA Theron cria Organization + Account + OAuth. O parceiro provisiona a **subconta Asaas** com `POST /asaas/onboarding/b2b` (scopes `onboarding.read` / `onboarding.submit`) — sem login no site do produto.\n\n**Credenciais:** o Platform Owner da Theron cria e fornece `client_id` e `client_secret` ao integrador. Não publique credenciais reais nem `ASAAS_API_KEY`.\n\n**Cobrança PIX / QR:** use `billingType: \"PIX\"`. O pagador acessa o QR Code pela `invoiceUrl` retornada na resposta (fatura Asaas). Nesta API B2B não há endpoint separado com payload EMV/copia-e-cola.\n\n**Sandbox:** a antecipação efetiva pode não ser testável porque a própria Asaas não disponibiliza essa operação no Sandbox.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -80,7 +80,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\",\n    \"charges.read\",\n    \"charges.create\",\n    \"charges.cancel\",\n    \"anticipations.read\",\n    \"anticipations.create\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
+              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\",\n    \"charges.read\",\n    \"charges.create\",\n    \"charges.cancel\",\n    \"anticipations.read\",\n    \"anticipations.create\",\n    \"onboarding.read\",\n    \"onboarding.submit\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
             },
             "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients",
             "description": "Cria OAuth client ligado a EXATAMENTE uma Account (1:1).\nO client_secret aparece só nesta resposta — salve-o."
@@ -210,6 +210,194 @@
               ]
             },
             "url": "{{base_url}}/api/v1/oauth/token"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1.4 Theron API Key",
+      "description": "OWNER cria Theron API Key (tk_sandbox_/tk_live_) via JWT produto. Use theron_api_key como Bearer nas APIs (equivalente ao OAuth JWT).",
+      "item": [
+        {
+          "name": "Create Theron API Key (OWNER JWT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Create API key 201', function () { pm.response.to.have.status(201); });",
+                  "const j = pm.response.json();",
+                  "if (j.apiKey) pm.environment.set('theron_api_key', j.apiKey);",
+                  "if (j.id) pm.environment.set('theron_api_key_id', j.id);",
+                  "pm.test('apiKey plaintext uma vez', function () {",
+                  "  pm.expect(pm.environment.get('theron_api_key')).to.match(/^tk_(sandbox|live)_/);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Integration\"\n}"
+            },
+            "url": "{{base_url}}/api/v1/developer/api-keys",
+            "description": "Requer JWT OWNER (owner_access_token). Secret aparece só nesta resposta."
+          }
+        },
+        {
+          "name": "List Theron API Keys",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/developer/api-keys",
+            "description": "Nunca devolve plaintext apiKey."
+          }
+        },
+        {
+          "name": "Get Charges with Theron API Key",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{theron_api_key}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Bearer tk_* autentica como CLIENT bound à Account MAIN."
+          }
+        },
+        {
+          "name": "Rotate Theron API Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.apiKey) pm.environment.set('theron_api_key', j.apiKey);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}/rotate"
+          }
+        },
+        {
+          "name": "Revoke Theron API Key",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "1.5 Onboarding Asaas (B2B)",
+      "description": "Provisiona a subconta Asaas da Account vinculada ao OAuth (sem login no site). Exige scopes onboarding.read / onboarding.submit. Header Idempotency-Key obrigatório no POST.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+      },
+      "item": [
+        {
+          "name": "Get Onboarding Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
+            "description": "Estado atual do onboarding da Account do client."
+          }
+        },
+        {
+          "name": "Submit Onboarding CPF (INDIVIDUAL)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('onboarding_idempotency_key')) {",
+                  "  pm.environment.set('onboarding_idempotency_key', pm.variables.replaceIn('{{$guid}}'));",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Onboarding submit 200', function () { pm.response.to.have.status(200); });",
+                  "const j = pm.response.json();",
+                  "pm.test('sem apiKey na resposta', function () {",
+                  "  pm.expect(j.apiKey).to.be.undefined;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{onboarding_idempotency_key}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personType\": \"INDIVIDUAL\",\n  \"personal\": {\n    \"name\": \"Bruno Santos\",\n    \"cpf\": \"52998224725\",\n    \"birthDate\": \"1990-01-15\",\n    \"email\": \"bruno@example.com\",\n    \"mobilePhone\": \"11999998888\"\n  },\n  \"address\": {\n    \"address\": \"Rua das Flores\",\n    \"addressNumber\": \"100\",\n    \"complement\": \"Apto 1\",\n    \"province\": \"Centro\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": { \"incomeValue\": 5000.00 }\n}"
+            },
+            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
+            "description": "One-shot KYC PF + criação da subconta Asaas. Idempotent por Idempotency-Key."
+          }
+        },
+        {
+          "name": "Submit Onboarding CNPJ (COMPANY)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personType\": \"COMPANY\",\n  \"business\": {\n    \"cnpj\": \"60746948000112\",\n    \"legalName\": \"Empresa Exemplo LTDA\",\n    \"tradeName\": \"Exemplo\",\n    \"email\": \"financeiro@exemplo.com\",\n    \"mobilePhone\": \"11988887777\",\n    \"companyType\": \"LIMITED\"\n  },\n  \"address\": {\n    \"address\": \"Av. Paulista\",\n    \"addressNumber\": \"1000\",\n    \"province\": \"Bela Vista\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": { \"incomeValue\": 50000.00 }\n}"
+            },
+            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
+            "description": "Exemplo PJ. Use uma Account ainda sem subconta (ou outra chave de idempotência)."
+          }
+        },
+        {
+          "name": "Get Subaccount Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/asaas/subaccount/status/b2b",
+            "description": "financialResourcesEnabled deve ser true antes de PIX/charges."
           }
         }
       ]

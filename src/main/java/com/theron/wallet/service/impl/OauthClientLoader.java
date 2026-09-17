@@ -21,6 +21,14 @@ public class OauthClientLoader {
 
     private final OauthClientRepository oauthClientRepository;
 
+    @Transactional
+    public void touchLastUsedAt(UUID id) {
+        oauthClientRepository.findById(id).ifPresent(c -> {
+            c.setLastUsedAt(java.time.LocalDateTime.now());
+            oauthClientRepository.save(c);
+        });
+    }
+
     @Transactional(readOnly = true)
     public Optional<OauthClient> loadActiveWithDetailsById(UUID id) {
         Optional<OauthClient> base = oauthClientRepository.findByIdWithOrganization(id);

@@ -69,6 +69,11 @@ public final class PermissionCodes {
     public static final String ANTICIPATIONS_READ = "anticipations.read";
     public static final String ANTICIPATIONS_CREATE = "anticipations.create";
 
+    public static final String ONBOARDING_READ = "onboarding.read";
+    public static final String ONBOARDING_SUBMIT = "onboarding.submit";
+
+    public static final String DEVELOPER_API_KEYS_MANAGE = "developer.api_keys.manage";
+
     private PermissionCodes() {
     }
 }

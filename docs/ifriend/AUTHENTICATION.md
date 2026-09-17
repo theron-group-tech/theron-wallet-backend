@@ -1,6 +1,13 @@
-# Autenticação — OAuth 2.0 Client Credentials
+# Autenticação — OAuth 2.0 e Theron API Key
 
-## Fluxo
+Há **dois** modos machine-to-machine equivalentes (mesmo principal `CLIENT`, mesmos scopes, mesma Account 1:1):
+
+1. **OAuth Client Credentials** → JWT curto (`/oauth/token`)
+2. **Theron API Key** (`tk_sandbox_…` / `tk_live_…`) → Bearer direto, sem JWT
+
+A API Key **é** o `OauthClient` (evolução); não há tabela paralela. Credenciais Asaas **nunca** são expostas.
+
+## Opção A — OAuth 2.0 Client Credentials
 
 ```http
 POST /api/v1/oauth/token
@@ -29,7 +36,7 @@ GET /api/v1/accounts/{accountId}
 Authorization: Bearer <access_token>
 ```
 
-## Access token
+### Access token
 
 | Campo | Valor |
 |-------|--------|
@@ -39,6 +46,23 @@ Authorization: Bearer <access_token>
 | Revogação | Client `REVOKED` invalida tokens **na próxima request** (checagem no servidor) |
 
 Não há refresh token OAuth. Reautentique com `client_id` + `client_secret`.
+
+## Opção B — Theron API Key (Bearer direto)
+
+```http
+GET /api/v1/charges
+Authorization: Bearer tk_sandbox_<secret>
+```
+
+| Campo | Valor |
+|-------|--------|
+| Formato | `tk_sandbox_…` (homolog) ou `tk_live_…` (produção) |
+| Emissão | OWNER via `POST /developer/api-keys` (produto) ou admin via OAuth client |
+| Secret | Aparece **uma vez** no create/rotate; listagens só mostram `prefix` |
+| Revogação | `DELETE /developer/api-keys/{id}` ou revoke admin → 401 na próxima request |
+| Rotação | `POST /developer/api-keys/{id}/rotate` invalida a chave anterior |
+
+Não misture API Key com JWT: se o Bearer começa com `tk_`, o servidor autentica por hash SHA-256 no `oauth_client` (nunca parseia como JWT).
 
 ## Scopes (PermissionCodes)
 
@@ -60,8 +84,10 @@ O token usa scopes com **ponto** (iguais às permissões internas). Alias docume
 | `charges.cancel` | Cancelar cobranças | `POST /charges/{id}/cancel` |
 | `anticipations.read` | Ler antecipações | `GET /anticipations` |
 | `anticipations.create` | Simular/criar antecipação | `POST /anticipations/simulate`, `POST /anticipations` |
+| `onboarding.read` | Ler status do onboarding Asaas | `GET /asaas/onboarding/b2b`, `GET /asaas/subaccount/status/b2b` |
+| `onboarding.submit` | Provisionar subconta Asaas (one-shot) | `POST /asaas/onboarding/b2b` |
 
-O client acessa **exatamente uma Account** (vínculo 1:1 com as credenciais). O `organization_id` e o `account_id` vêm das credenciais — **nunca** envie `accountId` no body de `/charges` ou `/anticipations`.
+O client acessa **exatamente uma Account** (vínculo 1:1 com as credenciais). O `organization_id` e o `account_id` vêm das credenciais — **nunca** envie `accountId` no body de `/charges`, `/anticipations` ou `/asaas/onboarding/b2b`.
 
 ## Tenant
 
