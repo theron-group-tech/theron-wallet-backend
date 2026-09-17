@@ -15,6 +15,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 /**
  * Resolves the Theron subaccount that received an inbound Pix transaction.
  *
@@ -40,8 +42,7 @@ public class InboundPixDestinationResolver {
             return null;
         }
 
-        String pixTransactionId = WebhookServiceImpl.extractPixTransactionId(
-                payload.getPayment().getPixTransaction());
+        String pixTransactionId = extractPixTransactionId(payload.getPayment().getPixTransaction());
         if (pixTransactionId == null || pixTransactionId.isBlank()) {
             return null;
         }
@@ -95,5 +96,16 @@ public class InboundPixDestinationResolver {
                     key, subaccount.getId());
         }
         return subaccount;
+    }
+
+    private static String extractPixTransactionId(Object pixTransaction) {
+        if (pixTransaction instanceof String id && !id.isBlank()) {
+            return id;
+        }
+        if (pixTransaction instanceof Map<?, ?> map && map.get("id") != null) {
+            String id = String.valueOf(map.get("id"));
+            return id.isBlank() ? null : id;
+        }
+        return null;
     }
 }
