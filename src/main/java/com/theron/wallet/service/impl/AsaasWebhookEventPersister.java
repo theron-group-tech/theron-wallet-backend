@@ -85,7 +85,7 @@ public class AsaasWebhookEventPersister {
 
         try {
             InboundPixDestinationResolver.Resolution resolution =
-                    inboundPixDestinationResolver.resolveDestination(payload);
+                    inboundPixDestinationResolver.classify(payload);
 
             if (resolution.isSubaccount()) {
                 return false;
@@ -117,7 +117,7 @@ public class AsaasWebhookEventPersister {
 
         try {
             InboundPixDestinationResolver.Resolution resolution =
-                    inboundPixDestinationResolver.resolveDestination(payload);
+                    inboundPixDestinationResolver.classify(payload);
 
             if (!resolution.isSubaccount() || resolution.subaccount() == null
                     || resolution.subaccount().getAsaasAccountId() == null
