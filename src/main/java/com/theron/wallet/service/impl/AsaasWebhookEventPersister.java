@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,6 +34,9 @@ public class AsaasWebhookEventPersister {
             if (status == AsaasWebhookEventStatus.PROCESSED || status == AsaasWebhookEventStatus.IGNORED) {
                 return Optional.empty();
             }
+            if (markNonSubaccountInboundAsIgnored(existing.get(), payload)) {
+                return Optional.empty();
+            }
             resolveInboundDestination(payload);
             return existing;
         }
@@ -45,6 +49,9 @@ public class AsaasWebhookEventPersister {
                     .payload(toPayloadMap(payload))
                     .build();
             AsaasWebhookEvent saved = asaasWebhookEventRepository.saveAndFlush(event);
+            if (markNonSubaccountInboundAsIgnored(saved, payload)) {
+                return Optional.empty();
+            }
             resolveInboundDestination(payload);
             return Optional.of(saved);
         } catch (DataIntegrityViolationException ex) {
@@ -53,51 +60,80 @@ public class AsaasWebhookEventPersister {
                     .filter(event -> event.getStatus() != AsaasWebhookEventStatus.PROCESSED
                             && event.getStatus() != AsaasWebhookEventStatus.IGNORED)
                     .map(event -> {
+                        if (markNonSubaccountInboundAsIgnored(event, payload)) {
+                            return null;
+                        }
                         resolveInboundDestination(payload);
                         return event;
                     });
         }
     }
 
-    private void resolveInboundDestination(AsaasWebhookPayload payload) {
-        if (payload == null || payload.getPayment() == null) {
-            return;
+    /**
+     * A PAYMENT_RECEIVED that resolves to PLATFORM or EXTERNAL does not belong
+     * to an organization wallet, so WebhookServiceImpl must not attempt to
+     * credit a Theron subaccount. Persist it as IGNORED and acknowledge it.
+     * The platform Master balance is maintained by Asaas, while an unregistered
+     * destination key is explicitly treated as external.
+     */
+    private boolean markNonSubaccountInboundAsIgnored(
+            AsaasWebhookEvent event,
+            AsaasWebhookPayload payload) {
+        if (payload == null || payload.getPayment() == null || !"PAYMENT_RECEIVED".equals(payload.getEvent())) {
+            return false;
         }
-        String event = payload.getEvent();
-        if (!"PAYMENT_RECEIVED".equals(event)) {
+
+        try {
+            InboundPixDestinationResolver.Resolution resolution =
+                    inboundPixDestinationResolver.resolveDestination(payload);
+
+            if (resolution.isSubaccount()) {
+                return false;
+            }
+
+            event.setStatus(AsaasWebhookEventStatus.IGNORED);
+            event.setProcessedAt(LocalDateTime.now());
+            asaasWebhookEventRepository.save(event);
+
+            if (resolution.isPlatform()) {
+                log.info("Inbound Pix acknowledged without organization credit: destination=PLATFORM, paymentId={}, pixKey={}",
+                        payload.getPayment().getId(), resolution.pixKey());
+            } else {
+                log.info("Inbound Pix acknowledged as external: destination=EXTERNAL, paymentId={}, pixKey={}",
+                        payload.getPayment().getId(), resolution.pixKey());
+            }
+            return true;
+        } catch (RuntimeException ex) {
+            log.warn("Could not classify inbound Pix destination; leaving webhook retryable: paymentId={}",
+                    payload.getPayment().getId(), ex);
+            return false;
+        }
+    }
+
+    private void resolveInboundDestination(AsaasWebhookPayload payload) {
+        if (payload == null || payload.getPayment() == null || !"PAYMENT_RECEIVED".equals(payload.getEvent())) {
             return;
         }
 
         try {
             InboundPixDestinationResolver.Resolution resolution =
-                    inboundPixDestinationResolver.resolve(payload);
+                    inboundPixDestinationResolver.resolveDestination(payload);
 
-            if (resolution.isSubaccount()
-                    && resolution.subaccount() != null
-                    && resolution.subaccount().getAsaasAccountId() != null
-                    && !resolution.subaccount().getAsaasAccountId().isBlank()) {
-                if (payload.getAccount() != null) {
-                    payload.getAccount().setId(resolution.subaccount().getAsaasAccountId());
-                }
-                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=SUBACCOUNT, subaccountId={}, asaasAccountId={}",
-                        event,
-                        payload.getPayment().getId(),
-                        resolution.subaccount().getId(),
-                        resolution.subaccount().getAsaasAccountId());
-            } else if (resolution.isPlatform()) {
-                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=PLATFORM, pixKey={}",
-                        event,
-                        payload.getPayment().getId(),
-                        resolution.pixKey());
-            } else {
-                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=EXTERNAL, pixKey={}",
-                        event,
-                        payload.getPayment().getId(),
-                        resolution.pixKey());
+            if (!resolution.isSubaccount() || resolution.subaccount() == null
+                    || resolution.subaccount().getAsaasAccountId() == null
+                    || resolution.subaccount().getAsaasAccountId().isBlank()) {
+                return;
             }
+
+            if (payload.getAccount() != null) {
+                payload.getAccount().setId(resolution.subaccount().getAsaasAccountId());
+            }
+            log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=SUBACCOUNT, subaccountId={}, asaasAccountId={}",
+                    payload.getEvent(),
+                    payload.getPayment().getId(),
+                    resolution.subaccount().getId(),
+                    resolution.subaccount().getAsaasAccountId());
         } catch (RuntimeException ex) {
-            // Keep the original payload untouched. WebhookServiceImpl will resolve
-            // again while processing the event, and the event remains retryable.
             log.warn("Could not resolve inbound Pix webhook destination: paymentId={}",
                     payload.getPayment().getId(), ex);
         }
@@ -108,7 +144,7 @@ public class AsaasWebhookEventPersister {
         asaasWebhookEventRepository.findById(event.getId()).ifPresent(persisted -> {
             persisted.setStatus(status);
             if (status == AsaasWebhookEventStatus.PROCESSED || status == AsaasWebhookEventStatus.IGNORED) {
-                persisted.setProcessedAt(java.time.LocalDateTime.now());
+                persisted.setProcessedAt(LocalDateTime.now());
             }
             asaasWebhookEventRepository.save(persisted);
         });
