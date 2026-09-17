@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.AsaasWebhookEvent;
-import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.repository.AsaasWebhookEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -65,28 +64,40 @@ public class AsaasWebhookEventPersister {
             return;
         }
         String event = payload.getEvent();
-        if (event == null || !event.equals("PAYMENT_RECEIVED")) {
+        if (!"PAYMENT_RECEIVED".equals(event)) {
             return;
         }
 
         try {
-            Subaccount subaccount = inboundPixDestinationResolver.resolve(payload);
-            if (subaccount == null || subaccount.getAsaasAccountId() == null
-                    || subaccount.getAsaasAccountId().isBlank()) {
-                return;
+            InboundPixDestinationResolver.Resolution resolution =
+                    inboundPixDestinationResolver.resolve(payload);
+
+            if (resolution.isSubaccount()
+                    && resolution.subaccount() != null
+                    && resolution.subaccount().getAsaasAccountId() != null
+                    && !resolution.subaccount().getAsaasAccountId().isBlank()) {
+                if (payload.getAccount() != null) {
+                    payload.getAccount().setId(resolution.subaccount().getAsaasAccountId());
+                }
+                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=SUBACCOUNT, subaccountId={}, asaasAccountId={}",
+                        event,
+                        payload.getPayment().getId(),
+                        resolution.subaccount().getId(),
+                        resolution.subaccount().getAsaasAccountId());
+            } else if (resolution.isPlatform()) {
+                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=PLATFORM, pixKey={}",
+                        event,
+                        payload.getPayment().getId(),
+                        resolution.pixKey());
+            } else {
+                log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, destination=EXTERNAL, pixKey={}",
+                        event,
+                        payload.getPayment().getId(),
+                        resolution.pixKey());
             }
-            if (payload.getAccount() != null) {
-                payload.getAccount().setId(subaccount.getAsaasAccountId());
-            }
-            log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, subaccountId={}, asaasAccountId={}",
-                    event,
-                    payload.getPayment().getId(),
-                    subaccount.getId(),
-                    subaccount.getAsaasAccountId());
         } catch (RuntimeException ex) {
-            // Keep the original payload untouched. WebhookServiceImpl will retry
-            // resolution through its existing account/token logic, and the event
-            // remains eligible for retry if the destination cannot be resolved.
+            // Keep the original payload untouched. WebhookServiceImpl will resolve
+            // again while processing the event, and the event remains retryable.
             log.warn("Could not resolve inbound Pix webhook destination: paymentId={}",
                     payload.getPayment().getId(), ex);
         }
