@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.AsaasWebhookEvent;
+import com.theron.wallet.entity.Subaccount;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.repository.AsaasWebhookEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class AsaasWebhookEventPersister {
 
     private final AsaasWebhookEventRepository asaasWebhookEventRepository;
     private final ObjectMapper objectMapper;
+    private final InboundPixDestinationResolver inboundPixDestinationResolver;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<AsaasWebhookEvent> claim(String eventId, AsaasWebhookPayload payload) {
@@ -32,6 +34,7 @@ public class AsaasWebhookEventPersister {
             if (status == AsaasWebhookEventStatus.PROCESSED || status == AsaasWebhookEventStatus.IGNORED) {
                 return Optional.empty();
             }
+            resolveInboundDestination(payload);
             return existing;
         }
         try {
@@ -42,12 +45,50 @@ public class AsaasWebhookEventPersister {
                     .status(AsaasWebhookEventStatus.RECEIVED)
                     .payload(toPayloadMap(payload))
                     .build();
-            return Optional.of(asaasWebhookEventRepository.saveAndFlush(event));
+            AsaasWebhookEvent saved = asaasWebhookEventRepository.saveAndFlush(event);
+            resolveInboundDestination(payload);
+            return Optional.of(saved);
         } catch (DataIntegrityViolationException ex) {
             log.info("Duplicate Asaas webhook event skipped: eventId={}", eventId);
             return asaasWebhookEventRepository.findByAsaasEventId(eventId)
                     .filter(event -> event.getStatus() != AsaasWebhookEventStatus.PROCESSED
-                            && event.getStatus() != AsaasWebhookEventStatus.IGNORED);
+                            && event.getStatus() != AsaasWebhookEventStatus.IGNORED)
+                    .map(event -> {
+                        resolveInboundDestination(payload);
+                        return event;
+                    });
+        }
+    }
+
+    private void resolveInboundDestination(AsaasWebhookPayload payload) {
+        if (payload == null || payload.getPayment() == null) {
+            return;
+        }
+        String event = payload.getEvent();
+        if (event == null || !event.equals("PAYMENT_RECEIVED")) {
+            return;
+        }
+
+        try {
+            Subaccount subaccount = inboundPixDestinationResolver.resolve(payload);
+            if (subaccount == null || subaccount.getAsaasAccountId() == null
+                    || subaccount.getAsaasAccountId().isBlank()) {
+                return;
+            }
+            if (payload.getAccount() != null) {
+                payload.getAccount().setId(subaccount.getAsaasAccountId());
+            }
+            log.info("Inbound Pix webhook destination resolved: event={}, paymentId={}, subaccountId={}, asaasAccountId={}",
+                    event,
+                    payload.getPayment().getId(),
+                    subaccount.getId(),
+                    subaccount.getAsaasAccountId());
+        } catch (RuntimeException ex) {
+            // Keep the original payload untouched. WebhookServiceImpl will retry
+            // resolution through its existing account/token logic, and the event
+            // remains eligible for retry if the destination cannot be resolved.
+            log.warn("Could not resolve inbound Pix webhook destination: paymentId={}",
+                    payload.getPayment().getId(), ex);
         }
     }
 
