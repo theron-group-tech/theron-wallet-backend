@@ -23,6 +23,8 @@ public class AsaasPixTransactionResponse {
     private String description;
     private String endToEndIdentifier;
     private String transferId;
+    private String addressKey;
+    private String addressKeyType;
     private String refusalReason;
     private ExternalAccount externalAccount;
 
@@ -36,5 +38,7 @@ public class AsaasPixTransactionResponse {
         private String name;
         private String cpfCnpj;
         private String ispbName;
+        private String addressKey;
+        private String addressKeyType;
     }
 }
