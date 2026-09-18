@@ -16,6 +16,8 @@ public class ClientPrincipal {
     private final UUID oauthClientId;
     private final String publicClientId;
     private final UUID organizationId;
+    private final UUID ownerUserId;
+    private final UUID primaryAccountId;
     private final String name;
     @Builder.Default
     private final Set<String> scopes = Collections.emptySet();
@@ -31,12 +33,15 @@ public class ClientPrincipal {
     }
 
     /**
-     * OAuth clients are bound 1:1 to a single Account — returns that Account id.
+     * Returns the Owner account used as the integration's default financial account.
      */
     public UUID requireBoundAccountId() {
-        if (allowedAccountIds == null || allowedAccountIds.size() != 1) {
+        if (primaryAccountId != null && canAccessAccount(primaryAccountId)) {
+            return primaryAccountId;
+        }
+        if (allowedAccountIds == null || allowedAccountIds.isEmpty()) {
             throw new com.theron.wallet.exception.ForbiddenException(
-                    "OAuth client must be bound to exactly one Account");
+                    "OAuth client has no accessible Account");
         }
         return allowedAccountIds.iterator().next();
     }
