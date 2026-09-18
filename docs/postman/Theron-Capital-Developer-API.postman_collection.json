@@ -2,94 +2,173 @@
   "info": {
     "_postman_id": "f4f0d5b6-4d7d-4c62-a3d0-theron-capital-dev-api",
     "name": "Theron Capital - Developer API",
-    "description": "Integração da organização cliente com a Theron Capital. A Theron cria a Organização e o Owner. O Owner faz login pelo frontend, conclui o onboarding da própria subconta Asaas e cria a Theron API Key. Depois disso, a integração usa a API Key para operar a conta do Owner e as contas Finance/Employee criadas por essa mesma integração. O cliente não cria Organização.",
+    "description": "Integração da organização cliente com a Theron Capital.\n\nA Theron cria a Organização e o Owner. O Owner faz login, cria a Theron API Key e a integração passa a operar com Bearer tk_sandbox_… / tk_live_….\n\nVARIÁVEIS\nPreencha só email e password (e pixDestinationKey para PIX de saída). O script de Tests da collection grava o restante após cada resposta 2xx: accessToken, organizationId, ownerAccountId, apiKey, apiKeyId, managedAccountId, walletId, pixKeyId, chargeId, etc.\n\nAUTH\n- Pastas 01 e 02: Bearer {{accessToken}} (JWT OWNER)\n- Pastas 03–07: Bearer {{apiKey}} (auth da collection)\n- GET /accounts/{id}/statement exige JWT do OWNER\n\nOrdem: 01 Bootstrap → 02 Create API Key → 03+ com a chave.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
+    { "key": "baseUrl", "value": "https://theron-wallet-backend-production.up.railway.app", "type": "string" },
+    { "key": "email", "value": "SEU_OWNER_EMAIL", "type": "string" },
+    { "key": "password", "value": "SUA_SENHA_OWNER", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "apiKey", "value": "", "type": "string" },
+    { "key": "apiKeyId", "value": "", "type": "string" },
+    { "key": "organizationId", "value": "", "type": "string" },
+    { "key": "ownerAccountId", "value": "", "type": "string" },
+    { "key": "managedAccountId", "value": "", "type": "string" },
+    { "key": "managedUserId", "value": "", "type": "string" },
+    { "key": "walletId", "value": "", "type": "string" },
+    { "key": "managedWalletId", "value": "", "type": "string" },
+    { "key": "pixKeyId", "value": "", "type": "string" },
+    { "key": "pixKey", "value": "", "type": "string" },
+    { "key": "pixDestinationKey", "value": "CHAVE_PIX_DESTINO", "type": "string" },
+    { "key": "pixTransferId", "value": "", "type": "string" },
+    { "key": "pixAsaasTransactionId", "value": "", "type": "string" },
+    { "key": "chargeId", "value": "", "type": "string" },
+    { "key": "transactionId", "value": "", "type": "string" },
+    { "key": "anticipationId", "value": "", "type": "string" }
+  ],
+  "event": [
     {
-      "key": "baseUrl",
-      "value": "https://theron-wallet-backend-production.up.railway.app",
-      "type": "string"
-    },
-    {
-      "key": "email",
-      "value": "SEU_OWNER_EMAIL",
-      "type": "string"
-    },
-    {
-      "key": "password",
-      "value": "SUA_SENHA_OWNER",
-      "type": "string"
-    },
-    {
-      "key": "accessToken",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "apiKey",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "apiKeyId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "organizationId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "ownerAccountId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "managedAccountId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "walletId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "managedWalletId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "pixKeyId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "chargeId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "transactionId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "pixTransferId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "anticipationId",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "pixKey",
-      "value": "CHAVE_PIX_DESTINO",
-      "type": "string"
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "function setVar(key, value) {",
+          "  if (value === undefined || value === null || value === '') return;",
+          "  pm.collectionVariables.set(key, String(value));",
+          "}",
+          "function body() {",
+          "  try { return pm.response.json(); } catch (e) { return null; }",
+          "}",
+          "function first(list) {",
+          "  return Array.isArray(list) && list.length ? list[0] : null;",
+          "}",
+          "",
+          "if (pm.response.code >= 400) { return; }",
+          "const j = body();",
+          "if (!j) { return; }",
+          "const name = pm.info.requestName;",
+          "",
+          "if (name === 'Login Owner') {",
+          "  setVar('accessToken', j.accessToken || j.token);",
+          "}",
+          "",
+          "if (name === 'Get Me') {",
+          "  const org = first(j.organizations);",
+          "  if (org) setVar('organizationId', org.organizationId);",
+          "}",
+          "",
+          "if (name === 'Get Organization') {",
+          "  setVar('organizationId', j.id);",
+          "}",
+          "",
+          "if (name === 'List Owner Accounts' || name === 'List Managed Accounts') {",
+          "  const list = Array.isArray(j) ? j : (j.content || j.items || []);",
+          "  const owner = list.find((a) => a.type === 'MAIN') || list[0];",
+          "  const managed = list.find((a) => a.type && a.type !== 'MAIN');",
+          "  if (owner) {",
+          "    setVar('ownerAccountId', owner.id);",
+          "    setVar('organizationId', owner.organizationId);",
+          "  }",
+          "  if (managed) {",
+          "    setVar('managedAccountId', managed.id);",
+          "    setVar('managedWalletId', managed.asaasWalletId);",
+          "    setVar('organizationId', managed.organizationId);",
+          "  }",
+          "}",
+          "",
+          "if (name === 'Get Owner Account' || name === 'Get Account') {",
+          "  setVar('ownerAccountId', j.id);",
+          "  setVar('organizationId', j.organizationId);",
+          "}",
+          "",
+          "if (name === 'Create API Key' || name === 'Rotate API Key') {",
+          "  setVar('apiKey', j.apiKey);",
+          "  setVar('apiKeyId', j.id);",
+          "  setVar('organizationId', j.organizationId);",
+          "  setVar('ownerAccountId', j.accountId);",
+          "}",
+          "",
+          "if (name === 'Create Finance or Employee') {",
+          "  setVar('managedUserId', j.userId);",
+          "  setVar('organizationId', j.organizationId);",
+          "  if (j.account) {",
+          "    setVar('managedAccountId', j.account.id);",
+          "    setVar('managedWalletId', j.account.asaasWalletId);",
+          "  }",
+          "  if (j.asaasBind && j.asaasBind.asaasWalletId) {",
+          "    setVar('managedWalletId', j.asaasBind.asaasWalletId);",
+          "  }",
+          "}",
+          "",
+          "if (name === 'Get Managed Account') {",
+          "  setVar('managedAccountId', j.id);",
+          "  setVar('managedWalletId', j.asaasWalletId);",
+          "  setVar('organizationId', j.organizationId);",
+          "}",
+          "",
+          "if (name === 'Get Wallet' || name === 'Get Wallet Direct' || name === 'Get Managed Wallet') {",
+          "  const wallet = j.wallet || j;",
+          "  setVar('walletId', wallet.id);",
+          "  if (name === 'Get Managed Wallet') setVar('managedAccountId', wallet.accountId);",
+          "}",
+          "",
+          "if (name === 'Get Statement' || name === 'List Transactions') {",
+          "  const row = first(j.content || j.items || []);",
+          "  if (row) setVar('transactionId', row.id);",
+          "}",
+          "",
+          "if (name === 'Get Transaction') {",
+          "  setVar('transactionId', j.id);",
+          "}",
+          "",
+          "if (name === 'Create EVP Key') {",
+          "  setVar('pixKeyId', j.id);",
+          "  setVar('pixKey', j.key);",
+          "}",
+          "",
+          "if (name === 'List PIX Keys') {",
+          "  const key = first(Array.isArray(j) ? j : (j.content || []));",
+          "  if (key) {",
+          "    setVar('pixKeyId', key.id);",
+          "    setVar('pixKey', key.key);",
+          "  }",
+          "}",
+          "",
+          "if (name === 'Create PIX Transfer' || name === 'Get PIX Transfer') {",
+          "  setVar('pixTransferId', j.id);",
+          "  setVar('transactionId', j.transactionId);",
+          "}",
+          "",
+          "if (name === 'List PIX Transfers') {",
+          "  const row = first(j.content || j.items || []);",
+          "  if (row) setVar('pixTransferId', row.id);",
+          "}",
+          "",
+          "if (name === 'Pay PIX QR Code') {",
+          "  setVar('pixAsaasTransactionId', j.id);",
+          "  setVar('transactionId', j.transactionId);",
+          "}",
+          "",
+          "if (name === 'Create Boleto Charge' || name === 'Create Credit Card Charge with Split' || name === 'Create PIX Charge' || name === 'Get Charge') {",
+          "  setVar('chargeId', j.id);",
+          "}",
+          "",
+          "if (name === 'List Charges') {",
+          "  const row = first(j.content || j.items || []);",
+          "  if (row) setVar('chargeId', row.id);",
+          "}",
+          "",
+          "if (name === 'Simulate Anticipation' || name === 'Create Anticipation' || name === 'Get Anticipation') {",
+          "  setVar('anticipationId', j.id);",
+          "}",
+          "",
+          "if (name === 'List Anticipations') {",
+          "  const row = first(j.content || j.items || []);",
+          "  if (row) setVar('anticipationId', row.id);",
+          "}"
+        ]
+      }
     }
   ],
   "item": [
@@ -98,50 +177,97 @@
       "item": [
         {
           "name": "Login Owner",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"email\":\"{{email}}\",\"password\":\"{{password}}\",\"platform\":\"web\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{baseUrl}}/api/v1/auth/login",
-            "description": "Login inicial do Owner. A Organização e a conta do Owner já foram criadas pela Theron."
-          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const j=pm.response.json();",
-                  "if(j.accessToken)pm.collectionVariables.set('accessToken',j.accessToken);"
+                  "pm.test('Login Owner 200', () => pm.response.to.have.status(200));",
+                  "pm.test('accessToken gravado', () => pm.expect(pm.collectionVariables.get('accessToken')).to.be.ok);"
                 ]
               }
             }
-          ]
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"platform\": \"web\",\n  \"deviceId\": \"postman-developer-api\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Login do OWNER. Grava accessToken automaticamente."
+          }
         },
         {
-          "name": "Get Organization",
+          "name": "Get Me",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get Me 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/me",
+            "description": "Perfil do OWNER. Grava organizationId a partir de organizations[0]."
+          }
+        },
+        {
+          "name": "Get Organization",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get Organization 200', () => pm.response.to.have.status(200));"
+                ]
               }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
             ],
             "url": "{{baseUrl}}/api/v1/organization",
-            "description": "Consulta a Organização já provisionada."
+            "description": "Organização do JWT. Grava organizationId."
+          }
+        },
+        {
+          "name": "List Owner Accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List Owner Accounts 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ownerAccountId gravado', () => pm.expect(pm.collectionVariables.get('ownerAccountId')).to.be.ok);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/organization/accounts",
+            "description": "Lista as Accounts do OWNER autenticado. Grava ownerAccountId (type MAIN)."
           }
         },
         {
@@ -149,13 +275,10 @@
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
             ],
             "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}",
-            "description": "Consulta a Account financeira individual do Owner."
+            "description": "Confirma a Account financeira do OWNER. Regrava ownerAccountId e organizationId."
           }
         }
       ]
@@ -165,94 +288,75 @@
       "item": [
         {
           "name": "Create API Key",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"name\":\"ERP / Marketplace\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{baseUrl}}/api/v1/developer/api-keys",
-            "description": "OWNER only. O segredo completo é retornado uma única vez."
-          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const j=pm.response.json();",
-                  "if(j.apiKey)pm.collectionVariables.set('apiKey',j.apiKey);",
-                  "if(j.id)pm.collectionVariables.set('apiKeyId',j.id);"
+                  "pm.test('Create API Key 201', () => pm.response.to.have.status(201));",
+                  "pm.test('apiKey tk_ gravada', () => pm.expect(pm.collectionVariables.get('apiKey')).to.match(/^tk_(sandbox|live)_/));"
                 ]
               }
             }
-          ]
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ERP / Marketplace\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/developer/api-keys",
+            "description": "OWNER only. Grava apiKey (plaintext uma vez), apiKeyId, organizationId e ownerAccountId."
+          }
         },
         {
           "name": "List API Keys",
           "request": {
             "method": "GET",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
             ],
             "url": "{{baseUrl}}/api/v1/developer/api-keys",
-            "description": "Lista metadados das chaves."
+            "description": "Lista metadados. Não devolve o segredo plaintext."
           }
         },
         {
           "name": "Rotate API Key",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
-            ],
-            "url": "{{baseUrl}}/api/v1/developer/api-keys/{{apiKeyId}}/rotate",
-            "description": "OWNER only. Salve o novo segredo."
-          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const j=pm.response.json();",
-                  "if(j.apiKey)pm.collectionVariables.set('apiKey',j.apiKey);"
+                  "pm.test('Rotate API Key 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
-          ]
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": "{{baseUrl}}/api/v1/developer/api-keys/{{apiKeyId}}/rotate",
+            "description": "Invalida o segredo anterior e grava o novo em apiKey. Rode só no final dos testes."
+          }
         },
         {
           "name": "Revoke API Key",
           "request": {
             "method": "DELETE",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{accessToken}}"
-              }
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
             ],
             "url": "{{baseUrl}}/api/v1/developer/api-keys/{{apiKeyId}}",
-            "description": "OWNER only."
+            "description": "Revoga a credencial. Rode só no final dos testes."
           }
         }
       ]
@@ -265,49 +369,50 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/organization/accounts",
-            "description": "Com API Key, retorna apenas o Owner e as contas Finance/Employee vinculadas à mesma integração."
+            "description": "Com API Key, retorna o Owner e as contas FINANCE/EMPLOYEE no escopo. Grava ownerAccountId e managedAccountId."
           }
         },
         {
           "name": "Create Finance or Employee",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"name\":\"Financeiro Teste\",\"email\":\"financeiro@empresa.com.br\",\"phone\":\"11999999999\",\"password\":\"SenhaForte123!\",\"role\":\"FINANCE\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{baseUrl}}/api/v1/organization/members",
-            "description": "Cria User + Membership + Account + Wallet. Com API Key, a nova Account é automaticamente vinculada à integração. role aceita FINANCE ou EMPLOYEE."
-          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const j=pm.response.json();",
-                  "if(j.account?.id)pm.collectionVariables.set('managedAccountId',j.account.id);"
+                  "pm.test('Create member 201', () => pm.response.to.have.status(201));"
                 ]
               }
             }
-          ]
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Financeiro Teste\",\n  \"email\": \"financeiro.{{$guid}}@empresa.com.br\",\n  \"phone\": \"11999999999\",\n  \"password\": \"SenhaForte123!\",\n  \"role\": \"FINANCE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/organization/members",
+            "description": "Cria User + Membership + Account + Wallet. Grava managedAccountId, managedUserId e managedWalletId (asaasWalletId, se já existir)."
+          }
         },
         {
           "name": "Get Managed Account",
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}",
-            "description": "Consulta uma Account gerenciada."
+            "description": "Consulta a Account gerenciada. Regrava managedAccountId e managedWalletId."
+          }
+        },
+        {
+          "name": "Get Managed Wallet",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/accounts/{{managedAccountId}}/wallet",
+            "description": "Wallet Theron da Account gerenciada."
           }
         },
         {
@@ -323,26 +428,16 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"personType\":\"JURIDICA\",\"business\":{\"name\":\"Empresa Finance Teste\",\"email\":\"financeiro@empresa.com.br\",\"cpfCnpj\":\"12345678000195\",\"companyType\":\"LIMITED\",\"phone\":\"1133334444\",\"mobilePhone\":\"11999999999\",\"incomeValue\":10000},\"address\":{\"postalCode\":\"01311000\",\"address\":\"Avenida Paulista\",\"addressNumber\":\"1000\",\"province\":\"Bela Vista\",\"complement\":\"Sala 10\"},\"financial\":{\"incomeValue\":10000}}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"personType\": \"COMPANY\",\n  \"business\": {\n    \"cnpj\": \"60746948000112\",\n    \"legalName\": \"Empresa Finance Teste LTDA\",\n    \"tradeName\": \"Finance Teste\",\n    \"email\": \"financeiro@empresa.com.br\",\n    \"mobilePhone\": \"11999999999\",\n    \"companyType\": \"LIMITED\"\n  },\n  \"address\": {\n    \"address\": \"Avenida Paulista\",\n    \"addressNumber\": \"1000\",\n    \"province\": \"Bela Vista\",\n    \"postalCode\": \"01311000\",\n    \"city\": \"São Paulo\",\n    \"complement\": \"Sala 10\"\n  },\n  \"financial\": {\n    \"incomeValue\": 10000\n  }\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}/asaas/onboarding",
-            "description": "Cria/configura a subconta Asaas da Account. Ajuste o payload ao contrato de onboarding da operação."
+            "description": "One-shot KYC da Account gerenciada. Use uma Account ainda sem subconta e uma Idempotency-Key nova. Substitua o CNPJ de exemplo."
           }
         },
         {
@@ -350,7 +445,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}/asaas/subaccount/status",
-            "description": "Consulta status da subconta Asaas."
+            "description": "Status da subconta Asaas. PIX/charges exigem financialResourcesEnabled=true."
           }
         }
       ]
@@ -363,15 +458,27 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}",
-            "description": "Dados da Account individual."
+            "description": "Dados da Account do Owner no escopo da API Key."
           }
         },
         {
           "name": "Get Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get Wallet 200', () => pm.response.to.have.status(200));",
+                  "pm.test('walletId gravado', () => pm.expect(pm.collectionVariables.get('walletId')).to.be.ok);"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}/wallet",
-            "description": "Wallet da Account."
+            "description": "Wallet da Account do Owner. Grava walletId (UUID Theron)."
           }
         },
         {
@@ -386,16 +493,19 @@
           "name": "Get Statement",
           "request": {
             "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
             "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}/statement?page=0&size=20",
-            "description": "Extrato paginado da Account."
+            "description": "Extrato paginado. Esta rota exige JWT do OWNER (não API Key). Grava transactionId se houver itens."
           }
         },
         {
           "name": "List Transactions",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/api/v1/transactions?accountId={{ownerAccountId}}&page=0&size=20",
-            "description": "Extrato paginado de transações."
+            "url": "{{baseUrl}}/api/v1/transactions?walletId={{walletId}}&page=0&size=20",
+            "description": "Extrato por walletId. Rode Get Wallet antes. Grava transactionId."
           }
         },
         {
@@ -413,25 +523,29 @@
       "item": [
         {
           "name": "Create EVP Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Create PIX key 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"type\":\"EVP\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"accountId\": \"{{ownerAccountId}}\",\n  \"type\": \"EVP\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/pix/keys",
-            "description": "Cria chave PIX EVP."
+            "description": "Cria chave PIX EVP. Grava pixKeyId e pixKey."
           }
         },
         {
@@ -439,15 +553,15 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/pix/keys?accountId={{ownerAccountId}}",
-            "description": "Lista chaves PIX."
+            "description": "Lista chaves PIX. Grava pixKeyId e pixKey da primeira chave."
           }
         },
         {
           "name": "Lookup PIX Key",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/api/v1/pix/keys/lookup?accountId={{ownerAccountId}}&type=EVP&key={{pixKey}}",
-            "description": "Consulta destinatário por chave PIX."
+            "url": "{{baseUrl}}/api/v1/pix/keys/lookup?accountId={{ownerAccountId}}&type=EVP&key={{pixDestinationKey}}",
+            "description": "Consulta destinatário. Use pixDestinationKey (destino), não a EVP recém-criada."
           }
         },
         {
@@ -455,34 +569,35 @@
           "request": {
             "method": "DELETE",
             "url": "{{baseUrl}}/api/v1/pix/keys/{{pixKeyId}}",
-            "description": "Remove chave PIX."
+            "description": "Remove a chave PIX gravada em pixKeyId."
           }
         },
         {
           "name": "Create PIX Transfer",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PIX transfer accepted', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"amount\":10.00,\"destinationPixKey\":\"CHAVE_PIX_DESTINO\",\"destinationPixKeyType\":\"EVP\",\"description\":\"Teste\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"accountId\": \"{{ownerAccountId}}\",\n  \"amount\": 10.00,\n  \"destinationPixKey\": \"{{pixDestinationKey}}\",\n  \"destinationPixKeyType\": \"EVP\",\n  \"description\": \"Teste\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/pix/transfers",
-            "description": "Transferência PIX por chave."
+            "description": "Transferência PIX. Grava pixTransferId. Preencha pixDestinationKey antes."
           }
         },
         {
@@ -490,7 +605,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/pix/transfers?accountId={{ownerAccountId}}&page=0&size=20",
-            "description": "Lista transferências PIX."
+            "description": "Lista transferências. Grava pixTransferId da primeira."
           }
         },
         {
@@ -506,22 +621,15 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"pixKeyId\":\"{{pixKeyId}}\",\"value\":100.00,\"description\":\"Cobrança PIX\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"accountId\": \"{{ownerAccountId}}\",\n  \"pixKeyId\": \"{{pixKeyId}}\",\n  \"value\": 100.00,\n  \"description\": \"Cobrança PIX\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/pix/qr-codes",
-            "description": "Gera QR Code PIX estático."
+            "description": "Gera QR Code PIX estático. Rode Create EVP Key antes."
           }
         },
         {
@@ -529,34 +637,24 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"payload\":\"000201...\",\"amount\":10.00,\"description\":\"Pagamento QR\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"accountId\": \"{{ownerAccountId}}\",\n  \"payload\": \"000201...\",\n  \"amount\": 10.00,\n  \"description\": \"Pagamento QR\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/pix/qr-codes/pay",
-            "description": "Paga QR Code copia e cola."
+            "description": "Paga QR copia e cola. Grava pixAsaasTransactionId. Substitua payload pelo EMV real."
           }
         },
         {
           "name": "Get PIX Transaction",
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/api/v1/pix/transactions/{{transactionId}}?accountId={{ownerAccountId}}",
-            "description": "Consulta uma transação PIX."
+            "url": "{{baseUrl}}/api/v1/pix/transactions/{{pixAsaasTransactionId}}?accountId={{ownerAccountId}}",
+            "description": "Poll do id Asaas gravado em pixAsaasTransactionId após Pay PIX QR Code."
           }
         }
       ]
@@ -565,26 +663,46 @@
       "name": "06 - Charges and Split",
       "item": [
         {
+          "name": "Create PIX Charge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Charge PIX 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente Teste\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@exemplo.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Cobrança PIX\",\n  \"externalReference\": \"pm-pix-{{$timestamp}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/charges",
+            "description": "Cria cobrança PIX. Grava chargeId. Não envie accountId no body."
+          }
+        },
+        {
           "name": "Create Boleto Charge",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"customer\":{\"name\":\"Cliente Teste\",\"cpfCnpj\":\"12345678909\",\"email\":\"cliente@exemplo.com\",\"phone\":\"11999999999\"},\"value\":100.00,\"billingType\":\"BOLETO\",\"dueDate\":\"2026-12-31\",\"description\":\"Cobrança boleto\",\"externalReference\":\"pedido-1001\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente Teste\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@exemplo.com\",\n    \"phone\": \"11999999999\"\n  },\n  \"value\": 100.00,\n  \"billingType\": \"BOLETO\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Cobrança boleto\",\n  \"externalReference\": \"pm-boleto-{{$timestamp}}\"\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/charges",
-            "description": "Cria cobrança por boleto."
+            "description": "Cria cobrança por boleto. Grava chargeId."
           }
         },
         {
@@ -592,22 +710,15 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"customer\":{\"name\":\"Cliente Teste\",\"cpfCnpj\":\"12345678909\",\"email\":\"cliente@exemplo.com\",\"phone\":\"11999999999\"},\"value\":500.00,\"billingType\":\"CREDIT_CARD\",\"dueDate\":\"2026-12-31\",\"description\":\"Venda com split\",\"externalReference\":\"pedido-split-1001\",\"installments\":1,\"split\":[{\"walletId\":\"{{managedWalletId}}\",\"percentualValue\":20.0}]}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente Teste\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@exemplo.com\",\n    \"phone\": \"11999999999\"\n  },\n  \"value\": 500.00,\n  \"billingType\": \"CREDIT_CARD\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Venda com split\",\n  \"externalReference\": \"pm-split-{{$timestamp}}\",\n  \"installments\": 1,\n  \"split\": [\n    {\n      \"walletId\": \"{{managedWalletId}}\",\n      \"percentualValue\": 20.0\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/charges",
-            "description": "Configura Split na cobrança para uma Wallet gerenciada pela mesma API Key."
+            "description": "Split usa managedWalletId (wallet Asaas da conta gerenciada), não o UUID Theron."
           }
         },
         {
@@ -615,7 +726,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/charges?page=0&size=20",
-            "description": "Lista cobranças."
+            "description": "Lista cobranças. Grava chargeId da primeira se ainda vazio."
           }
         },
         {
@@ -623,7 +734,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/charges/{{chargeId}}",
-            "description": "Detalha cobrança."
+            "description": "Detalha a cobrança gravada em chargeId."
           }
         },
         {
@@ -644,22 +755,15 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"chargeIds\":[\"{{chargeId}}\"]}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"chargeIds\": [\"{{chargeId}}\"]\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/anticipations/simulate",
-            "description": "Simula antecipação."
+            "description": "Simula antecipação. Grava anticipationId. No sandbox Asaas pode falhar; use create/list."
           }
         },
         {
@@ -667,22 +771,15 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"chargeIds\":[\"{{chargeId}}\"]}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"chargeIds\": [\"{{chargeId}}\"]\n}",
+              "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/anticipations",
-            "description": "Solicita antecipação."
+            "description": "Solicita antecipação. Grava anticipationId."
           }
         },
         {
@@ -690,7 +787,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/anticipations?page=0&size=20",
-            "description": "Lista antecipações."
+            "description": "Lista antecipações. Grava anticipationId da primeira."
           }
         },
         {
@@ -698,7 +795,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/api/v1/anticipations/{{anticipationId}}",
-            "description": "Consulta antecipação."
+            "description": "Consulta a antecipação gravada em anticipationId."
           }
         }
       ]
@@ -707,11 +804,7 @@
   "auth": {
     "type": "bearer",
     "bearer": [
-      {
-        "key": "token",
-        "value": "{{apiKey}}",
-        "type": "string"
-      }
+      { "key": "token", "value": "{{apiKey}}", "type": "string" }
     ]
   }
 }
