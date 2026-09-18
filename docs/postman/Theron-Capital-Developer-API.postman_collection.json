@@ -1,0 +1,717 @@
+{
+  "info": {
+    "_postman_id": "f4f0d5b6-4d7d-4c62-a3d0-theron-capital-dev-api",
+    "name": "Theron Capital - Developer API",
+    "description": "Integração da organização cliente com a Theron Capital. A Theron cria a Organização e o Owner. O Owner faz login pelo frontend, conclui o onboarding da própria subconta Asaas e cria a Theron API Key. Depois disso, a integração usa a API Key para operar a conta do Owner e as contas Finance/Employee criadas por essa mesma integração. O cliente não cria Organização.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://theron-wallet-backend-production.up.railway.app",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "SEU_OWNER_EMAIL",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "SUA_SENHA_OWNER",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiKeyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "organizationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ownerAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "managedAccountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "walletId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "managedWalletId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pixKeyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chargeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pixTransferId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "anticipationId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pixKey",
+      "value": "CHAVE_PIX_DESTINO",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Bootstrap",
+      "item": [
+        {
+          "name": "Login Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\":\"{{email}}\",\"password\":\"{{password}}\",\"platform\":\"web\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Login inicial do Owner. A Organização e a conta do Owner já foram criadas pela Theron."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j=pm.response.json();",
+                  "if(j.accessToken)pm.collectionVariables.set('accessToken',j.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Organization",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/organization",
+            "description": "Consulta a Organização já provisionada."
+          }
+        },
+        {
+          "name": "Get Owner Account",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}",
+            "description": "Consulta a Account financeira individual do Owner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Theron API Key",
+      "item": [
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"ERP / Marketplace\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/developer/api-keys",
+            "description": "OWNER only. O segredo completo é retornado uma única vez."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j=pm.response.json();",
+                  "if(j.apiKey)pm.collectionVariables.set('apiKey',j.apiKey);",
+                  "if(j.id)pm.collectionVariables.set('apiKeyId',j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List API Keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/developer/api-keys",
+            "description": "Lista metadados das chaves."
+          }
+        },
+        {
+          "name": "Rotate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/developer/api-keys/{{apiKeyId}}/rotate",
+            "description": "OWNER only. Salve o novo segredo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j=pm.response.json();",
+                  "if(j.apiKey)pm.collectionVariables.set('apiKey',j.apiKey);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke API Key",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/developer/api-keys/{{apiKeyId}}",
+            "description": "OWNER only."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Managed Accounts",
+      "item": [
+        {
+          "name": "List Managed Accounts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/organization/accounts",
+            "description": "Com API Key, retorna apenas o Owner e as contas Finance/Employee vinculadas à mesma integração."
+          }
+        },
+        {
+          "name": "Create Finance or Employee",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Financeiro Teste\",\"email\":\"financeiro@empresa.com.br\",\"phone\":\"11999999999\",\"password\":\"SenhaForte123!\",\"role\":\"FINANCE\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/organization/members",
+            "description": "Cria User + Membership + Account + Wallet. Com API Key, a nova Account é automaticamente vinculada à integração. role aceita FINANCE ou EMPLOYEE."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const j=pm.response.json();",
+                  "if(j.account?.id)pm.collectionVariables.set('managedAccountId',j.account.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Managed Account",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}",
+            "description": "Consulta uma Account gerenciada."
+          }
+        },
+        {
+          "name": "Get Managed Account Onboarding",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}/asaas/onboarding",
+            "description": "Consulta o onboarding Asaas da Account gerenciada."
+          }
+        },
+        {
+          "name": "Submit Managed Account Onboarding",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"personType\":\"JURIDICA\",\"business\":{\"name\":\"Empresa Finance Teste\",\"email\":\"financeiro@empresa.com.br\",\"cpfCnpj\":\"12345678000195\",\"companyType\":\"LIMITED\",\"phone\":\"1133334444\",\"mobilePhone\":\"11999999999\",\"incomeValue\":10000},\"address\":{\"postalCode\":\"01311000\",\"address\":\"Avenida Paulista\",\"addressNumber\":\"1000\",\"province\":\"Bela Vista\",\"complement\":\"Sala 10\"},\"financial\":{\"incomeValue\":10000}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}/asaas/onboarding",
+            "description": "Cria/configura a subconta Asaas da Account. Ajuste o payload ao contrato de onboarding da operação."
+          }
+        },
+        {
+          "name": "Get Managed Asaas Status",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/organization/accounts/{{managedAccountId}}/asaas/subaccount/status",
+            "description": "Consulta status da subconta Asaas."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Account / Wallet / Statement",
+      "item": [
+        {
+          "name": "Get Account",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}",
+            "description": "Dados da Account individual."
+          }
+        },
+        {
+          "name": "Get Wallet",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}/wallet",
+            "description": "Wallet da Account."
+          }
+        },
+        {
+          "name": "Get Wallet Direct",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/wallets/{{walletId}}",
+            "description": "Wallet por ID, respeitando o escopo da API Key."
+          }
+        },
+        {
+          "name": "Get Statement",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/accounts/{{ownerAccountId}}/statement?page=0&size=20",
+            "description": "Extrato paginado da Account."
+          }
+        },
+        {
+          "name": "List Transactions",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/transactions?accountId={{ownerAccountId}}&page=0&size=20",
+            "description": "Extrato paginado de transações."
+          }
+        },
+        {
+          "name": "Get Transaction",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}",
+            "description": "Detalhe de uma transação."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - PIX",
+      "item": [
+        {
+          "name": "Create EVP Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"type\":\"EVP\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/pix/keys",
+            "description": "Cria chave PIX EVP."
+          }
+        },
+        {
+          "name": "List PIX Keys",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pix/keys?accountId={{ownerAccountId}}",
+            "description": "Lista chaves PIX."
+          }
+        },
+        {
+          "name": "Lookup PIX Key",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pix/keys/lookup?accountId={{ownerAccountId}}&type=EVP&key={{pixKey}}",
+            "description": "Consulta destinatário por chave PIX."
+          }
+        },
+        {
+          "name": "Delete PIX Key",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/v1/pix/keys/{{pixKeyId}}",
+            "description": "Remove chave PIX."
+          }
+        },
+        {
+          "name": "Create PIX Transfer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"amount\":10.00,\"destinationPixKey\":\"CHAVE_PIX_DESTINO\",\"destinationPixKeyType\":\"EVP\",\"description\":\"Teste\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/pix/transfers",
+            "description": "Transferência PIX por chave."
+          }
+        },
+        {
+          "name": "List PIX Transfers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pix/transfers?accountId={{ownerAccountId}}&page=0&size=20",
+            "description": "Lista transferências PIX."
+          }
+        },
+        {
+          "name": "Get PIX Transfer",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pix/transfers/{{pixTransferId}}",
+            "description": "Detalhe da transferência PIX."
+          }
+        },
+        {
+          "name": "Create PIX QR Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"pixKeyId\":\"{{pixKeyId}}\",\"value\":100.00,\"description\":\"Cobrança PIX\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/pix/qr-codes",
+            "description": "Gera QR Code PIX estático."
+          }
+        },
+        {
+          "name": "Pay PIX QR Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"accountId\":\"{{ownerAccountId}}\",\"payload\":\"000201...\",\"amount\":10.00,\"description\":\"Pagamento QR\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/pix/qr-codes/pay",
+            "description": "Paga QR Code copia e cola."
+          }
+        },
+        {
+          "name": "Get PIX Transaction",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/pix/transactions/{{transactionId}}?accountId={{ownerAccountId}}",
+            "description": "Consulta uma transação PIX."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Charges and Split",
+      "item": [
+        {
+          "name": "Create Boleto Charge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customer\":{\"name\":\"Cliente Teste\",\"cpfCnpj\":\"12345678909\",\"email\":\"cliente@exemplo.com\",\"phone\":\"11999999999\"},\"value\":100.00,\"billingType\":\"BOLETO\",\"dueDate\":\"2026-12-31\",\"description\":\"Cobrança boleto\",\"externalReference\":\"pedido-1001\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/charges",
+            "description": "Cria cobrança por boleto."
+          }
+        },
+        {
+          "name": "Create Credit Card Charge with Split",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"customer\":{\"name\":\"Cliente Teste\",\"cpfCnpj\":\"12345678909\",\"email\":\"cliente@exemplo.com\",\"phone\":\"11999999999\"},\"value\":500.00,\"billingType\":\"CREDIT_CARD\",\"dueDate\":\"2026-12-31\",\"description\":\"Venda com split\",\"externalReference\":\"pedido-split-1001\",\"installments\":1,\"split\":[{\"walletId\":\"{{managedWalletId}}\",\"percentualValue\":20.0}]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/charges",
+            "description": "Configura Split na cobrança para uma Wallet gerenciada pela mesma API Key."
+          }
+        },
+        {
+          "name": "List Charges",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/charges?page=0&size=20",
+            "description": "Lista cobranças."
+          }
+        },
+        {
+          "name": "Get Charge",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/charges/{{chargeId}}",
+            "description": "Detalha cobrança."
+          }
+        },
+        {
+          "name": "Cancel Charge",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/v1/charges/{{chargeId}}/cancel",
+            "description": "Cancela cobrança elegível."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - Anticipations",
+      "item": [
+        {
+          "name": "Simulate Anticipation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"chargeIds\":[\"{{chargeId}}\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/anticipations/simulate",
+            "description": "Simula antecipação."
+          }
+        },
+        {
+          "name": "Create Anticipation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"chargeIds\":[\"{{chargeId}}\"]}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/anticipations",
+            "description": "Solicita antecipação."
+          }
+        },
+        {
+          "name": "List Anticipations",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/anticipations?page=0&size=20",
+            "description": "Lista antecipações."
+          }
+        },
+        {
+          "name": "Get Anticipation",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/v1/anticipations/{{anticipationId}}",
+            "description": "Consulta antecipação."
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  }
+}
