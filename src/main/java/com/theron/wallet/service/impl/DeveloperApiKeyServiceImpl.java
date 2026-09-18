@@ -46,7 +46,9 @@ public class DeveloperApiKeyServiceImpl implements DeveloperApiKeyService {
             PermissionCodes.ANTICIPATIONS_READ,
             PermissionCodes.ANTICIPATIONS_CREATE,
             PermissionCodes.ONBOARDING_READ,
-            PermissionCodes.ONBOARDING_SUBMIT
+            PermissionCodes.ONBOARDING_SUBMIT,
+            PermissionCodes.MEMBERS_READ,
+            PermissionCodes.MEMBERS_MANAGE
     );
 
     private static final String SECRET_WARNING =
@@ -125,6 +127,31 @@ public class DeveloperApiKeyServiceImpl implements DeveloperApiKeyService {
 
     @Override
     @Transactional
+    public void bindAccountToApiKey(UUID apiKeyId, UUID accountId) {
+        OauthClient client = oauthClientLoader.loadWithDetailsById(apiKeyId)
+                .orElseThrow(() -> new ResourceNotFoundException("ApiKey", "id", apiKeyId));
+        if (client.getStatus() != OauthClientStatus.ACTIVE) {
+            throw new InvalidRequestException("Cannot bind an account to an inactive API key");
+        }
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        if (!client.getOrganization().getId().equals(account.getOrganization().getId())) {
+            throw new ForbiddenException("API key and account belong to different organizations");
+        }
+        if (OauthClientLoader.accountIds(client).contains(accountId)) {
+            return;
+        }
+        if (oauthClientRepository.existsByAccountIdExcludingClient(accountId, client.getId())) {
+            throw new InvalidRequestException("Account already has another API key / OAuth client");
+        }
+        client.getAccounts().add(OauthClientAccount.builder().client(client).account(account).build());
+        oauthClientRepository.save(client);
+        audit(client, "BIND_ACCOUNT", client.getCreatedByUserId(),
+                "account=" + accountId + "; prefix=" + client.getApiKeyPrefix());
+    }
+
+    @Override
+    @Transactional
     public TheronApiKeyResponse rotate(UUID actorUserId, UUID apiKeyId) {
         UUID organizationId = requireOwnerOrg(actorUserId);
         OauthClient client = oauthClientLoader.loadWithDetailsById(apiKeyId)
@@ -162,7 +189,7 @@ public class DeveloperApiKeyServiceImpl implements DeveloperApiKeyService {
     private void assertAccountAvailable(UUID accountId, UUID excludeClientId) {
         if (oauthClientRepository.existsByAccountIdExcludingClient(accountId, excludeClientId)) {
             throw new InvalidRequestException(
-                    "Account already has an API key / OAuth client (1:1 binding required). Rotate or revoke the existing key.");
+                    "Account already has an API key / OAuth client. Rotate or revoke the existing key.");
         }
     }
 
