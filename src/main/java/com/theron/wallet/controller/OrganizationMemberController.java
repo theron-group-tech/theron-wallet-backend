@@ -1,12 +1,15 @@
 package com.theron.wallet.controller;
 
-import com.theron.wallet.dto.request.AddOrganizationMemberRequest;
+import com.theron.wallet.dto.request.CreateOrganizationEmployeeRequest;
 import com.theron.wallet.dto.request.UpdateOrganizationMemberRequest;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
+import com.theron.wallet.dto.response.OrganizationEmployeeResponse;
 import com.theron.wallet.enums.MembershipStatus;
+import com.theron.wallet.security.Actor;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
+import com.theron.wallet.service.OrganizationAdminService;
 import com.theron.wallet.service.OrganizationMembershipService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -39,22 +42,28 @@ import java.util.UUID;
 public class OrganizationMemberController {
 
     private final OrganizationMembershipService membershipService;
+    private final OrganizationAdminService organizationAdminService;
     private final ActorResolver actorResolver;
     private final ResourceAuthorization resourceAuthorization;
 
     @PostMapping
-    @Operation(summary = "Adicionar membro", description = "Vincula user existente à organization. Reativa se estava REMOVED/SUSPENDED.")
+    @Operation(
+            summary = "Criar membro",
+            description = "Cria um novo usuário na organização, cria sua membership, atribui FINANCE ou EMPLOYEE e provisiona sua Account."
+    )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "Membership criada/reativada"),
-            @ApiResponse(responseCode = "404", description = "Organization ou User não encontrado"),
-            @ApiResponse(responseCode = "409", description = "Membership ACTIVE/INVITED já existe")
+            @ApiResponse(responseCode = "201", description = "Usuário, membership e Account criados"),
+            @ApiResponse(responseCode = "400", description = "Dados inválidos"),
+            @ApiResponse(responseCode = "403", description = "Ator sem permissão para gerenciar membros"),
+            @ApiResponse(responseCode = "409", description = "Email do usuário já existe ou conflito de recurso")
     })
-    public ResponseEntity<OrganizationMembershipResponse> addMember(
+    public ResponseEntity<OrganizationEmployeeResponse> createMember(
             @PathVariable UUID organizationId,
-            @Valid @RequestBody AddOrganizationMemberRequest request) {
-        UUID actor = actorResolver.requireProductUserId();
+            @Valid @RequestBody CreateOrganizationEmployeeRequest request) {
+        Actor actor = actorResolver.requireActor();
         resourceAuthorization.requireOrganization(actor, organizationId, PermissionCodes.MEMBERS_MANAGE);
-        OrganizationMembershipResponse response = membershipService.addMember(organizationId, request);
+        OrganizationEmployeeResponse response =
+                organizationAdminService.createEmployee(actor, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
