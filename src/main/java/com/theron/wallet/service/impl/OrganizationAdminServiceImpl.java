@@ -15,10 +15,13 @@ import com.theron.wallet.enums.AuditAction;
 import com.theron.wallet.enums.MembershipStatus;
 import com.theron.wallet.enums.RoleCode;
 import com.theron.wallet.exception.ForbiddenException;
+import com.theron.wallet.security.Actor;
+import com.theron.wallet.security.ClientPrincipal;
 import com.theron.wallet.security.OrganizationContextResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.security.ResourceAuthorization;
 import com.theron.wallet.service.AccountAsaasProvisioningService;
+import com.theron.wallet.service.DeveloperApiKeyService;
 import com.theron.wallet.service.AccountService;
 import com.theron.wallet.service.AuditLogService;
 import com.theron.wallet.service.OrganizationAdminService;
@@ -49,6 +52,7 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     private final AccountAsaasProvisioningService provisioningService;
     private final ResourceAuthorization resourceAuthorization;
     private final AuditLogService auditLogService;
+    private final DeveloperApiKeyService developerApiKeyService;
 
     @Override
     @Transactional(readOnly = true)
@@ -128,6 +132,22 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
     }
 
     @Override
+    @Transactional
+    public OrganizationEmployeeResponse createEmployee(Actor actor, CreateOrganizationEmployeeRequest request) {
+        if (actor.isUser()) {
+            return createEmployee(actor.getUserId(), request);
+        }
+        ClientPrincipal client = actor.getClient();
+        UUID ownerUserId = client.getOwnerUserId();
+        if (ownerUserId == null) {
+            throw new ForbiddenException("API key has no Owner user");
+        }
+        OrganizationEmployeeResponse response = createEmployee(ownerUserId, request);
+        developerApiKeyService.bindAccountToApiKey(client.getOauthClientId(), response.getAccount().getId());
+        return response;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<AccountResponse> listAccounts(UUID actorUserId) {
         UUID organizationId = organizationContextResolver.requireSingleOrganizationId(actorUserId);
@@ -147,6 +167,26 @@ public class OrganizationAdminServiceImpl implements OrganizationAdminService {
             throw new ForbiddenException("Access denied");
         }
         return account;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AccountResponse> listAccounts(Actor actor) {
+        if (actor.isUser()) {
+            return listAccounts(actor.getUserId());
+        }
+        ClientPrincipal client = actor.getClient();
+        resourceAuthorization.requireOrganization(actor, client.getOrganizationId(), PermissionCodes.WALLET_READ);
+        return accountService.listByOrganization(client.getOrganizationId()).stream()
+                .filter(account -> client.canAccessAccount(account.getId()))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AccountResponse getAccount(Actor actor, UUID accountId) {
+        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.WALLET_READ);
+        return accountService.findById(accountId);
     }
 
     @Override
