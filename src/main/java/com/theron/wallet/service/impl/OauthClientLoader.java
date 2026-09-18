@@ -83,4 +83,17 @@ public class OauthClientLoader {
                 .map(a -> a.getId())
                 .collect(Collectors.toCollection(HashSet::new));
     }
+
+    public static UUID primaryAccountId(OauthClient client) {
+        if (client.getCreatedByUserId() == null) {
+            return null;
+        }
+        return client.getAccounts().stream()
+                .map(OauthClientAccount::getAccount)
+                .filter(a -> a != null && a.getOwnerUser() != null)
+                .filter(a -> client.getCreatedByUserId().equals(a.getOwnerUser().getId()))
+                .map(a -> a.getId())
+                .findFirst()
+                .orElse(null);
+    }
 }
