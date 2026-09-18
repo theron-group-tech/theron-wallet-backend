@@ -6,6 +6,7 @@ import com.theron.wallet.dto.response.AccountResponse;
 import com.theron.wallet.dto.response.OrganizationEmployeeResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.security.Actor;
 import com.theron.wallet.security.ActorResolver;
 import com.theron.wallet.service.OrganizationAdminService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -53,12 +54,12 @@ public class OrganizationContextController {
     public ResponseEntity<OrganizationEmployeeResponse> createEmployee(
             @Valid @RequestBody CreateOrganizationEmployeeRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(organizationAdminService.createEmployee(actorResolver.requireProductUserId(), request));
+                .body(organizationAdminService.createEmployee(actorResolver.requireActor(), request));
     }
 
     @GetMapping("/accounts")
     public ResponseEntity<List<AccountResponse>> listAccounts() {
-        return ResponseEntity.ok(organizationAdminService.listAccounts(actorResolver.requireProductUserId()));
+        return ResponseEntity.ok(organizationAdminService.listAccounts(actorResolver.requireActor()));
     }
 
     @PostMapping("/accounts")
@@ -69,6 +70,6 @@ public class OrganizationContextController {
 
     @GetMapping("/accounts/{accountId}")
     public ResponseEntity<AccountResponse> getAccount(@PathVariable UUID accountId) {
-        return ResponseEntity.ok(organizationAdminService.getAccount(actorResolver.requireProductUserId(), accountId));
+        return ResponseEntity.ok(organizationAdminService.getAccount(actorResolver.requireActor(), accountId));
     }
 }
