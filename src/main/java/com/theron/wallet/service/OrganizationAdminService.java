@@ -7,6 +7,7 @@ import com.theron.wallet.dto.response.AsaasBindResponse;
 import com.theron.wallet.dto.response.OrganizationEmployeeResponse;
 import com.theron.wallet.dto.response.OrganizationMembershipResponse;
 import com.theron.wallet.dto.response.OrganizationResponse;
+import com.theron.wallet.security.Actor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
@@ -20,10 +21,13 @@ public interface OrganizationAdminService {
     Page<OrganizationMembershipResponse> listMembers(UUID actorUserId, Pageable pageable);
 
     OrganizationEmployeeResponse createEmployee(UUID actorUserId, CreateOrganizationEmployeeRequest request);
+    OrganizationEmployeeResponse createEmployee(Actor actor, CreateOrganizationEmployeeRequest request);
 
     List<AccountResponse> listAccounts(UUID actorUserId);
+    List<AccountResponse> listAccounts(Actor actor);
 
     AccountResponse getAccount(UUID actorUserId, UUID accountId);
+    AccountResponse getAccount(Actor actor, UUID accountId);
 
     AccountResponse createOwnAccount(UUID actorUserId, CreateAccountRequest request);
 
