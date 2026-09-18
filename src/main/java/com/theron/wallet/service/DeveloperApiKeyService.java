@@ -15,4 +15,6 @@ public interface DeveloperApiKeyService {
     void revoke(UUID actorUserId, UUID apiKeyId);
 
     TheronApiKeyResponse rotate(UUID actorUserId, UUID apiKeyId);
+
+    void bindAccountToApiKey(UUID apiKeyId, UUID accountId);
 }
