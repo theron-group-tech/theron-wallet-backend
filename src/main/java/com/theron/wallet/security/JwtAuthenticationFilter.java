@@ -170,6 +170,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 .oauthClientId(client.getId())
                 .publicClientId(client.getClientId())
                 .organizationId(client.getOrganization().getId())
+                .ownerUserId(client.getCreatedByUserId())
+                .primaryAccountId(OauthClientLoader.primaryAccountId(client))
                 .name(client.getName())
                 .scopes(OauthClientLoader.scopeCodes(client))
                 .allowedAccountIds(OauthClientLoader.accountIds(client))
