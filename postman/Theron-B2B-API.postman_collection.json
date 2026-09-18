@@ -1,768 +1,1233 @@
 {
   "info": {
-"_postman_id": "c0f73e1e-c993-4845-a8d6-0f47273e3d71",
-    "name": "Theron Wallet API - B2B Integration",
-    "description": "Collection oficial para testes de integração B2B da Theron Wallet.\n\nFluxo recomendado: Health → Login Admin → Criar OAuth Client → Token B2B → **Onboarding Asaas (B2B)** → Consultas → Cobranças (Boleto / Cartão / PIX) → Antecipações.\n\nA Theron cria Organization + Account + OAuth. O parceiro provisiona a **subconta Asaas** com `POST /asaas/onboarding/b2b` (scopes `onboarding.read` / `onboarding.submit`) — sem login no site do produto.\n\n**Credenciais:** o Platform Owner da Theron cria e fornece `client_id` e `client_secret` ao integrador. Não publique credenciais reais nem `ASAAS_API_KEY`.\n\n**Cobrança PIX / QR:** use `billingType: \"PIX\"`. O pagador acessa o QR Code pela `invoiceUrl` retornada na resposta (fatura Asaas). Nesta API B2B não há endpoint separado com payload EMV/copia-e-cola.\n\n**Sandbox:** a antecipação efetiva pode não ser testável porque a própria Asaas não disponibiliza essa operação no Sandbox.",
+    "_postman_id": "a7c9c2b6-6b42-4f55-8d0d-theron-capital-b2b",
+    "name": "Theron Capital - Developer B2B API",
+    "description": "Documentação oficial de integração B2B da Theron Capital.\n\nOBJETIVO\nEsta Collection foi organizada para que um parceiro consiga testar a integração inteira em sequência, começando pelo acesso do Owner e terminando nas operações financeiras.\n\nMODELO DE ACESSO\n1. A Theron provisiona a Organization e o usuário OWNER.\n2. O parceiro recebe as credenciais do OWNER.\n3. O OWNER faz login e possui sua própria Account + Wallet.\n4. O OWNER cria uma Theron API Key (tk_sandbox_... ou tk_live_...).\n5. A API Key passa a ser a credencial da integração.\n6. O OWNER pode criar contas financeiras de FINANCE/EMPLOYEE.\n7. A integração pode operar somente nas Accounts autorizadas pela API Key.\n8. Cada Account possui sua própria Wallet e sua própria subconta Asaas.\n9. Rotas financeiras recebem accountId quando a operação é específica de uma Account.\n10. A mesma operação pode ser feita para o OWNER ou para uma conta gerenciada, desde que a API Key tenha acesso à Account.\n\nIMPORTANTE\n- Não é necessário o cliente criar uma Organization.\n- A API Key não substitui a Account: ela autentica a integração.\n- OWNER é um participante financeiro normal e possui dinheiro na própria Wallet.\n- Não use bankCode/nome do banco para decidir se um PIX é interno ou externo.\n- Para operações com Account, o backend deve validar se aquela Account pertence ao escopo autorizado da API Key.\n- A chave API em texto puro aparece somente na criação/rotação. Armazene-a com segurança.\n- Nunca publique client secrets, API keys ou credenciais reais.\n- Ambiente padrão desta Collection: produção da API Theron; use credenciais/dados de Sandbox quando aplicável.\n\nSEQUÊNCIA RECOMENDADA\n01. Login Owner\n02. Consultar /me\n03. Listar Accounts e identificar ownerAccountId\n04. Consultar Wallet do Owner e identificar ownerWalletId\n05. Criar Theron API Key\n06. Listar API Keys para confirmar\n07. Listar Accounts gerenciáveis pela integração\n08. Opcional: criar FINANCE ou EMPLOYEE\n09. Consultar Account/Wallet da conta gerenciada\n10. Fazer onboarding Asaas da Account escolhida\n11. Consultar status da subconta Asaas\n12. Listar/criar chaves PIX\n13. Fazer PIX por chave\n14. Criar cobranças PIX, boleto e cartão\n15. Consultar/cancelar cobranças\n16. Simular/listar antecipações\n17. Testar isolamento com Account não autorizada\n18. Rotacionar ou revogar a API Key somente no final\n\nCONCEITO DE VARIÁVEIS\n- currentAccountId: Account usada pelo próximo teste financeiro.\n- currentWalletId: Wallet correspondente à currentAccountId.\n- ownerAccountId/ownerWalletId: estrutura financeira do OWNER.\n- managedAccountId/managedWalletId: estrutura financeira de uma conta FINANCE/EMPLOYEE selecionada.\n- theron_api_key: segredo da integração. Use como Bearer.\n- organizationId: organização/tenant fornecida pela API.\n- asaas onboarding: deve ser feito para uma Account que ainda não tenha subconta Asaas, usando Idempotency-Key no POST.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "https://theron-wallet-backend-production.up.railway.app" }
+    {
+      "key": "base_url",
+      "value": "https://theron-wallet-backend-production.up.railway.app",
+      "description": "Base URL da API Theron Capital."
+    },
+    {
+      "key": "owner_email",
+      "value": "",
+      "description": "E-mail do usuário OWNER fornecido pela Theron."
+    },
+    {
+      "key": "owner_password",
+      "value": "",
+      "description": "Senha do usuário OWNER."
+    },
+    {
+      "key": "device_id",
+      "value": "postman-b2b-device",
+      "description": "Identificador lógico do dispositivo para autenticação."
+    },
+    {
+      "key": "owner_access_token",
+      "value": "",
+      "description": "JWT obtido no Login Owner. Usado somente nas rotas administrativas do OWNER, como gerenciamento da API Key."
+    },
+    {
+      "key": "organizationId",
+      "value": "",
+      "description": "UUID da Organization do OWNER."
+    },
+    {
+      "key": "ownerAccountId",
+      "value": "",
+      "description": "UUID da Account financeira do OWNER."
+    },
+    {
+      "key": "ownerWalletId",
+      "value": "",
+      "description": "UUID da Wallet do OWNER."
+    },
+    {
+      "key": "managedAccountId",
+      "value": "",
+      "description": "UUID da Account FINANCE/EMPLOYEE selecionada para testes."
+    },
+    {
+      "key": "managedWalletId",
+      "value": "",
+      "description": "UUID da Wallet da Account gerenciada selecionada."
+    },
+    {
+      "key": "currentAccountId",
+      "value": "",
+      "description": "Account atualmente selecionada para as operações financeiras."
+    },
+    {
+      "key": "currentWalletId",
+      "value": "",
+      "description": "Wallet correspondente à currentAccountId."
+    },
+    {
+      "key": "managedUserId",
+      "value": "",
+      "description": "UUID do usuário criado para FINANCE/EMPLOYEE, quando retornado."
+    },
+    {
+      "key": "theron_api_key",
+      "value": "",
+      "description": "Chave tk_sandbox_... ou tk_live_.... Mostrada somente uma vez na criação/rotação."
+    },
+    {
+      "key": "theron_api_key_id",
+      "value": "",
+      "description": "UUID/id interno da API Key."
+    },
+    {
+      "key": "pixKeyId",
+      "value": "",
+      "description": "ID interno da chave PIX."
+    },
+    {
+      "key": "pixKey",
+      "value": "",
+      "description": "Chave PIX para lookup/transferência."
+    },
+    {
+      "key": "pixKeyType",
+      "value": "EVP",
+      "description": "Tipo da chave PIX. Ex.: EVP, CPF, CNPJ, EMAIL, PHONE."
+    },
+    {
+      "key": "pixDestinationKey",
+      "value": "",
+      "description": "Chave PIX de destino."
+    },
+    {
+      "key": "pixDestinationKeyType",
+      "value": "EVP",
+      "description": "Tipo da chave PIX de destino."
+    },
+    {
+      "key": "pixTransferId",
+      "value": "",
+      "description": "ID da transferência PIX."
+    },
+    {
+      "key": "chargeId",
+      "value": "",
+      "description": "ID interno da cobrança."
+    },
+    {
+      "key": "asaasPaymentId",
+      "value": "",
+      "description": "ID do pagamento na Asaas."
+    },
+    {
+      "key": "anticipationId",
+      "value": "",
+      "description": "ID da antecipação."
+    },
+    {
+      "key": "otherAccountId",
+      "value": "",
+      "description": "Account fora do escopo da API Key, usada para testar isolamento."
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "",
+      "description": "Chave de idempotência. Gere uma nova para cada operação financeira que deva ser única."
+    }
   ],
   "item": [
     {
-      "name": "0. Setup Admin",
-      "description": "JWT de Platform Admin. Preencha organization_id e account_id no Environment antes.",
+      "name": "01. Acesso do OWNER",
+      "description": "Use esta pasta primeiro.\n\nO OWNER é o usuário financeiro principal provisionado pela Theron. Ele já possui Organization + Account + Wallet. O parceiro não cria Organization.\n\nOrdem:\n1) Login Owner\n2) Get Me\n3) List My Accounts\n4) Get Owner Wallet\n\nAo terminar, preencha automaticamente organizationId, ownerAccountId e ownerWalletId no Environment.",
       "item": [
         {
-          "name": "Login Admin",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Login admin 200', function () { pm.response.to.have.status(200); });",
-                  "const j = pm.response.json();",
-                  "const token = j.accessToken || j.token;",
-                  "if (token) {",
-                  "  pm.environment.set('admin_access_token', token);",
-                  "}",
-                  "pm.test('admin_access_token salvo', function () {",
-                  "  pm.expect(pm.environment.get('admin_access_token')).to.be.ok;",
-                  "});"
-                ]
-              }
-            }
-          ],
+          "name": "01. Login Owner",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\",\n  \"deviceId\": \"{{device_id}}\"\n}"
+              "raw": "{\n  \"email\": \"{{owner_email}}\",\n  \"password\": \"{{owner_password}}\",\n  \"deviceId\": \"{{device_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": "{{base_url}}/api/v1/auth/login",
-            "description": "Autentica Platform Admin. Grava admin_access_token no Environment."
-          }
-        },
-        {
-          "name": "Create OAuth Client (1:1 Account)",
+            "description": "Autentica o OWNER.\n\nBODY\n- email: e-mail do OWNER.\n- password: senha do OWNER.\n- deviceId: identificador do dispositivo/integrador.\n\nA resposta deve fornecer accessToken. O teste da requisição salva esse token em owner_access_token."
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Create client 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('Login Owner 200', () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "if (j.clientId) pm.environment.set('client_id', j.clientId);",
-                  "if (j.clientSecret) pm.environment.set('client_secret', j.clientSecret);",
-                  "if (j.id) pm.environment.set('oauth_client_uuid', j.id);",
-                  "if (j.organizationId) pm.environment.set('organization_id', j.organizationId);",
-                  "pm.test('credenciais salvas', function () {",
-                  "  pm.expect(pm.environment.get('client_id')).to.be.ok;",
-                  "  pm.expect(pm.environment.get('client_secret')).to.be.ok;",
-                  "});"
+                  "const token = j.accessToken || j.token;",
+                  "if (token) pm.environment.set('owner_access_token', token);",
+                  "pm.test('owner_access_token salvo', () => pm.expect(pm.environment.get('owner_access_token')).to.be.ok);"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "02. Get Me",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
-            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/me",
+            "description": "Retorna o contexto do usuário autenticado.\n\nUse para confirmar:\n- usuário;\n- organização;\n- perfil/role;\n- contexto necessário para os próximos passos.\n\nNão é necessário enviar organizationId no body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get Me 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "if (j.organizationId) pm.environment.set('organizationId', j.organizationId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "03. List My Accounts",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/me/accounts",
+            "description": "Lista as Accounts financeiras às quais o OWNER possui acesso.\n\nA primeira finalidade é identificar a Account própria do OWNER.\n\nO teste tenta salvar a primeira Account como ownerAccountId. Se a API retornar várias Accounts, confira a resposta e selecione manualmente a Account correta no Environment."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List accounts 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const list = Array.isArray(j) ? j : (j.content || j.items || j.accounts || []);",
+                  "if (list[0]?.id) pm.environment.set('ownerAccountId', list[0].id);",
+                  "if (list[0]?.organizationId) pm.environment.set('organizationId', list[0].organizationId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "04. Get Owner Wallet",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{ownerAccountId}}/wallet",
+            "description": "Consulta a Wallet da Account do OWNER.\n\nA Wallet é onde o saldo financeiro da Account fica representado.\n\nO teste salva wallet.id em ownerWalletId e também seleciona automaticamente:\n- currentAccountId = ownerAccountId\n- currentWalletId = ownerWalletId"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get owner wallet 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const wallet = j.wallet || j;",
+                  "if (wallet.id) {",
+                  "  pm.environment.set('ownerWalletId', wallet.id);",
+                  "  pm.environment.set('currentAccountId', pm.environment.get('ownerAccountId'));",
+                  "  pm.environment.set('currentWalletId', wallet.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02. API Key da Integração",
+      "description": "A API Key é a credencial usada pelo sistema parceiro depois do setup inicial.\n\nApenas o OWNER gerencia API Keys:\n- criar;\n- listar;\n- rotacionar;\n- revogar.\n\nAs operações financeiras seguintes usam Bearer {{theron_api_key}}, não o JWT do OWNER.\n\nIMPORTANTE: o texto puro da API Key deve ser tratado como segredo e aparece somente na criação/rotação.",
+      "item": [
+        {
+          "name": "01. Criar Theron API Key",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"B2B Account Integration\",\n  \"environment\": \"SANDBOX\",\n  \"scopes\": [\n    \"organization.read\",\n    \"wallet.read\",\n    \"transactions.read\",\n    \"pix.read\",\n    \"pix.create\",\n    \"pix.transfer\",\n    \"charges.read\",\n    \"charges.create\",\n    \"charges.cancel\",\n    \"anticipations.read\",\n    \"anticipations.create\",\n    \"onboarding.read\",\n    \"onboarding.submit\"\n  ],\n  \"accountIds\": [\"{{account_id}}\"]\n}"
-            },
-            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients",
-            "description": "Cria OAuth client ligado a EXATAMENTE uma Account (1:1).\nO client_secret aparece só nesta resposta — salve-o."
-          }
-        },
-        {
-          "name": "List OAuth Clients",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients"
-          }
-        },
-        {
-          "name": "Rotate Secret",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.clientSecret) pm.environment.set('client_secret', j.clientSecret);"
-                ]
+              "raw": "{\n  \"name\": \"Integração B2B - Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
             },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients/{{oauth_client_uuid}}/rotate-secret",
-            "description": "Gera novo secret (one-shot). Atualiza client_secret no Environment."
-          }
-        },
-        {
-          "name": "Revoke OAuth Client",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{admin_access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/api/v1/admin/organizations/{{organization_id}}/oauth-clients/{{oauth_client_uuid}}/revoke",
-            "description": "Revoga o client e libera a Account para um novo client 1:1. Use no final dos testes de security."
-          }
-        }
-      ]
-    },
-    {
-      "name": "1. OAuth Token",
-      "description": "Fluxo do parceiro (M2M) — sem JWT de usuário Theron.",
-      "item": [
-        {
-          "name": "Get Access Token",
+            "url": "{{base_url}}/api/v1/developer/api-keys",
+            "description": "Cria uma credencial de integração.\n\nBODY\n- name: nome identificável da integração.\n\nNão envie accountId: a chave é criada no contexto do OWNER e o backend controla quais Accounts ela pode operar.\n\nRESPOSTA\nA API Key em texto puro é retornada somente neste momento. O teste salva:\n- theron_api_key\n- theron_api_key_id\n\nDepois desta chamada, use a chave como Bearer nas rotas B2B."
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Token 200', function () { pm.response.to.have.status(200); });",
-                  "const j = pm.response.json();",
-                  "if (j.access_token) pm.environment.set('access_token', j.access_token);",
-                  "pm.test('access_token salvo', function () {",
-                  "  pm.expect(pm.environment.get('access_token')).to.be.ok;",
-                  "});",
-                  "pm.test('token_type Bearer', function () {",
-                  "  pm.expect(j.token_type).to.eql('Bearer');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "grant_type", "value": "client_credentials" },
-                { "key": "client_id", "value": "{{client_id}}" },
-                { "key": "client_secret", "value": "{{client_secret}}" }
-              ]
-            },
-            "url": "{{base_url}}/api/v1/oauth/token",
-            "description": "Client Credentials. Grava access_token (~15 min)."
-          }
-        },
-        {
-          "name": "Get Access Token (invalid secret)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('401 invalid_client', function () {",
-                  "  pm.response.to.have.status(401);",
-                  "  pm.expect(pm.response.json().error).to.eql('invalid_client');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/x-www-form-urlencoded" }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                { "key": "grant_type", "value": "client_credentials" },
-                { "key": "client_id", "value": "{{client_id}}" },
-                { "key": "client_secret", "value": "wrong-secret" }
-              ]
-            },
-            "url": "{{base_url}}/api/v1/oauth/token"
-          }
-        }
-      ]
-    },
-    {
-      "name": "1.4 Theron API Key",
-      "description": "OWNER cria Theron API Key (tk_sandbox_/tk_live_) via JWT produto. Use theron_api_key como Bearer nas APIs (equivalente ao OAuth JWT).",
-      "item": [
-        {
-          "name": "Create Theron API Key (OWNER JWT)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Create API key 201', function () { pm.response.to.have.status(201); });",
+                  "pm.test('Create API key 201', () => pm.response.to.have.status(201));",
                   "const j = pm.response.json();",
                   "if (j.apiKey) pm.environment.set('theron_api_key', j.apiKey);",
                   "if (j.id) pm.environment.set('theron_api_key_id', j.id);",
-                  "pm.test('apiKey plaintext uma vez', function () {",
-                  "  pm.expect(pm.environment.get('theron_api_key')).to.match(/^tk_(sandbox|live)_/);",
-                  "});"
+                  "pm.test('API key salva', () => pm.expect(pm.environment.get('theron_api_key')).to.match(/^tk_(sandbox|live)_/));"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "02. Listar API Keys",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
-            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/developer/api-keys",
+            "description": "Lista as API Keys do OWNER.\n\nPor segurança, esta rota não deve devolver o segredo plaintext da chave."
+          }
+        },
+        {
+          "name": "03. Rotacionar API Key",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Postman Integration\"\n}"
-            },
-            "url": "{{base_url}}/api/v1/developer/api-keys",
-            "description": "Requer JWT OWNER (owner_access_token). Secret aparece só nesta resposta."
-          }
-        },
-        {
-          "name": "List Theron API Keys",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
-            },
-            "method": "GET",
             "header": [],
-            "url": "{{base_url}}/api/v1/developer/api-keys",
-            "description": "Nunca devolve plaintext apiKey."
-          }
-        },
-        {
-          "name": "Get Charges with Theron API Key",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{theron_api_key}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/charges",
-            "description": "Bearer tk_* autentica como CLIENT bound à Account MAIN."
-          }
-        },
-        {
-          "name": "Rotate Theron API Key",
+            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}/rotate",
+            "description": "Revoga o segredo anterior e gera um novo segredo para a mesma integração.\n\nUse quando:\n- a chave foi exposta;\n- houve troca de equipe;\n- a política de segurança exige rotação.\n\nA nova chave precisa ser atualizada no sistema parceiro. O teste substitui theron_api_key no Environment."
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "pm.test('Rotate API key 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
                   "const j = pm.response.json();",
                   "if (j.apiKey) pm.environment.set('theron_api_key', j.apiKey);"
                 ]
               }
             }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}/rotate"
-          }
+          ]
         },
         {
-          "name": "Revoke Theron API Key",
+          "name": "04. Revogar API Key",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{owner_access_token}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{owner_access_token}}", "type": "string" }]
-            },
             "method": "DELETE",
             "header": [],
-            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}"
+            "url": "{{base_url}}/api/v1/developer/api-keys/{{theron_api_key_id}}",
+            "description": "Revoga permanentemente a credencial.\n\nExecute somente no final dos testes, porque depois desta chamada as requisições autenticadas com essa chave devem falhar."
           }
         }
       ]
     },
     {
-      "name": "1.5 Onboarding Asaas (B2B)",
-      "description": "Provisiona a subconta Asaas da Account vinculada ao OAuth (sem login no site). Exige scopes onboarding.read / onboarding.submit. Header Idempotency-Key obrigatório no POST.",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
+      "name": "03. Accounts e Equipe",
+      "description": "Nesta pasta o integrador trabalha com as Accounts do OWNER e as Accounts gerenciadas.\n\nMODELO\nOWNER:\nUser → Account → Wallet → Asaas Subaccount\n\nFINANCE/EMPLOYEE:\nUser → Account → Wallet → Asaas Subaccount\n\nA API Key é a credencial da integração. Ela não transforma todas as Accounts em uma única Wallet.\n\nO OWNER pode visualizar a estrutura da equipe. O acesso de FINANCE/EMPLOYEE deve ser limitado à própria estrutura conforme as regras de autorização do backend.",
       "item": [
         {
-          "name": "Get Onboarding Status",
+          "name": "01. Listar Accounts Gerenciáveis",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
-            "description": "Estado atual do onboarding da Account do client."
+            "url": "{{base_url}}/api/v1/organization/accounts",
+            "description": "Lista as Accounts que a integração pode operar.\n\nUse esta rota depois de criar a API Key.\n\nA resposta deve permitir identificar:\n- Account do OWNER;\n- Accounts FINANCE;\n- Accounts EMPLOYEE.\n\nDepois de criar um membro, use esta rota para descobrir o managedAccountId retornado pela integração."
           }
         },
         {
-          "name": "Submit Onboarding CPF (INDIVIDUAL)",
+          "name": "02. Criar FINANCE",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Financeiro Postman\",\n  \"email\": \"financeiro.postman@example.com\",\n  \"role\": \"FINANCE\",\n  \"password\": \"TroqueEstaSenha123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/organizations/{{organizationId}}/members",
+            "description": "Cria um membro com perfil FINANCE.\n\nA operação deve criar o usuário/membership e a estrutura financeira correspondente conforme a implementação do backend.\n\nBODY\n- email: e-mail de login do membro.\n- name: nome do membro.\n- role: FINANCE.\n- password: senha inicial, se exigida pela implementação atual.\n\nDepois da criação:\n1. salve o usuário;\n2. consulte Listar Accounts Gerenciáveis;\n3. identifique a nova Account;\n4. preencha managedAccountId;\n5. consulte a Wallet e preencha managedWalletId."
+          }
+        },
+        {
+          "name": "03. Criar EMPLOYEE",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Operador Postman\",\n  \"email\": \"operador.postman@example.com\",\n  \"role\": \"EMPLOYEE\",\n  \"password\": \"TroqueEstaSenha123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/organizations/{{organizationId}}/members",
+            "description": "Cria um membro com perfil EMPLOYEE.\n\nUse o mesmo fluxo do FINANCE, alterando apenas role para EMPLOYEE.\n\nDepois da criação, consulte Listar Accounts Gerenciáveis para localizar a Account criada."
+          }
+        },
+        {
+          "name": "04. Selecionar Account Gerenciada",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/organization/accounts/{{managedAccountId}}",
+            "description": "Consulta uma Account específica que a API Key tem autorização para acessar.\n\nAntes de usar:\n- preencha managedAccountId com uma Account FINANCE/EMPLOYEE retornada pela listagem;\n- nunca tente adivinhar UUIDs.\n\nEste endpoint é útil para confirmar que o escopo da API Key foi aplicado corretamente."
+          }
+        },
+        {
+          "name": "05. Get Managed Wallet",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{managedAccountId}}/wallet",
+            "description": "Consulta a Wallet da Account gerenciada.\n\nO teste salva managedWalletId e seleciona automaticamente:\n- currentAccountId = managedAccountId\n- currentWalletId = managedWalletId\n\nA partir daqui, os testes de PIX/cobranças podem ser executados para a conta gerenciada."
+          },
           "event": [
             {
-              "listen": "prerequest",
+              "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('onboarding_idempotency_key')) {",
-                  "  pm.environment.set('onboarding_idempotency_key', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.test('Get managed wallet 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const wallet = j.wallet || j;",
+                  "if (wallet.id) {",
+                  "  pm.environment.set('managedWalletId', wallet.id);",
+                  "  pm.environment.set('currentAccountId', pm.environment.get('managedAccountId'));",
+                  "  pm.environment.set('currentWalletId', wallet.id);",
                   "}"
                 ]
               }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04. Asaas - Onboarding por Account",
+      "description": "Cada Account financeira possui sua própria relação com a Asaas.\n\nO onboarding deve ser feito para a Account escolhida em currentAccountId.\n\nSequência:\n1. escolha ownerAccountId ou managedAccountId;\n2. copie o valor para currentAccountId;\n3. envie o onboarding;\n4. consulte o status;\n5. confirme que a subconta está apta para as operações financeiras.\n\nUse Idempotency-Key no POST para evitar criação duplicada em reenvios.",
+      "item": [
+        {
+          "name": "01. Status Onboarding da Account",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/organization/accounts/{{currentAccountId}}/asaas/onboarding",
+            "description": "Consulta o estado atual do onboarding Asaas da Account selecionada.\n\nUse antes de enviar os dados para evitar repetir um onboarding já concluído."
+          }
+        },
+        {
+          "name": "02. Onboarding PF - INDIVIDUAL",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personType\": \"INDIVIDUAL\",\n  \"personal\": {\n    \"name\": \"Bruno Santos\",\n    \"cpf\": \"52998224725\",\n    \"birthDate\": \"1990-01-15\",\n    \"email\": \"bruno@example.com\",\n    \"mobilePhone\": \"11999998888\"\n  },\n  \"address\": {\n    \"address\": \"Rua das Flores\",\n    \"addressNumber\": \"100\",\n    \"complement\": \"Apto 1\",\n    \"province\": \"Centro\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": {\n    \"incomeValue\": 5000.0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
+            "url": "{{base_url}}/api/v1/organization/accounts/{{currentAccountId}}/asaas/onboarding",
+            "description": "Envia os dados de onboarding para uma Account de pessoa física.\n\nBODY\npersonType:\n- INDIVIDUAL\n\npersonal:\n- name\n- cpf\n- birthDate\n- email\n- mobilePhone\n\naddress:\n- address\n- addressNumber\n- complement\n- province\n- postalCode\n- city\n\nfinancial:\n- incomeValue\n\nUse dados válidos de Sandbox. Não coloque dados reais em uma Collection compartilhada.\n\nHeader Idempotency-Key é obrigatório para tornar o envio idempotente."
+          }
+        },
+        {
+          "name": "03. Onboarding PJ - COMPANY",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"personType\": \"COMPANY\",\n  \"business\": {\n    \"cnpj\": \"60746948000112\",\n    \"legalName\": \"Empresa Exemplo LTDA\",\n    \"tradeName\": \"Exemplo\",\n    \"email\": \"financeiro@exemplo.com\",\n    \"mobilePhone\": \"11988887777\",\n    \"companyType\": \"LIMITED\"\n  },\n  \"address\": {\n    \"address\": \"Av. Paulista\",\n    \"addressNumber\": \"1000\",\n    \"province\": \"Bela Vista\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": {\n    \"incomeValue\": 50000.0\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/organization/accounts/{{currentAccountId}}/asaas/onboarding",
+            "description": "Envia os dados de onboarding para uma Account de pessoa jurídica.\n\nBODY\npersonType:\n- COMPANY\n\nbusiness:\n- cnpj\n- legalName\n- tradeName\n- email\n- mobilePhone\n- companyType\n\naddress:\n- address\n- addressNumber\n- province\n- postalCode\n- city\n\nfinancial:\n- incomeValue\n\nUse uma Account ainda sem subconta Asaas e uma nova Idempotency-Key."
+          }
+        },
+        {
+          "name": "04. Status Subconta Asaas",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/organization/accounts/{{currentAccountId}}/asaas/subaccount/status",
+            "description": "Consulta o status da subconta Asaas da Account.\n\nAntes de testar PIX/cobranças, confirme no retorno os indicadores de habilitação financeira exigidos pelo backend/Asaas."
+          }
+        }
+      ]
+    },
+    {
+      "name": "05. Dados Financeiros da Account",
+      "description": "Estas rotas são account-scoped.\n\nPara testar o OWNER:\ncurrentAccountId = ownerAccountId\ncurrentWalletId = ownerWalletId\n\nPara testar FINANCE/EMPLOYEE:\ncurrentAccountId = managedAccountId\ncurrentWalletId = managedWalletId\n\nA API Key deve impedir acesso a uma Account que não esteja no escopo da integração.",
+      "item": [
+        {
+          "name": "01. Get Account",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{currentAccountId}}",
+            "description": "Consulta os dados cadastrais/financeiros básicos da Account selecionada."
+          }
+        },
+        {
+          "name": "02. Get Wallet",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{currentAccountId}}/wallet",
+            "description": "Consulta a Wallet da Account selecionada. Use para confirmar saldo e identificação da carteira."
+          }
+        },
+        {
+          "name": "03. Get Ledger Balance",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{currentAccountId}}/ledger-balance",
+            "description": "Consulta o saldo contábil retornado pelo backend.\n\nObservação de produto: a aplicação final pode optar por exibir apenas o saldo principal ao cliente; esta rota é uma API técnica."
+          }
+        },
+        {
+          "name": "04. List Transactions",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/transactions?walletId={{currentWalletId}}",
+            "description": "Lista as transações da Wallet selecionada. currentWalletId deve corresponder à currentAccountId."
+          }
+        }
+      ]
+    },
+    {
+      "name": "06. PIX",
+      "description": "Todas as operações PIX são feitas no contexto de uma Account.\n\nEscolha primeiro:\n- OWNER: currentAccountId = ownerAccountId\n- FINANCE/EMPLOYEE: currentAccountId = managedAccountId\n\nO destino do envio é sempre uma chave PIX. Não use walletId como destino PIX.\n\nPara transferências:\n1. descubra/valide a chave;\n2. informe amount;\n3. envie pixAddressKey + pixAddressKeyType;\n4. use Idempotency-Key;\n5. consulte o resultado.",
+      "item": [
+        {
+          "name": "01. Listar Chaves PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pix/keys?accountId={{currentAccountId}}",
+            "description": "Lista as chaves PIX cadastradas na Account selecionada."
+          }
+        },
+        {
+          "name": "02. Lookup Chave PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pix/keys/lookup?accountId={{currentAccountId}}&type={{pixKeyType}}&key={{pixKey}}",
+            "description": "Consulta uma chave PIX antes de transferir.\n\nParâmetros:\n- accountId: Account que está realizando a operação.\n- type: tipo da chave.\n- key: valor da chave.\n\nUse a resposta para confirmar o destinatário antes de enviar dinheiro."
+          }
+        },
+        {
+          "name": "03. Criar Chave PIX EVP",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{currentAccountId}}\",\n  \"type\": \"EVP\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/pix/keys",
+            "description": "Cria uma chave PIX aleatória (EVP) para a Account.\n\nBODY\n- accountId: Account dona da chave.\n- type: EVP."
+          },
+          "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Onboarding submit 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Create PIX key 200/201', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
                   "const j = pm.response.json();",
-                  "pm.test('sem apiKey na resposta', function () {",
-                  "  pm.expect(j.apiKey).to.be.undefined;",
-                  "});"
+                  "if (j.id) pm.environment.set('pixKeyId', j.id);",
+                  "if (j.key) pm.environment.set('pixKey', j.key);"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "04. Transferir PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{onboarding_idempotency_key}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"personType\": \"INDIVIDUAL\",\n  \"personal\": {\n    \"name\": \"Bruno Santos\",\n    \"cpf\": \"52998224725\",\n    \"birthDate\": \"1990-01-15\",\n    \"email\": \"bruno@example.com\",\n    \"mobilePhone\": \"11999998888\"\n  },\n  \"address\": {\n    \"address\": \"Rua das Flores\",\n    \"addressNumber\": \"100\",\n    \"complement\": \"Apto 1\",\n    \"province\": \"Centro\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": { \"incomeValue\": 5000.00 }\n}"
-            },
-            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
-            "description": "One-shot KYC PF + criação da subconta Asaas. Idempotent por Idempotency-Key."
-          }
-        },
-        {
-          "name": "Submit Onboarding CNPJ (COMPANY)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{$guid}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"personType\": \"COMPANY\",\n  \"business\": {\n    \"cnpj\": \"60746948000112\",\n    \"legalName\": \"Empresa Exemplo LTDA\",\n    \"tradeName\": \"Exemplo\",\n    \"email\": \"financeiro@exemplo.com\",\n    \"mobilePhone\": \"11988887777\",\n    \"companyType\": \"LIMITED\"\n  },\n  \"address\": {\n    \"address\": \"Av. Paulista\",\n    \"addressNumber\": \"1000\",\n    \"province\": \"Bela Vista\",\n    \"postalCode\": \"01310100\",\n    \"city\": \"São Paulo\"\n  },\n  \"financial\": { \"incomeValue\": 50000.00 }\n}"
-            },
-            "url": "{{base_url}}/api/v1/asaas/onboarding/b2b",
-            "description": "Exemplo PJ. Use uma Account ainda sem subconta (ou outra chave de idempotência)."
-          }
-        },
-        {
-          "name": "Get Subaccount Status",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/asaas/subaccount/status/b2b",
-            "description": "financialResourcesEnabled deve ser true antes de PIX/charges."
-          }
-        }
-      ]
-    },
-    {
-      "name": "2. Conta Wallet Org",
-      "description": "Rotas autenticadas com Bearer access_token do OAuth client.",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
-      "item": [
-        {
-          "name": "Get Account",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Get account 200', function () { pm.response.to.have.status(200); });"
-                ]
+              "raw": "{\n  \"accountId\": \"{{currentAccountId}}\",\n  \"amount\": 1.0,\n  \"destinationPixKey\": \"{{pixDestinationKey}}\",\n  \"destinationPixKeyType\": \"{{pixDestinationKeyType}}\",\n  \"description\": \"Transferência PIX B2B - Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/accounts/{{account_id}}"
-          }
-        },
-        {
-          "name": "Get Wallet",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Get wallet 200', function () { pm.response.to.have.status(200); });",
-                  "const j = pm.response.json();",
-                  "const id = j.id || (j.wallet && j.wallet.id);",
-                  "if (id) pm.environment.set('wallet_id', id);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/accounts/{{account_id}}/wallet",
-            "description": "Salva wallet_id no Environment."
-          }
-        },
-        {
-          "name": "Get Ledger Balance",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/accounts/{{account_id}}/ledger-balance"
-          }
-        },
-        {
-          "name": "Get Organization",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/organizations/{{organization_id}}"
-          }
-        },
-        {
-          "name": "List Transactions by Wallet",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/transactions?walletId={{wallet_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "transactions"],
-              "query": [
-                { "key": "walletId", "value": "{{wallet_id}}" }
-              ]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "3. Isolamento Security",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
-      "item": [
-        {
-          "name": "Get Other Account (expect 403)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Conta fora do 1:1 retorna 403', function () {",
-                  "  pm.response.to.have.status(403);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/accounts/{{other_account_id}}",
-            "description": "Preencha other_account_id com outra Account (mesma org ou outra). Deve falhar com 403."
-          }
-        },
-        {
-          "name": "After Revoke - Get Account (expect 401)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Rode antes: 0. Setup Admin → Revoke OAuth Client",
-                  "// Mantém o access_token antigo no Environment para validar rejeição imediata."
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Client revogado retorna 401', function () {",
-                  "  pm.response.to.have.status(401);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/accounts/{{account_id}}",
-            "description": "Ordem: Get Access Token → Revoke OAuth Client → este request (com token antigo)."
-          }
-        }
-      ]
-    },
-    {
-      "name": "4. PIX Sandbox",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
-      "item": [
-        {
-          "name": "List PIX Keys",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/pix/keys?accountId={{account_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "pix", "keys"],
-              "query": [{ "key": "accountId", "value": "{{account_id}}" }]
-            }
-          }
-        },
-        {
-          "name": "List PIX Transfers",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/pix/transfers?accountId={{account_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "pix", "transfers"],
-              "query": [{ "key": "accountId", "value": "{{account_id}}" }]
-            }
-          }
-        },
-        {
-          "name": "PIX Transfer (with Idempotency-Key)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "Idempotency-Key", "value": "{{$guid}}" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 1.00,\n  \"destinationPixKey\": \"{{pix_destination_key}}\",\n  \"destinationPixKeyType\": \"{{pix_destination_key_type}}\",\n  \"description\": \"Postman B2B sandbox\"\n}"
             },
             "url": "{{base_url}}/api/v1/pix/transfers",
-            "description": "MOVE DINHEIRO no provedor (só sandbox). Header Idempotency-Key obrigatório."
-          }
-        },
-        {
-          "name": "PIX Transfer without Idempotency-Key (expect error)",
+            "description": "Executa uma transferência PIX.\n\nBODY\n- accountId: Account pagadora.\n- amount: valor em BRL.\n- destinationPixKey: chave PIX do destinatário.\n- destinationPixKeyType: tipo da chave.\n- description: descrição opcional.\n\nHEADER\n- Idempotency-Key: obrigatório.\n\nA transferência pode ser para uma chave cadastrada internamente, uma chave da plataforma ou uma chave externa. A classificação é responsabilidade do backend."
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Sem Idempotency-Key falha', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([400, 422]);",
-                  "});"
+                  "pm.test('PIX transfer accepted', () => pm.expect(pm.response.code).to.be.oneOf([200,201,202]));",
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.environment.set('pixTransferId', j.id);"
                 ]
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "05. Listar Transferências PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pix/transfers?accountId={{currentAccountId}}",
+            "description": "Lista as transferências PIX da Account selecionada."
+          }
+        },
+        {
+          "name": "06. Excluir Chave PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pix/keys/{{pixKeyId}}",
+            "description": "Exclui uma chave PIX previamente cadastrada. Use somente o ID de uma chave pertencente à Account autorizada."
+          }
+        }
+      ]
+    },
+    {
+      "name": "07. Cobranças",
+      "description": "Cria cobranças na Account selecionada.\n\nEscolha currentAccountId antes de executar:\n- OWNER → ownerAccountId\n- FINANCE/EMPLOYEE → managedAccountId\n\nTipos documentados:\n- PIX\n- BOLETO\n- CREDIT_CARD\n\nO retorno pode conter links da Asaas, como invoiceUrl ou bankSlipUrl, dependendo do tipo.",
+      "item": [
+        {
+          "name": "01. Criar Cobrança PIX",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 1.00,\n  \"destinationPixKey\": \"{{pix_destination_key}}\",\n  \"destinationPixKeyType\": \"{{pix_destination_key_type}}\",\n  \"description\": \"should fail\"\n}"
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.0,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Cobrança PIX - Postman\",\n  \"externalReference\": \"pm-pix-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": "{{base_url}}/api/v1/pix/transfers"
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Cria uma cobrança PIX.\n\nBODY\ncustomer:\n- name\n- cpfCnpj\n- email\n\nvalue:\n- valor da cobrança.\n\nbillingType:\n- PIX\n\ndueDate:\n- data de vencimento.\n\ndescription:\n- descrição.\n\nexternalReference:\n- referência externa da integração.\n\nO accountId da cobrança deve ser resolvido pelo contexto da Account selecionada/escopo da API conforme a implementação atual do backend."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Charge PIX accepted', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.environment.set('chargeId', j.id);",
+                  "if (j.asaasPaymentId) pm.environment.set('asaasPaymentId', j.asaasPaymentId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "02. Criar Cobrança Boleto",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.0,\n  \"billingType\": \"BOLETO\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Boleto - Postman\",\n  \"externalReference\": \"pm-boleto-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Cria uma cobrança por boleto.\n\nBODY\n- customer: dados do pagador.\n- value: valor.\n- billingType: BOLETO.\n- dueDate: vencimento.\n- description/externalReference: identificação da cobrança."
+          }
+        },
+        {
+          "name": "03. Criar Cobrança Cartão",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 150.0,\n  \"billingType\": \"CREDIT_CARD\",\n  \"dueDate\": \"2030-12-31\",\n  \"installments\": 3,\n  \"description\": \"Cartão - Postman\",\n  \"externalReference\": \"pm-card-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Cria uma cobrança com cartão.\n\nBODY\n- customer: dados do pagador.\n- value: valor.\n- billingType: CREDIT_CARD.\n- dueDate: vencimento.\n- installments: número de parcelas, quando aplicável.\n- description/externalReference."
+          }
+        },
+        {
+          "name": "04. Listar Cobranças",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges",
+            "description": "Lista as cobranças disponíveis no escopo da integração."
+          }
+        },
+        {
+          "name": "05. Consultar Cobrança",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges/{{chargeId}}",
+            "description": "Consulta uma cobrança específica. Preencha chargeId com o ID retornado na criação."
+          }
+        },
+        {
+          "name": "06. Cancelar Cobrança",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/api/v1/charges/{{chargeId}}/cancel",
+            "description": "Cancela uma cobrança quando o status permite cancelamento. Execute depois de consultar a cobrança."
           }
         }
       ]
     },
     {
-      "name": "5. Charges",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
+      "name": "08. Antecipação de Recebíveis",
+      "description": "Fluxo:\n1. crie uma cobrança;\n2. aguarde/tenha recebível elegível;\n3. simule a antecipação;\n4. consulte as antecipações.\n\nATENÇÃO\nA própria Asaas pode limitar operações efetivas de antecipação no Sandbox. Portanto, o endpoint de simulação é o teste principal em ambiente de testes.",
       "item": [
         {
-          "name": "Create Charge PIX",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.id) pm.environment.set('charge_id', j.id);",
-                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);",
-                  "if (j.invoiceUrl) console.log('INVOICE_URL (QR / fatura):', j.invoiceUrl);"
-                ]
+          "name": "01. Simular Antecipação",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
               }
-            }
-          ],
+            ]
+          },
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"PIX\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge PIX\",\n  \"externalReference\": \"pm-pix-{{$timestamp}}\"\n}"
+              "raw": "{\n  \"chargeIds\": [\n    \"{{chargeId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
-            "url": "{{base_url}}/api/v1/charges",
-            "description": "Cobrança PIX (`billingType: PIX`). accountId vem só do OAuth client (1:1). Sem accountId no body.\n\n**QR Code:** a resposta inclui `invoiceUrl` — o pagador abre essa URL na fatura Asaas para ver/pagar o QR. A API B2B não devolve payload EMV/copia-e-cola em ChargeResponse.\n\nexternalReference pode ser longo — backend envia Idempotency-Key ≤48 ao Asaas."
+            "url": "{{base_url}}/api/v1/anticipations/simulate",
+            "description": "Simula uma antecipação para uma ou mais cobranças elegíveis.\n\nBODY\n- chargeIds: array com os IDs das cobranças a simular.\n\nUse chargeId obtido na pasta de Cobranças."
           }
         },
         {
-          "name": "Create Charge BOLETO",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.id) pm.environment.set('charge_id', j.id);",
-                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);"
-                ]
+          "name": "02. Listar Antecipações",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
               }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 50.00,\n  \"billingType\": \"BOLETO\",\n  \"dueDate\": \"2030-12-31\",\n  \"description\": \"Postman charge boleto\",\n  \"externalReference\": \"pm-boleto-{{$timestamp}}\"\n}"
-            },
-            "url": "{{base_url}}/api/v1/charges",
-            "description": "Cobrança boleto (`billingType: BOLETO`). Resposta pode incluir `bankSlipUrl` / `invoiceUrl`."
-          }
-        },
-        {
-          "name": "Create Charge CREDIT_CARD",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const j = pm.response.json();",
-                  "if (j.id) pm.environment.set('charge_id', j.id);",
-                  "if (j.asaasPaymentId) pm.environment.set('asaas_payment_id', j.asaasPaymentId);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customer\": {\n    \"name\": \"Cliente B2B\",\n    \"cpfCnpj\": \"52998224725\",\n    \"email\": \"cliente@example.com\"\n  },\n  \"value\": 150.00,\n  \"billingType\": \"CREDIT_CARD\",\n  \"dueDate\": \"2030-12-31\",\n  \"installments\": 3,\n  \"description\": \"Postman charge cartao\",\n  \"externalReference\": \"pm-card-{{$timestamp}}\"\n}"
-            },
-            "url": "{{base_url}}/api/v1/charges",
-            "description": "Cobrança cartão (`billingType: CREDIT_CARD`). `installments` opcional (>1 apenas para cartão)."
-          }
-        },
-        {
-          "name": "List Charges",
+            ]
+          },
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/api/v1/charges"
-          }
-        },
-        {
-          "name": "Get Charge",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/charges/{{charge_id}}"
-          }
-        },
-        {
-          "name": "Cancel Charge",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/api/v1/charges/{{charge_id}}/cancel"
+            "url": "{{base_url}}/api/v1/anticipations",
+            "description": "Lista as antecipações dentro do escopo autorizado da integração."
           }
         }
       ]
     },
     {
-      "name": "6. Anticipations",
-      "auth": {
-        "type": "bearer",
-        "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-      },
+      "name": "09. Segurança e Isolamento",
+      "description": "Execute esta pasta depois de configurar a integração.\n\nTESTE A — Account autorizada\nUma Account presente no escopo da API Key deve responder normalmente.\n\nTESTE B — Account não autorizada\nUse otherAccountId de outra Account e confirme HTTP 403.\n\nTESTE C — API Key revogada\n1. copie/tenha uma API Key funcionando;\n2. execute uma rota com ela;\n3. revogue a chave;\n4. repita a mesma rota;\n5. confirme rejeição da autenticação.\n\nEsses testes comprovam que a segurança está no backend e não apenas na interface.",
       "item": [
         {
-          "name": "Simulate Anticipation",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"chargeIds\": [\"{{charge_id}}\"]\n}"
-            },
-            "url": "{{base_url}}/api/v1/anticipations/simulate"
-          }
-        },
-        {
-          "name": "List Anticipations",
+          "name": "01. Account autorizada",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/api/v1/anticipations"
+            "url": "{{base_url}}/api/v1/accounts/{{currentAccountId}}",
+            "description": "Deve retornar 200 quando currentAccountId estiver no escopo da API Key."
+          }
+        },
+        {
+          "name": "02. Account fora do escopo - esperado 403",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{otherAccountId}}",
+            "description": "Deve retornar 403. Preencha otherAccountId com uma Account que não esteja autorizada pela API Key."
+          }
+        },
+        {
+          "name": "03. API Key revogada - esperado 401",
+          "auth": {
+            "type": "bearer",
+            "bearer": [
+              {
+                "key": "token",
+                "value": "{{theron_api_key}}",
+                "type": "string"
+              }
+            ]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/accounts/{{currentAccountId}}",
+            "description": "Depois de executar Revogar API Key, esta chamada deve falhar porque o segredo não é mais válido."
           }
         }
       ]
