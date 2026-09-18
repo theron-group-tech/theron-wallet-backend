@@ -42,7 +42,8 @@ public interface OauthClientRepository extends JpaRepository<OauthClient, UUID> 
     @Query("""
             SELECT DISTINCT c FROM OauthClient c
             LEFT JOIN FETCH c.accounts a
-            LEFT JOIN FETCH a.account
+            LEFT JOIN FETCH a.account acc
+            LEFT JOIN FETCH acc.ownerUser
             WHERE c.id = :id
             """)
     Optional<OauthClient> findByIdWithAccounts(@Param("id") UUID id);
