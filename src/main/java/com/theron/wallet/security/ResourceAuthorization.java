@@ -91,9 +91,9 @@ public class ResourceAuthorization {
         if (!orgId.equals(client.getOrganizationId())) {
             throw new ForbiddenException("Access denied");
         }
-        if (!client.canAccessAccount(accountId)) {
-            throw new ForbiddenException("Access denied");
-        }
+        // Organization-level onboarding: the client may operate on any
+        // Account in its organization when it has the required scope.
+        // Do not apply the normal financial allowedAccountIds restriction here.
         requireClientScope(client, permission);
         return orgId;
     }
