@@ -66,6 +66,38 @@ public class ResourceAuthorization {
         return orgId;
     }
 
+    /**
+     * Organization-level access to an Account.
+     * USER/JWT: checks the requested Account belongs to the actor's organization
+     * and validates the organization permission, without requiring the actor to
+     * own the Account.
+     * CLIENT/OAuth: checks tenant, account access and scope.
+     *
+     * This is intentionally separate from requireAccount(), which is
+     * own-account-only and is used by financial operations.
+     */
+    @Transactional(readOnly = true)
+    public UUID requireOrganizationAccount(Actor actor, UUID accountId, String permission) {
+        Account account = accountRepository.findByIdWithOrganization(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", accountId));
+        UUID orgId = account.getOrganization().getId();
+
+        if (actor.isUser()) {
+            authorizationService.requirePermission(orgId, actor.getUserId(), permission);
+            return orgId;
+        }
+
+        ClientPrincipal client = actor.getClient();
+        if (!orgId.equals(client.getOrganizationId())) {
+            throw new ForbiddenException("Access denied");
+        }
+        if (!client.canAccessAccount(accountId)) {
+            throw new ForbiddenException("Access denied");
+        }
+        requireClientScope(client, permission);
+        return orgId;
+    }
+
     @Transactional(readOnly = true)
     public UUID requireAccount(Actor actor, UUID accountId, String permission) {
         if (actor.isUser()) {
