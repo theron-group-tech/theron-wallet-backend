@@ -34,7 +34,7 @@ public class ManagedAccountAsaasController {
             @Valid @RequestBody B2bAsaasOnboardingSubmitRequest request,
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         Actor actor = actorResolver.requireActor();
-        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.ONBOARDING_SUBMIT);
+        resourceAuthorization.requireOrganizationAccount(actor, accountId, PermissionCodes.ONBOARDING_SUBMIT);
         return ResponseEntity.ok(
                 onboardingService.submitOneShotForAccount(accountId, request, idempotencyKey));
     }
@@ -43,7 +43,7 @@ public class ManagedAccountAsaasController {
     @Operation(summary = "Get current Asaas onboarding state for a managed account")
     public ResponseEntity<AsaasOnboardingResponse> getOnboarding(@PathVariable UUID accountId) {
         Actor actor = actorResolver.requireActor();
-        resourceAuthorization.requireAccount(actor, accountId, PermissionCodes.ONBOARDING_READ);
+        resourceAuthorization.requireOrganizationAccount(actor, accountId, PermissionCodes.ONBOARDING_READ);
         return ResponseEntity.ok(onboardingService.getCurrentForAccount(accountId));
     }
 
