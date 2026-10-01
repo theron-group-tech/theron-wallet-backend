@@ -1,6 +1,8 @@
 package com.theron.wallet.integration;
 
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixQrCodeDecodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixQrCodeDecodeResponse;
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasListResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
@@ -69,6 +71,15 @@ public class AsaasPixClient {
                 "/pix/qrCodes/static",
                 body,
                 AsaasPixStaticQrCodeResponse.class);
+    }
+
+    public AsaasPixQrCodeDecodeResponse decodeQrCode(String apiKey, String payload) {
+        log.info("Decoding PIX QR code in Asaas");
+        return asaasHttpGateway.post(
+                apiKey,
+                "/pix/qrCodes/decode",
+                AsaasPixQrCodeDecodeRequest.builder().payload(payload).build(),
+                AsaasPixQrCodeDecodeResponse.class);
     }
 
     public AsaasPixPayQrCodeResponse payQrCode(
