@@ -23,6 +23,8 @@ public interface SubaccountRepository extends JpaRepository<Subaccount, UUID> {
 
     Optional<Subaccount> findByAsaasAccountId(String asaasAccountId);
 
+    Optional<Subaccount> findByAsaasWalletId(String asaasWalletId);
+
     Optional<Subaccount> findByWebhookToken(String webhookToken);
 
     @Query("""
