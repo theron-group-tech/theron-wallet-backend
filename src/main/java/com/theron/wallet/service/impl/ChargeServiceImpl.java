@@ -4,6 +4,7 @@ import com.theron.wallet.dto.asaas.AsaasCreateCustomerRequest;
 import com.theron.wallet.dto.asaas.AsaasCreateCustomerResponse;
 import com.theron.wallet.dto.asaas.AsaasPaymentRequest;
 import com.theron.wallet.dto.asaas.AsaasPaymentResponse;
+import com.theron.wallet.dto.asaas.AsaasPixQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasSplitItem;
 import com.theron.wallet.dto.request.CreateChargeRequest;
 import com.theron.wallet.dto.response.ChargeResponse;
@@ -138,6 +139,20 @@ public class ChargeServiceImpl implements ChargeService {
         AsaasPaymentResponse paymentResponse =
                 asaasPaymentClient.createPayment(apiKey, paymentRequest, asaasIdempotencyKey);
 
+        // PIX charges expose the dynamic QR code/copy-and-paste only through
+        // GET /payments/{id}/pixQrCode after the payment is created.
+        AsaasPixQrCodeResponse pixQrCode = null;
+        if (request.getBillingType() == ChargeBillingType.PIX) {
+            try {
+                pixQrCode = asaasPaymentClient.getPixQrCode(apiKey, paymentResponse.getId());
+            } catch (RuntimeException ex) {
+                // The charge already exists at Asaas. Do not roll it back locally
+                // just because QR retrieval failed; it can be retrieved later.
+                log.warn("Could not retrieve PIX QR code after charge creation: paymentId={}, error={}",
+                        paymentResponse.getId(), ex.getMessage());
+            }
+        }
+
         Wallet wallet = walletRepository.findByAccount_Id(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Wallet", "accountId", accountId));
 
@@ -174,6 +189,9 @@ public class ChargeServiceImpl implements ChargeService {
                 .installmentCount(installmentCount)
                 .invoiceUrl(paymentResponse.getInvoiceUrl())
                 .bankSlipUrl(paymentResponse.getBankSlipUrl())
+                .pixCopyPaste(pixQrCode != null ? pixQrCode.getPayload() : null)
+                .pixQrCodeExpiration(parsePixQrCodeExpiration(
+                        pixQrCode != null ? pixQrCode.getExpirationDate() : null))
                 .installments(new ArrayList<>())
                 .splits(new ArrayList<>())
                 .build();
@@ -394,6 +412,22 @@ public class ChargeServiceImpl implements ChargeService {
         return a.compareTo(b) == 0;
     }
 
+    private static java.time.LocalDateTime parsePixQrCodeExpiration(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        try {
+            return java.time.OffsetDateTime.parse(value).toLocalDateTime();
+        } catch (java.time.format.DateTimeParseException ignored) {
+            try {
+                return java.time.LocalDateTime.parse(value);
+            } catch (java.time.format.DateTimeParseException ignoredLocal) {
+                log.warn("Could not parse Asaas PIX QR expirationDate: {}", value);
+                return null;
+            }
+        }
+    }
+
     static ChargeStatus mapAsaasStatus(String status) {
         if (status == null || status.isBlank()) {
             return ChargeStatus.PENDING;
@@ -435,6 +469,8 @@ public class ChargeServiceImpl implements ChargeService {
                 .installmentCount(charge.getInstallmentCount())
                 .invoiceUrl(charge.getInvoiceUrl())
                 .bankSlipUrl(charge.getBankSlipUrl())
+                .pixCopyPaste(charge.getPixCopyPaste())
+                .pixQrCodeExpiration(charge.getPixQrCodeExpiration())
                 .billingCustomerId(customer != null ? customer.getId() : null)
                 .customerName(customer != null ? customer.getName() : null)
                 .customerCpfCnpj(customer != null ? customer.getCpfCnpj() : null)
