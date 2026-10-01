@@ -31,6 +31,7 @@ import com.theron.wallet.repository.AccountRepository;
 import com.theron.wallet.repository.BillingCustomerRepository;
 import com.theron.wallet.repository.ChargeRepository;
 import com.theron.wallet.repository.TransactionRepository;
+import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.WalletRepository;
 import com.theron.wallet.security.Actor;
 import com.theron.wallet.security.PermissionCodes;
@@ -67,6 +68,7 @@ public class ChargeServiceImpl implements ChargeService {
     private final BillingCustomerRepository billingCustomerRepository;
     private final ChargeRepository chargeRepository;
     private final TransactionRepository transactionRepository;
+    private final SubaccountRepository subaccountRepository;
     private final AccountAsaasGateway accountAsaasGateway;
     private final AsaasCustomerClient asaasCustomerClient;
     private final AsaasPaymentClient asaasPaymentClient;
@@ -304,27 +306,36 @@ public class ChargeServiceImpl implements ChargeService {
         Account issuingAccount = accountRepository.findByIdWithOrganization(issuingAccountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", "id", issuingAccountId));
         UUID organizationId = issuingAccount.getOrganization().getId();
+
         for (CreateChargeRequest.ChargeSplitRequest split : splits) {
             if (!StringUtils.hasText(split.getWalletId())) {
                 throw new InvalidRequestException("split.walletId is required");
             }
-            UUID walletId;
-            try {
-                walletId = UUID.fromString(split.getWalletId().trim());
-            } catch (IllegalArgumentException ex) {
-                throw new InvalidRequestException("split.walletId must be a valid UUID");
+
+            String asaasWalletId = split.getWalletId().trim();
+
+            Subaccount targetSubaccount = subaccountRepository.findByAsaasWalletId(asaasWalletId)
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException("Asaas wallet", "walletId", asaasWalletId));
+
+            Account targetAccount = targetSubaccount.getAccount();
+            if (targetAccount == null) {
+                throw new InvalidRequestException("split.walletId is not linked to an account");
             }
-            Wallet targetWallet = walletRepository.findById(walletId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Wallet", "id", walletId));
-            if (targetWallet.getAccount() == null
-                    || !organizationId.equals(targetWallet.getAccount().getOrganization().getId())) {
-                throw new InvalidRequestException("split.walletId must belong to an account in the same organization");
+
+            if (!organizationId.equals(targetAccount.getOrganization().getId())) {
+                throw new InvalidRequestException(
+                        "split.walletId must belong to an account in the same organization");
             }
-            if (targetWallet.getAccount().getId().equals(issuingAccountId)) {
-                throw new InvalidRequestException("split.walletId cannot be the issuing account wallet");
+
+            if (targetAccount.getId().equals(issuingAccountId)) {
+                throw new InvalidRequestException(
+                        "split.walletId cannot be the issuing account wallet");
             }
-            if (actor.isClient() && !actor.getClient().canAccessAccount(targetWallet.getAccount().getId())) {
-                throw new ForbiddenException("API key cannot configure split to an unmanaged account");
+
+            if (actor.isClient() && !actor.getClient().canAccessAccount(targetAccount.getId())) {
+                throw new ForbiddenException(
+                        "API key cannot configure split to an unmanaged account");
             }
         }
     }
