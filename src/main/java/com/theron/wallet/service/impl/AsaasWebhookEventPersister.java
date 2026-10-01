@@ -6,6 +6,7 @@ import com.theron.wallet.dto.asaas.AsaasWebhookPayload;
 import com.theron.wallet.entity.AsaasWebhookEvent;
 import com.theron.wallet.enums.AsaasWebhookEventStatus;
 import com.theron.wallet.repository.AsaasWebhookEventRepository;
+import com.theron.wallet.repository.ChargeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
