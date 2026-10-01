@@ -8,6 +8,7 @@ import com.theron.wallet.dto.asaas.AsaasTransferRequest;
 import com.theron.wallet.dto.asaas.AsaasTransferResponse;
 import com.theron.wallet.dto.asaas.AsaasPixExternalKeyResponse;
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeRequest;
+import com.theron.wallet.dto.asaas.AsaasPixQrCodeDecodeResponse;
 import com.theron.wallet.dto.asaas.AsaasPixPayQrCodeResponse;
 import com.theron.wallet.dto.asaas.AsaasPixTransactionResponse;
 import com.theron.wallet.dto.request.CreateAccountPixKeyRequest;
@@ -259,7 +260,8 @@ public class PixServiceImpl implements PixService {
         accountAsaasGateway.requireConfiguredSubaccount(request.getAccountId());
 
         String payload = request.getPayload() != null ? request.getPayload().trim() : "";
-        BigDecimal payAmount = resolveQrPayAmount(payload, request.getAmount());
+        String apiKey = accountAsaasGateway.resolveApiKey(account.getId());
+        BigDecimal payAmount = resolveQrPayAmount(apiKey, payload, request.getAmount());
 
         String normalizedKey = idempotencyService.resolveKey(null, idempotencyKey.trim());
         String requestHash = qrPayHash(request.getAccountId(), payAmount, payload);
@@ -579,25 +581,42 @@ public class PixServiceImpl implements PixService {
         }
     }
 
-    private static BigDecimal resolveQrPayAmount(String payload, BigDecimal requestAmount) {
+    private BigDecimal resolveQrPayAmount(
+            String apiKey, String payload, BigDecimal requestAmount) {
         if (payload.isEmpty()) {
             throw new InvalidRequestException("payload is required");
         }
         if (!payload.startsWith("000201")) {
             throw new InvalidRequestException("payload must be a valid PIX copia e cola (EMV) string");
         }
+
         BigDecimal payloadAmount = PixEmvPayloadUtils.parseTransactionAmount(payload);
         if (payloadAmount != null) {
-            if (requestAmount != null && requestAmount.compareTo(payloadAmount) != 0) {
-                throw new InvalidRequestException(
-                        "Amount must match QR code value (R$ " + payloadAmount.toPlainString() + ")");
-            }
+            validateRequestedQrAmount(requestAmount, payloadAmount);
             return payloadAmount;
         }
+
+        // Dynamic QR codes (cob/cobv) do not necessarily expose the final amount
+        // in the raw EMV payload. Ask Asaas to decode the QR before paying it.
+        AsaasPixQrCodeDecodeResponse decoded = asaasPixClient.decodeQrCode(apiKey, payload);
+        BigDecimal decodedAmount = decoded != null ? decoded.getValue() : null;
+        if (decodedAmount != null) {
+            validateRequestedQrAmount(requestAmount, decodedAmount);
+            return decodedAmount;
+        }
+
         if (requestAmount == null || requestAmount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new InvalidRequestException("amount is required for open QR codes");
         }
         return requestAmount;
+    }
+
+    private static void validateRequestedQrAmount(
+            BigDecimal requestAmount, BigDecimal qrCodeAmount) {
+        if (requestAmount != null && requestAmount.compareTo(qrCodeAmount) != 0) {
+            throw new InvalidRequestException(
+                    "Amount must match QR code value (R$ " + qrCodeAmount.toPlainString() + ")");
+        }
     }
 
     private String qrPayHash(UUID accountId, BigDecimal amount, String payload) {
