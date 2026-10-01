@@ -1,6 +1,7 @@
 package com.theron.wallet.service.impl;
 
 import com.theron.wallet.config.AsaasProperties;
+import com.theron.wallet.config.VemComigoSplitProperties;
 import com.theron.wallet.dto.asaas.AsaasPaymentRequest;
 import com.theron.wallet.dto.asaas.AsaasSplitItem;
 import com.theron.wallet.dto.request.UpdateSplitConfigRequest;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,9 +30,12 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PlatformSplitServiceImpl implements PlatformSplitService {
 
+    private static final int MONEY_SCALE = 2;
+
     private final PlatformSplitConfigRepository repository;
     private final AsaasProperties asaasProperties;
     private final AuditLogService auditLogService;
+    private final VemComigoSplitProperties vemComigoSplitProperties;
 
     @Value("${platform.split.percent:0}")
     private BigDecimal envPercent;
@@ -79,6 +85,89 @@ public class PlatformSplitServiceImpl implements PlatformSplitService {
     @Override
     @Transactional(readOnly = true)
     public void applyToPayment(AsaasPaymentRequest paymentRequest) {
+        applyToPayment(paymentRequest, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void applyToPayment(AsaasPaymentRequest paymentRequest, UUID organizationId) {
+        if (isVemComigo(organizationId) && hasCounterpartySplits(paymentRequest)) {
+            applyVemComigoResidualSplit(paymentRequest);
+            return;
+        }
+        applyLegacyPlatformSplit(paymentRequest);
+    }
+
+    private boolean isVemComigo(UUID organizationId) {
+        UUID configured = vemComigoSplitProperties.getOrganizationId();
+        return organizationId != null && configured != null && configured.equals(organizationId);
+    }
+
+    private static boolean hasCounterpartySplits(AsaasPaymentRequest paymentRequest) {
+        return paymentRequest.getSplit() != null && !paymentRequest.getSplit().isEmpty();
+    }
+
+    private void applyVemComigoResidualSplit(AsaasPaymentRequest paymentRequest) {
+        String masterWalletId = asaasProperties.getMasterWalletId();
+        if (masterWalletId == null || masterWalletId.isBlank()) {
+            log.warn("Vem Comigo residual split skipped: ASAAS_MASTER_WALLET_ID is not set");
+            return;
+        }
+        BigDecimal value = paymentRequest.getValue();
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Vem Comigo residual split skipped: payment value missing or non-positive");
+            return;
+        }
+
+        BigDecimal counterpartyTotal = sumCounterpartyAmounts(paymentRequest.getSplit(), value);
+        BigDecimal residual = value.subtract(counterpartyTotal).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        if (residual.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Vem Comigo residual split skipped: residual={} (value={}, counterpartyTotal={})",
+                    residual, value, counterpartyTotal);
+            return;
+        }
+
+        BigDecimal commissionPercent = vemComigoSplitProperties.getCommissionPercent() == null
+                ? BigDecimal.ZERO
+                : vemComigoSplitProperties.getCommissionPercent();
+        BigDecimal theron = residual
+                .multiply(commissionPercent)
+                .divide(BigDecimal.valueOf(100), MONEY_SCALE, RoundingMode.HALF_UP);
+        if (theron.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        appendSplit(paymentRequest, AsaasSplitItem.builder()
+                .walletId(masterWalletId)
+                .fixedValue(theron)
+                .build());
+        log.debug("Vem Comigo residual platform split: residual={}, theronFixed={}", residual, theron);
+    }
+
+    static BigDecimal sumCounterpartyAmounts(List<AsaasSplitItem> splits, BigDecimal chargeValue) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (splits == null) {
+            return sum;
+        }
+        for (AsaasSplitItem item : splits) {
+            sum = sum.add(counterpartyAmount(item, chargeValue));
+        }
+        return sum.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    static BigDecimal counterpartyAmount(AsaasSplitItem item, BigDecimal chargeValue) {
+        if (item.getFixedValue() != null && item.getFixedValue().compareTo(BigDecimal.ZERO) > 0) {
+            return item.getFixedValue().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        }
+        if (item.getPercentualValue() != null && item.getPercentualValue().compareTo(BigDecimal.ZERO) > 0) {
+            return chargeValue
+                    .multiply(item.getPercentualValue())
+                    .divide(BigDecimal.valueOf(100), MONEY_SCALE, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.ZERO.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private void applyLegacyPlatformSplit(AsaasPaymentRequest paymentRequest) {
         PlatformSplitConfig config = load();
         if (!Boolean.TRUE.equals(config.getEnabled())) {
             return;
@@ -93,12 +182,15 @@ public class PlatformSplitServiceImpl implements PlatformSplitService {
         if (!hasPercent && !hasFixed) {
             return;
         }
-        AsaasSplitItem item = AsaasSplitItem.builder()
+        appendSplit(paymentRequest, AsaasSplitItem.builder()
                 .walletId(masterWalletId)
                 .percentualValue(hasPercent ? config.getPercent() : null)
                 .fixedValue(hasFixed ? config.getFixedAmount() : null)
-                .build();
-        java.util.ArrayList<AsaasSplitItem> splits = new java.util.ArrayList<>();
+                .build());
+    }
+
+    private static void appendSplit(AsaasPaymentRequest paymentRequest, AsaasSplitItem item) {
+        ArrayList<AsaasSplitItem> splits = new ArrayList<>();
         if (paymentRequest.getSplit() != null) {
             splits.addAll(paymentRequest.getSplit());
         }

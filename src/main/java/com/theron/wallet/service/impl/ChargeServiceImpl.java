@@ -122,7 +122,8 @@ public class ChargeServiceImpl implements ChargeService {
         }
 
         // Platform fee split is appended; Asaas fees remain on the issuing account.
-        platformSplitService.applyToPayment(paymentRequest);
+        // Vem Comigo: Theron takes commissionPercent of issuer residual (value − counterparties).
+        platformSplitService.applyToPayment(paymentRequest, organization.getId());
 
         // Local key may exceed Asaas 48-char limit; Asaas receives a short deterministic key.
         String localIdempotencyKey = StringUtils.hasText(request.getExternalReference())

@@ -145,6 +145,7 @@ Estados: `PENDING_APPROVAL` → `PROCESSING` (legado) → `COMPLETED` | `FAILED`
 - Default: `enabled=true`, `percent=0`, `fixedAmount=0`.
 - Só PLATFORM OWNER altera (`/admin/splits`) + auditoria.
 - Aplicar só onde Asaas suporte (cobrança). Não fingir em transfer/QR estático.
+- **Exceção Vem Comigo** (`organizationId` configurável, default `565d0a47-6cd8-441a-b1de-766f042cd6d5`): quando a cobrança tem splits de contraparte, a comissão Theron **não** usa o percent/fixed global sobre o valor total. Em vez disso: `residual = valor − Σ(contrapartes)` e Theron recebe `fixedValue = residual × commissionPercent` (default **20%**) na wallet master (`ASAAS_MASTER_WALLET_ID`). Sem splits de contraparte, cai no comportamento global.
 
 ## 12. Permissions (RBAC)
 

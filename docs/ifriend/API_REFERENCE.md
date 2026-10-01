@@ -189,6 +189,7 @@ Mesmo one-shot KYC do B2B, resolvendo a Account do OWNER autenticado (nunca `acc
 - Idempotência local: mesmo `externalReference` na mesma Account retorna a charge existente (sem nova cobrança Asaas)
 - `installments`: só para `billingType=CREDIT_CARD` (PIX/BOLETO sem parcelas nesta API)
 - `split` (opcional): array de contrapartes Asaas; a Theron pode **acrescentar** split de plataforma se configurado
+- **Vem Comigo:** se a org emissora for a Vem Comigo e houver `split` de contraparte, a taxa Theron é `20%` do **residual da emissora** (`valor − soma das contrapartes`), enviada como `fixedValue` à wallet master — não o percent global sobre o total. Demais orgs: `PlatformSplitConfig` inalterado.
 
 Body (exemplo):
 

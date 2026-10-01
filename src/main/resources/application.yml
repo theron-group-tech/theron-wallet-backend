@@ -92,6 +92,9 @@ platform:
     percent: ${PLATFORM_SPLIT_PERCENT:0}
     fixed-amount: ${PLATFORM_SPLIT_FIXED_AMOUNT:0}
     enabled: ${PLATFORM_SPLIT_ENABLED:true}
+  vem-comigo:
+    organization-id: ${VEM_COMIGO_ORGANIZATION_ID:565d0a47-6cd8-441a-b1de-766f042cd6d5}
+    commission-percent: ${VEM_COMIGO_THERON_COMMISSION_PERCENT:20}
 
 theron:
   account-limit:
