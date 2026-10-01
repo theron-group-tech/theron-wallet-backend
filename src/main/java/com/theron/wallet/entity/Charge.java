@@ -97,6 +97,12 @@ public class Charge {
     @Column(name = "bank_slip_url", length = 500)
     private String bankSlipUrl;
 
+    @Column(name = "pix_copy_paste", length = 2000)
+    private String pixCopyPaste;
+
+    @Column(name = "pix_qr_code_expiration")
+    private LocalDateTime pixQrCodeExpiration;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
