@@ -25,6 +25,7 @@ public class AsaasWebhookEventPersister {
     private final AsaasWebhookEventRepository asaasWebhookEventRepository;
     private final ObjectMapper objectMapper;
     private final InboundPixDestinationResolver inboundPixDestinationResolver;
+    private final ChargeRepository chargeRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<AsaasWebhookEvent> claim(String eventId, AsaasWebhookPayload payload) {
@@ -84,6 +85,12 @@ public class AsaasWebhookEventPersister {
         }
 
         try {
+            if (chargeRepository.findByAsaasPaymentId(payload.getPayment().getId()).isPresent()) {
+                log.info("Payment received belongs to Theron charge; processing charge webhook: paymentId={}",
+                        payload.getPayment().getId());
+                return false;
+            }
+
             InboundPixDestinationResolver.Resolution resolution =
                     inboundPixDestinationResolver.classify(payload);
 
