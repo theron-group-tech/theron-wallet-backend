@@ -38,6 +38,8 @@ public class ChargeResponse {
     private Integer installmentCount;
     private String invoiceUrl;
     private String bankSlipUrl;
+    private String pixCopyPaste;
+    private LocalDateTime pixQrCodeExpiration;
     private UUID billingCustomerId;
     private String customerName;
     private String customerCpfCnpj;
