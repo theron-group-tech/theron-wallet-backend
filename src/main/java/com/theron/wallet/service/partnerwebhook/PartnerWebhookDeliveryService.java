@@ -95,7 +95,7 @@ public class PartnerWebhookDeliveryService {
         }
     }
 
-    static long backoffSeconds(int attempts) {
+    public static long backoffSeconds(int attempts) {
         long seconds = 30L * (1L << Math.min(Math.max(attempts - 1, 0), 10));
         return Math.min(900L, seconds);
     }
