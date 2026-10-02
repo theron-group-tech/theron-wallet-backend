@@ -8,7 +8,7 @@
 6. **Operação PIX** (opcional) — `POST /pix/transfers` com `Idempotency-Key` único e scope `pix.transfer`.
 7. **Cobrança (charges)** — `POST /charges` com scopes `charges.create` (sem `accountId` no body). Use `externalReference` do ERP; `billingType` = `PIX` | `BOLETO` | `CREDIT_CARD`. Split opcional com `walletId` Asaas. Ver [API_REFERENCE.md](API_REFERENCE.md).
 8. **Antecipação** — no **sandbox**, use `POST /anticipations` (criar) + `GET /anticipations` (listar). **`/anticipations/simulate` não funciona no Sandbox Asaas** — só em produção. Um payment/charge por request.
-9. **Acompanhar status** — polling em `GET /pix/transfers/{id}` ou `GET /charges/{id}` (webhooks outbound ainda não disponíveis; ver [WEBHOOKS.md](WEBHOOKS.md)). Eventos Asaas de pagamento atualizam a charge no Theron via webhook inbound.
+9. **Acompanhar status** — polling em `GET /pix/transfers/{id}` ou `GET /charges/{id}`. Para a org **Vem Comigo**, webhooks outbound estão disponíveis (HMAC + outbox); ver [WEBHOOKS.md](WEBHOOKS.md). Eventos Asaas de pagamento atualizam a charge no Theron via webhook inbound.
 10. **Tratar erros** — ver [ERRORS.md](ERRORS.md); em 401 no token endpoint use RFC 6749; na API use `code`.
 11. **Renovar token** — antes de `expires_in`; não há refresh token OAuth — reautentique com client credentials.
 

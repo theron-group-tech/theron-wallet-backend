@@ -147,6 +147,13 @@ Estados: `PENDING_APPROVAL` → `PROCESSING` (legado) → `COMPLETED` | `FAILED`
 - Aplicar só onde Asaas suporte (cobrança). Não fingir em transfer/QR estático.
 - **Exceção Vem Comigo** (`organizationId` configurável, default `565d0a47-6cd8-441a-b1de-766f042cd6d5`): quando a cobrança tem splits de contraparte, a comissão Theron **não** usa o percent/fixed global sobre o valor total. Em vez disso: `residual = valor − Σ(contrapartes)` e Theron recebe `fixedValue = residual × commissionPercent` (default **20%**) na wallet master (`ASAAS_MASTER_WALLET_ID`). Sem splits de contraparte, cai no comportamento global.
 
+## 11.1 Webhook outbound Vem Comigo
+
+- Theron notifica a Vem Comigo (HTTP POST) sobre cobranças, PIX in/out e transfers da org.
+- Config: `VEM_COMIGO_WEBHOOK_URL`, `VEM_COMIGO_WEBHOOK_SECRET`, `VEM_COMIGO_WEBHOOK_ENABLED`.
+- Assinatura: header `X-Theron-Signature: sha256=<HMAC-SHA256(body)>`.
+- Persistência: tabela `partner_webhook_outbox` + scheduler de retry/backoff; ver `docs/ifriend/WEBHOOKS.md`.
+
 ## 12. Permissions (RBAC)
 
 Ver seed Flyway V28. Frontend deve preferir `permissions.includes(...)` em vez de `role ==`.

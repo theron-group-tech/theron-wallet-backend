@@ -15,8 +15,11 @@ import com.theron.wallet.repository.SubaccountRepository;
 import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.service.InboundTransferService;
 import com.theron.wallet.service.NotificationService;
+import com.theron.wallet.service.PartnerWebhookOutboxService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
+import com.theron.wallet.service.partnerwebhook.PartnerWebhookPayloads;
+import com.theron.wallet.enums.PartnerWebhookEventTypes;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -43,6 +46,7 @@ public class InboundTransferServiceImpl implements InboundTransferService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
+    private final PartnerWebhookOutboxService partnerWebhookOutboxService;
     private final AsaasWebhookEventPersister eventPersister;
 
     @Override
@@ -207,6 +211,14 @@ public class InboundTransferServiceImpl implements InboundTransferService {
                 NotificationType.TRANSFER_RECEIVED,
                 transaction.getId(),
                 amountData(transaction));
+        String resource = transaction.getAsaasPaymentId() != null
+                ? transaction.getAsaasPaymentId()
+                : transaction.getId().toString();
+        partnerWebhookOutboxService.enqueueIfVemComigo(
+                organizationId,
+                PartnerWebhookEventTypes.TRANSFER_INBOUND_COMPLETED,
+                PartnerWebhookEventTypes.TRANSFER_INBOUND_COMPLETED + ":" + resource,
+                PartnerWebhookPayloads.fromTransaction(transaction));
     }
 
     private static Map<String, Object> amountData(Transaction transaction) {

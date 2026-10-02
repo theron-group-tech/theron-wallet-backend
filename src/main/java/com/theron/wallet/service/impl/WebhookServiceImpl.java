@@ -29,10 +29,13 @@ import com.theron.wallet.security.AsaasApiKeyResolver;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.InboundPixCreditService;
 import com.theron.wallet.service.NotificationService;
+import com.theron.wallet.service.PartnerWebhookOutboxService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.AsaasOnboardingService;
 import com.theron.wallet.service.WalletService;
 import com.theron.wallet.service.WebhookService;
+import com.theron.wallet.service.partnerwebhook.PartnerWebhookPayloads;
+import com.theron.wallet.enums.PartnerWebhookEventTypes;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -64,6 +67,7 @@ public class WebhookServiceImpl implements WebhookService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
+    private final PartnerWebhookOutboxService partnerWebhookOutboxService;
     private static final Set<String> PAYMENT_CONFIRMED_REMOTE = Set.of(
             "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH");
     private static final Set<String> PAYMENT_REVERSED_REMOTE = Set.of(
@@ -258,8 +262,32 @@ public class WebhookServiceImpl implements WebhookService {
                 }
                 chargeRepository.save(charge);
                 log.info("Charge status synced from webhook: chargeId={}, status={}", charge.getId(), mapped);
+                enqueueChargePartnerWebhook(charge, mapped, payment.getId());
             }
         });
+    }
+
+    private void enqueueChargePartnerWebhook(
+            com.theron.wallet.entity.Charge charge,
+            ChargeStatus mapped,
+            String asaasPaymentId) {
+        UUID orgId = PartnerWebhookPayloads.organizationId(charge);
+        if (orgId == null) {
+            return;
+        }
+        String eventType;
+        if (mapped == ChargeStatus.RECEIVED || mapped == ChargeStatus.CONFIRMED) {
+            eventType = PartnerWebhookEventTypes.CHARGE_RECEIVED;
+        } else if (mapped == ChargeStatus.CANCELLED || mapped == ChargeStatus.OVERDUE) {
+            eventType = PartnerWebhookEventTypes.CHARGE_CANCELLED;
+        } else if (mapped == ChargeStatus.REFUNDED) {
+            eventType = PartnerWebhookEventTypes.CHARGE_REFUNDED;
+        } else {
+            return;
+        }
+        String idempotencyKey = eventType + ":" + charge.getId() + ":" + asaasPaymentId + ":" + mapped.name();
+        partnerWebhookOutboxService.enqueueIfVemComigo(
+                orgId, eventType, idempotencyKey, PartnerWebhookPayloads.fromCharge(charge));
     }
 
     private void creditInboundPixPayment(
@@ -382,6 +410,18 @@ public class WebhookServiceImpl implements WebhookService {
                 NotificationType.PIX_RECEIVED,
                 transaction.getId(),
                 amountData(transaction));
+        if (orgId != null
+                && (transaction.getAsaasPaymentId() == null
+                || chargeRepository.findByAsaasPaymentId(transaction.getAsaasPaymentId()).isEmpty())) {
+            String resource = transaction.getAsaasPaymentId() != null
+                    ? transaction.getAsaasPaymentId()
+                    : transaction.getId().toString();
+            partnerWebhookOutboxService.enqueueIfVemComigo(
+                    orgId,
+                    PartnerWebhookEventTypes.PIX_INBOUND_RECEIVED,
+                    PartnerWebhookEventTypes.PIX_INBOUND_RECEIVED + ":" + resource,
+                    PartnerWebhookPayloads.fromTransaction(transaction));
+        }
     }
 
     private void handlePaymentCancellation(Transaction transaction, AsaasPaymentEvent event) {
@@ -497,6 +537,7 @@ public class WebhookServiceImpl implements WebhookService {
                     transaction.getId(),
                     amountData(transaction));
         }
+        enqueueTransferPartnerWebhook(transaction, true);
     }
 
     private void handleTransferFailure(Transaction transaction, AsaasTransferEvent event) {
@@ -518,6 +559,31 @@ public class WebhookServiceImpl implements WebhookService {
         log.info("Withdrawal {}: transactionId={}, event={}, amount credited back to walletId={}",
                 newStatus.name().toLowerCase(), transaction.getId(), event.getValue(),
                 transaction.getWallet().getId());
+        enqueueTransferPartnerWebhook(transaction, false);
+    }
+
+    private void enqueueTransferPartnerWebhook(Transaction transaction, boolean completed) {
+        UUID orgId = PartnerWebhookPayloads.organizationId(transaction);
+        if (orgId == null || transaction.getId() == null) {
+            return;
+        }
+        boolean pix = transaction.getType() == TransactionType.PIX;
+        String eventType;
+        if (completed) {
+            eventType = pix
+                    ? PartnerWebhookEventTypes.PIX_TRANSFER_COMPLETED
+                    : PartnerWebhookEventTypes.TRANSFER_OUTBOUND_COMPLETED;
+        } else {
+            eventType = pix
+                    ? PartnerWebhookEventTypes.PIX_TRANSFER_FAILED
+                    : PartnerWebhookEventTypes.TRANSFER_OUTBOUND_FAILED;
+        }
+        String resource = transaction.getAsaasPaymentId() != null
+                ? transaction.getAsaasPaymentId()
+                : transaction.getId().toString();
+        String idempotencyKey = eventType + ":" + transaction.getId() + ":" + resource;
+        partnerWebhookOutboxService.enqueueIfVemComigo(
+                orgId, eventType, idempotencyKey, PartnerWebhookPayloads.fromTransaction(transaction));
     }
 
     private void syncPixTransaction(Transaction transaction) {

@@ -22,7 +22,7 @@ Credenciais Asaas (API keys) são **exclusivas do backend Theron** e nunca são 
 |---------|----------|
 | [AUTHENTICATION.md](AUTHENTICATION.md) | Client Credentials, token, scopes |
 | [API_REFERENCE.md](API_REFERENCE.md) | Endpoints disponíveis ao client |
-| [WEBHOOKS.md](WEBHOOKS.md) | Polling atual; outbound futuro |
+| [WEBHOOKS.md](WEBHOOKS.md) | Inbound Asaas + outbound Vem Comigo (HMAC/outbox) |
 | [ERRORS.md](ERRORS.md) | Erros OAuth vs API |
 | [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | Passo a passo de integração |
 | [../../postman/README.md](../../postman/README.md) | Coleção Postman B2B (import + uso) |

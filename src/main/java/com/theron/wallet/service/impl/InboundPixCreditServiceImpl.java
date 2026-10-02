@@ -10,8 +10,11 @@ import com.theron.wallet.repository.TransactionRepository;
 import com.theron.wallet.security.PermissionCodes;
 import com.theron.wallet.service.InboundPixCreditService;
 import com.theron.wallet.service.NotificationService;
+import com.theron.wallet.service.PartnerWebhookOutboxService;
 import com.theron.wallet.service.TransactionLifecycleService;
 import com.theron.wallet.service.WalletService;
+import com.theron.wallet.service.partnerwebhook.PartnerWebhookPayloads;
+import com.theron.wallet.enums.PartnerWebhookEventTypes;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +37,7 @@ public class InboundPixCreditServiceImpl implements InboundPixCreditService {
     private final WalletService walletService;
     private final TransactionLifecycleService transactionLifecycleService;
     private final NotificationService notificationService;
+    private final PartnerWebhookOutboxService partnerWebhookOutboxService;
 
     @Override
     @Transactional
@@ -115,6 +119,14 @@ public class InboundPixCreditServiceImpl implements InboundPixCreditService {
                 NotificationType.PIX_RECEIVED,
                 transaction.getId(),
                 amountData(transaction));
+        String resource = transaction.getAsaasPaymentId() != null
+                ? transaction.getAsaasPaymentId()
+                : transaction.getId().toString();
+        partnerWebhookOutboxService.enqueueIfVemComigo(
+                orgId,
+                PartnerWebhookEventTypes.PIX_INBOUND_RECEIVED,
+                PartnerWebhookEventTypes.PIX_INBOUND_RECEIVED + ":" + resource,
+                PartnerWebhookPayloads.fromTransaction(transaction));
     }
 
     private static boolean awaitsProvider(Transaction transaction) {

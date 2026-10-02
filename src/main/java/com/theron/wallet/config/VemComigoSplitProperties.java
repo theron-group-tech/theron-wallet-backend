@@ -9,8 +9,7 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Vem Comigo-specific Theron platform commission: percentage of the issuer residual
- * (charge value minus counterparty splits), not of the full charge amount.
+ * Vem Comigo-specific settings: residual platform commission and outbound partner webhooks.
  */
 @Getter
 @Setter
@@ -22,4 +21,12 @@ public class VemComigoSplitProperties {
 
     /** Theron commission as percent of issuer residual (e.g. 20 = 20%). */
     private BigDecimal commissionPercent = new BigDecimal("20");
+
+    /** Partner webhook endpoint (Theron → Vem Comigo). Empty disables delivery. */
+    private String webhookUrl = "";
+
+    /** HMAC-SHA256 secret for {@code X-Theron-Signature}. Empty disables delivery. */
+    private String webhookSecret = "";
+
+    private boolean webhookEnabled = true;
 }
